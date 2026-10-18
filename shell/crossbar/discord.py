@@ -34,9 +34,10 @@ class DiscordError(RuntimeError):
     code = 0
 
 
-TESTER_HELP = ("Discord only lets an app control voice for accounts on its tester list. "
-               "On discord.com/developers/applications open your app › App Testers, add your Discord "
-               "username, accept the invite Discord sends you (check your Discord DMs/email), then try Set Up Discord again.")
+TESTER_HELP = ("Discord only allows voice control for unapproved apps to the app's owner and its testers. "
+               "Make sure you're signed in to the Discord app with the same account that created the "
+               "application on discord.com/developers, and that the Client ID is from that application. "
+               "(App Testers is only for adding other accounts.)")
 
 
 def authorize_error(e):

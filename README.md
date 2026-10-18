@@ -183,9 +183,8 @@ One-time setup (Discord only lets "tester" accounts control voice from other app
 
 1. On any device: [discord.com/developers/applications](https://discord.com/developers/applications) › **New Application**.
 2. **OAuth2 › Redirects**: add `http://127.0.0.1:7777/discord/callback`, save.
-3. **App Testers**: add your own Discord username, then **accept the invite** Discord sends you
-   (DM/email). This is the step that's easy to miss: without it Discord refuses with
-   *invalid scope* even for the app's owner.
+3. Create the application with **the same Discord account** you'll use on the console: Discord
+   only lets unapproved apps control voice for their owner (and testers you invite, for other accounts).
 4. Copy the **Client ID** and **Client Secret** (OAuth2 page).
 5. Crossbar: **Social › Set Up Discord**, paste both, sign in to Discord if asked, approve Crossbar.
 6. **Social › Add Voice Channel…** › pick a server › pick channels.
