@@ -1,0 +1,37 @@
+#!/bin/bash
+# Boot-time setup (root, before autologin): groups, games disk, persistence.
+set -u
+U=player
+H=/home/$U
+
+for g in wheel input video audio render; do
+  getent group "$g" >/dev/null && usermod -aG "$g" "$U"
+done
+
+# A disk for games. Only ever formats the VM disk created by run-vm.sh (serial
+# "crossbar-games") and only if it's blank. On real hardware, label any ext4
+# partition CROSSBAR_GAMES yourself and it will be mounted.
+mkdir -p "$H/Games"
+VMDISK=/dev/disk/by-id/virtio-crossbar-games
+if [ -b "$VMDISK" ] && ! blkid "$VMDISK" >/dev/null 2>&1; then
+  mkfs.ext4 -q -L CROSSBAR_GAMES "$VMDISK"
+  udevadm settle
+fi
+if [ -e /dev/disk/by-label/CROSSBAR_GAMES ]; then
+  mount /dev/disk/by-label/CROSSBAR_GAMES "$H/Games"
+fi
+
+# Keep Steam, legendary and Crossbar settings on the games disk so they survive
+# reboots of the live system (and don't fill the RAM overlay).
+P="$H/Games/.persist"
+for d in .local/share/Steam .config/legendary .config/crossbar; do
+  mkdir -p "$P/$d" "$(dirname "$H/$d")"
+  rm -rf "${H:?}/$d"
+  ln -sfn "$P/$d" "$H/$d"
+done
+mkdir -p "$H/.steam"
+ln -sfn "$H/.local/share/Steam" "$H/.steam/steam"
+
+find "$H" -path "$H/Games" -prune -o -exec chown -h "$U:$U" {} +
+chown "$U:$U" "$H/Games" "$P"
+find "$P" -maxdepth 3 -exec chown "$U:$U" {} +   # top levels only; contents are already ours

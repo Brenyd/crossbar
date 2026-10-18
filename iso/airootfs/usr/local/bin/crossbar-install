@@ -1,0 +1,104 @@
+#!/bin/bash
+# Install Crossbar from the live ISO onto a disk. ERASES THE CHOSEN DISK.
+# UEFI only. Partitions: 1 GiB EFI (FAT32) + rest ext4 root. Boots with systemd-boot.
+set -euo pipefail
+[[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
+
+red() { printf '\e[1;31m%s\e[0m\n' "$*"; }
+bold() { printf '\e[1m%s\e[0m\n' "$*"; }
+
+[[ -d /sys/firmware/efi ]] || { red "This installer needs a UEFI boot (turn off Legacy/CSM in firmware)."; exit 1; }
+ping -c1 -W3 archlinux.org >/dev/null 2>&1 || { red "No internet. Connect first (Ethernet works automatically; Wi-Fi: run 'iwctl')."; exit 1; }
+
+clear
+bold "Crossbar installer"
+echo
+echo "Disks:"
+LIVE=$(findmnt -no SOURCE /run/archiso/bootmnt 2>/dev/null | sed 's/[0-9]*$//; s/p$//' || true)
+lsblk -dpno NAME,SIZE,MODEL,TYPE | awk '$NF=="disk"' | grep -v "^${LIVE:-NONE} " | sed 's/ disk$//'
+echo
+read -rp "Disk to install to (e.g. /dev/nvme0n1 or /dev/sda): " DISK
+[[ -b "$DISK" && "$DISK" != "${LIVE:-NONE}" ]] || { red "Not a valid target disk."; exit 1; }
+red "EVERYTHING on $DISK will be erased."
+read -rp "Type the disk name again to confirm: " CONFIRM
+[[ "$CONFIRM" == "$DISK" ]] || { echo "Cancelled."; exit 1; }
+
+while true; do
+  read -rsp "Password for user 'player' (used for sudo): " PW1; echo
+  read -rsp "Again: " PW2; echo
+  [[ -n "$PW1" && "$PW1" == "$PW2" ]] && break
+  red "Passwords didn't match."
+done
+TZ_GUESS=$(curl -fs --max-time 5 https://ipapi.co/timezone 2>/dev/null || echo UTC)
+read -rp "Time zone [$TZ_GUESS]: " TZ_IN
+TZONE=${TZ_IN:-$TZ_GUESS}
+[[ -f /usr/share/zoneinfo/$TZONE ]] || TZONE=UTC
+
+bold ":: Partitioning $DISK"
+umount -R /mnt 2>/dev/null || true
+wipefs -af "$DISK"
+sgdisk -Z "$DISK"
+sgdisk -n1:0:+1G -t1:ef00 -c1:CROSSBAR_EFI -n2:0:0 -t2:8304 -c2:CROSSBAR_ROOT "$DISK"
+partprobe "$DISK"; udevadm settle
+mapfile -t PARTS < <(lsblk -lnpo NAME,TYPE "$DISK" | awk '$2=="part"{print $1}')
+EFI=${PARTS[0]}
+ROOT=${PARTS[1]}
+mkfs.fat -F32 -n CBEFI "$EFI"
+mkfs.ext4 -F -q -L crossbar "$ROOT"
+mount "$ROOT" /mnt
+mount --mkdir -o umask=0077 "$EFI" /mnt/boot
+
+bold ":: Installing packages (several GB, this takes a while)"
+mapfile -t PKGS < <(grep -vE '^\s*(#|$)' /usr/share/crossbar/packages.txt)
+UCODE=()
+grep -q GenuineIntel /proc/cpuinfo && UCODE=(intel-ucode)
+grep -q AuthenticAMD /proc/cpuinfo && UCODE=(amd-ucode)
+pacstrap -K /mnt base linux linux-firmware "${UCODE[@]}" networkmanager iwd sudo nano \
+  e2fsprogs dosfstools "${PKGS[@]}"
+
+bold ":: Copying Crossbar"
+cp /etc/pacman.conf /mnt/etc/pacman.conf            # keeps multilib for Steam
+cp -r /usr/lib/crossbar /mnt/usr/lib/
+cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,legendary} /mnt/usr/local/bin/
+cp -r /etc/crossbar /mnt/etc/
+cp /etc/systemd/system/crossbar-setup.service /mnt/etc/systemd/system/
+mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
+cp /etc/systemd/system/getty@tty1.service.d/autologin.conf /mnt/etc/systemd/system/getty@tty1.service.d/
+install -Dm440 /etc/sudoers.d/player /mnt/etc/sudoers.d/player
+sed -i 's/NOPASSWD: //' /mnt/etc/sudoers.d/player     # installed system asks for the password
+genfstab -U /mnt >>/mnt/etc/fstab
+
+bold ":: Configuring"
+ROOT_UUID=$(blkid -s PARTUUID -o value "$ROOT")
+UCODE_LINE=""
+[[ ${#UCODE[@]} -gt 0 ]] && UCODE_LINE="initrd  /${UCODE[0]}.img"
+arch-chroot /mnt /bin/bash -e <<EOF
+ln -sf /usr/share/zoneinfo/$TZONE /etc/localtime
+hwclock --systohc
+sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
+locale-gen
+echo LANG=en_US.UTF-8 > /etc/locale.conf
+echo crossbar > /etc/hostname
+useradd -m -G wheel -s /bin/bash player
+systemctl enable NetworkManager crossbar-setup.service
+bootctl install
+cat > /boot/loader/loader.conf <<L
+default crossbar.conf
+timeout 0
+editor no
+L
+cat > /boot/loader/entries/crossbar.conf <<L
+title   Crossbar
+linux   /vmlinuz-linux
+$UCODE_LINE
+initrd  /initramfs-linux.img
+options root=PARTUUID=$ROOT_UUID rw quiet loglevel=3
+L
+EOF
+echo "player:$PW1" | arch-chroot /mnt chpasswd
+install -Dm644 -o 1000 -g 1000 /home/player/.bash_profile /mnt/home/player/.bash_profile
+
+umount -R /mnt
+bold ":: Done. Remove the USB stick / ISO and reboot."
+read -rp "Reboot now? [Y/n] " R
+[[ "${R,,}" == n* ]] || systemctl reboot

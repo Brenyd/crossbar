@@ -1,0 +1,18 @@
+#!/bin/bash
+# Runs inside sway: starts the backend, then keeps the XMB window alive.
+mkdir -p "$HOME/.cache"
+python3 /usr/lib/crossbar/server.py >>"$HOME/.cache/crossbard.log" 2>&1 &
+
+until curl -s -o /dev/null http://127.0.0.1:7777/api/jobs; do sleep 0.3; done
+
+while true; do
+  chromium \
+    --ozone-platform=wayland \
+    --app=http://127.0.0.1:7777 \
+    --user-data-dir="$HOME/.config/crossbar/shell-browser" \
+    --no-first-run --noerrdialogs --disable-infobars \
+    --disable-session-crashed-bubble --disable-features=Translate \
+    --autoplay-policy=no-user-gesture-required \
+    --password-store=basic
+  sleep 1   # crashed or closed: bring it straight back
+done

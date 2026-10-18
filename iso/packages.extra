@@ -1,0 +1,45 @@
+
+# ---- Crossbar additions (appended to archiso's releng package list) ----
+# session
+sway
+swaybg
+xorg-xwayland
+foot
+chromium
+curl
+xdg-utils
+polkit
+sudo
+noto-fonts
+noto-fonts-emoji
+ttf-liberation
+# shell backend
+python
+python-evdev
+python-requests
+python-filelock
+python-pywebview
+python-gobject
+webkit2gtk-4.1
+unzip
+# audio
+pipewire
+pipewire-pulse
+pipewire-alsa
+wireplumber
+# stores / games
+steam
+wine
+mesa
+lib32-mesa
+vulkan-swrast
+lib32-vulkan-swrast
+vulkan-radeon
+lib32-vulkan-radeon
+vulkan-intel
+lib32-vulkan-intel
+# party chat
+discord
+mumble
+# VM niceties
+spice-vdagent

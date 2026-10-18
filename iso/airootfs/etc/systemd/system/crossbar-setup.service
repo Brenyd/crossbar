@@ -1,0 +1,13 @@
+[Unit]
+Description=Crossbar boot setup (games disk, user groups)
+After=local-fs.target systemd-udev-settle.service
+Wants=systemd-udev-settle.service
+Before=getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/crossbar-setup
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
