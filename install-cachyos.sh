@@ -184,6 +184,13 @@ EOF
     # Where your current autostart lives (if it's in a system-wide file it runs before the hook).
     FOUND=$(grep -lsE 'gamescope|startplasma|steamos-session|start-hyprland|sway' /etc/profile /etc/profile.d/* \
             /etc/fish/config.fish /etc/fish/conf.d/* /etc/zsh/zprofile 2>/dev/null || true)
+    # ...or started by systemd instead of a login shell (getty override running it directly,
+    # or a service), which the hook can't come before either.
+    GETTY=$(systemctl cat getty@tty1.service 2>/dev/null | grep -E '^ExecStart=.*(gamescope|steam|startplasma)' || true)
+    UNITS=$(grep -lsE 'gamescope|steamos-session' /etc/systemd/system/*.service \
+            "$UHOME"/.config/systemd/user/*.service 2>/dev/null || true)
+    [[ -n "$GETTY" ]] && FOUND="$FOUND getty@tty1 (its ExecStart starts the session directly)"
+    [[ -n "$UNITS" ]] && FOUND="$FOUND $UNITS"
     if [[ -n "$FOUND" ]]; then
       warn "Your session autostart seems to be in a system-wide file that runs before Crossbar's hook:"
       warn "  $FOUND"
