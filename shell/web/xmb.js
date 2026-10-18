@@ -382,7 +382,7 @@ function itemEl(it) {
   let slot;
   if (it.art !== undefined) {
     const h = hashHue(it.artTitle || it.label);
-    slot = `<div class="art" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
+    slot = `<div class="art${it.artShape === 'poster' ? ' poster' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
   } else slot = `<div class="ico">${icon(it.icon)}</div>`;
   el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(it.label)}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
     <div class="sub">${esc(it.sub || '')}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;

@@ -43,7 +43,7 @@ async function iptvItems(kind, cat) {
   const list = await api.get(`/api/iptv/items?${qs({ kind, cat: cat.id })}`);
   if (!list.length) return [{ key: 'none', label: 'Nothing here', icon: 'info' }];
   if (kind === 'series') {
-    return iptvPaged(list, (s) => ({ key: `s:${s.id}`, label: s.name, art: s.icon || '', artTitle: s.name,
+    return iptvPaged(list, (s) => ({ key: `s:${s.id}`, label: s.name, art: s.icon || '', artTitle: s.name, artShape: 'poster',
       sub: [s.year, s.rating && `★ ${s.rating}`].filter(Boolean).join(' · '),
       children: async () => {
         const info = await api.get(`/api/iptv/series?${qs({ id: s.id })}`);
@@ -55,7 +55,7 @@ async function iptvItems(kind, cat) {
   }
   const make = (it) => ({
     key: `i:${it.id}`, label: kind === 'live' && it.num ? `${it.num}  ${it.name}` : it.name,
-    ...(it.icon ? { art: it.icon, artTitle: it.name } : { icon: kind === 'live' ? 'tv' : 'video' }),
+    ...(it.icon ? { art: it.icon, artTitle: it.name, ...(kind === 'live' ? {} : { artShape: 'poster' }) } : { icon: kind === 'live' ? 'tv' : 'video' }),
     sub: kind === 'live' ? 'A: watch · L1/R1 change channel' : (it.rating ? `★ ${it.rating}` : ''),
     action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name),
     options: kind === 'live' ? [{ label: 'Watch', action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name) },

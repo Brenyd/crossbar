@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.8
+# Crossbar — prototype 0.9.1
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -12,6 +12,21 @@ anything mpv can, with a controller-friendly control panel.
 ![Game category](docs/game.png)
 
 ![Music category](docs/music.png)
+
+### What's new
+
+| | |
+|---|---|
+| ![Live TV](docs/iptv-live-tv.png) | ![Movies](docs/iptv-movies.png) |
+| **IPTV Live TV** — your provider's channels with logos; L1/R1 change channel while watching | **IPTV Movies** — posters shown whole, big categories a page at a time |
+| ![TV Shows](docs/iptv-tv-shows.png) | ![IPTV categories](docs/iptv-settings.png) |
+| **IPTV TV Shows** — seasons and episodes | **Choose what shows** — pick categories in Settings › Media › IPTV |
+| ![Steam updating](docs/steam-starting.png) | ![Now Playing](docs/now-playing.png) |
+| **Steam cold start** — Crossbar waits through Steam's own updates, then starts the game | **Now Playing** — play/pause and skip show the song, anywhere in the menu |
+| ![System settings](docs/settings-system.png) | ![Game settings](docs/game-settings.png) |
+| **Settings › System** — Restart Crossbar, and on a PS5 switch to gaming mode or the desktop | **Free Memory While Gaming** — the menu closes while you play; Quick Menu keeps working |
+
+<sub>Screenshots use the demo library and a stand-in IPTV server with invented channels and titles.</sub>
 
 ## Run it
 

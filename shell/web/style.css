@@ -54,6 +54,8 @@ body.infolder #cats { opacity: 0; }
 .item.on { opacity: 1; }
 .item.on .ico { width: 104px; height: 104px; }
 .item.on .art { width: 300px; height: 140px; }
+/* portrait artwork (movie / show posters): shown whole, centred on a dark card, not cropped */
+.item .art.poster { background-size: contain; background-repeat: no-repeat; background-color: rgba(0,0,0,.38); }
 .item.on .label { font-size: 36px; }
 .item.on .sub { height: auto; opacity: 1; }
 .item.on .ico, .item.on .art { animation: glow 2.4s ease-in-out infinite; }
