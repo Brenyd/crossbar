@@ -97,19 +97,34 @@ else
   FAILED=(); KERNEL_SKIPPED=()
   echo "all packages present"
 fi
-if ((${#FAILED[@]})); then
+# Only packages that aren't in the repos go to the AUR helper (a repo package that failed
+# would fail the same way there, and the AUR helper can't be told to protect the kernel).
+AUR_PKGS=()
+for p in "${FAILED[@]}"; do pacman -Si "$p" >/dev/null 2>&1 || AUR_PKGS+=("$p"); done
+if ((${#AUR_PKGS[@]})); then
   AUR=$(command -v yay || command -v paru || true)
   if [[ -n "$AUR" ]]; then
-    echo "not in the repos, trying the AUR with $(basename "$AUR"): ${FAILED[*]}"
+    echo "not in the repos, trying the AUR with $(basename "$AUR"): ${AUR_PKGS[*]}"
     # AUR helpers must run as the user, never root
     # (it may ask for your password once more, for the final pacman step)
-    sudo -u "$U" "$AUR" -S --needed --noconfirm --sudoloop "${FAILED[@]}" || true
+    sudo -u "$U" "$AUR" -S --needed --noconfirm --sudoloop "${AUR_PKGS[@]}" </dev/null || true
   fi
+fi
+if ((${#FAILED[@]})); then
   STILL=()
   for p in "${FAILED[@]}"; do pacman -T "$p" >/dev/null 2>&1 || STILL+=("$p"); done
   ((${#STILL[@]})) && warn "couldn't install: ${STILL[*]} — Crossbar works without them, but some features won't"
 fi
 ((${#KERNEL_SKIPPED[@]})) && warn "not installed because they'd need a different kernel: ${KERNEL_SKIPPED[*]} (your kernel was left alone)"
+
+# Without these Crossbar can't show anything: don't make it the boot session.
+CRITICAL_MISSING=()
+for p in sway chromium python-evdev mpv; do pacman -T "$p" >/dev/null 2>&1 || CRITICAL_MISSING+=("$p"); done
+if ((${#CRITICAL_MISSING[@]})) && ((AUTOLOGIN)); then
+  warn "Crossbar needs ${CRITICAL_MISSING[*]}, which didn't install. Installing Crossbar, but NOT"
+  warn "changing what boots, so your PS5 keeps starting your usual session. Fix those, then rerun."
+  AUTOLOGIN=0
+fi
 
 # ---- 2. Crossbar itself -----------------------------------------------------------------------
 step "Installing Crossbar"
