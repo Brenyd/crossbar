@@ -25,7 +25,7 @@ DEFAULT_CONFIG = {
     "video": {"resume": True, "subtitles": "auto"},
     "display": {},             # {"OUTPUT-NAME": {"mode": "1920x1080@60.000Hz", "scale": 1.0}}
     "spotify": {"client_id": ""},
-    "discord": {"client_id": "", "client_secret": "", "channels": []},
+    "discord": {"channels": [], "signed_in": False},
     "tv": [
         {"name": "YouTube", "url": "https://www.youtube.com/tv", "tv_ui": True},
         {"name": "Twitch", "url": "https://www.twitch.tv"},

@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import compat, controls, files, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import compat, controls, emulation, files, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -35,7 +35,7 @@ from crossbar.providers.epic import Epic  # noqa: E402
 from crossbar.providers.gog import GOG  # noqa: E402
 from crossbar.providers.steam import Steam  # noqa: E402
 from crossbar.spotify import SPOTIFY  # noqa: E402
-from crossbar.discord import DISCORD, launch as launch_discord  # noqa: E402
+from crossbar.discordweb import DISCORD  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 try:
@@ -124,56 +124,39 @@ def state():
 # ---- routes ------------------------------------------------------------
 def discord_state():
     st = DISCORD.status()
-    saved = util.load_config()["discord"].get("channels", [])
-    out = []
-    for c in saved:
-        item = dict(c)
-        if st.get("connected"):
-            try:
-                item["members"] = DISCORD.channel(c["id"])["members"]
-            except Exception:
-                item["members"] = None
-        out.append(item)
-    st["saved"] = out
+    st["saved"] = util.load_config()["discord"].get("channels", [])
     return st
 
 
 def r_discord(action, b):
-    if action == "config":
-        util.update_config(lambda c: c["discord"].update(client_id=b.get("client_id", "").strip(),
-                                                          client_secret=b.get("client_secret", "").strip()))
-        return discord_state()
-    if action == "link":
-        return JOBS.start("login", "Discord", DISCORD.link, "discord").as_dict()
-    if action == "unlink":
-        DISCORD.unlink()
-        return discord_state()
-    if action == "join":
-        try:
-            return {"channel": DISCORD.join(b["channel_id"], force=bool(b.get("force")))}
-        except RuntimeError as e:
-            if str(e) == "ALREADY_IN_VOICE":
-                return {"already": True}
-            raise
-    if action == "leave":
-        DISCORD.leave()
+    """Discord through its own web client (see crossbar/discordweb.py)."""
+    if action == "open":            # show the Discord window (sign-in, chat, settings)
+        DISCORD.start(show=True)
+        DISCORD.show()
         return {"ok": True}
+    if action == "start":
+        DISCORD.start()
+        return {"ok": True}
+    if action == "join":
+        return DISCORD.join(b["guild_id"], b["channel_id"])
+    if action == "leave":
+        return DISCORD.leave()
     if action == "mute":
-        return DISCORD.set_voice(mute=not DISCORD.state["mute"])
+        return DISCORD.toggle_mute()
     if action == "deaf":
-        return DISCORD.set_voice(deaf=not DISCORD.state["deaf"])
+        return DISCORD.toggle_deaf()
     if action == "save":
-        ch = {"id": str(b["id"]), "name": b["name"], "guild": b.get("guild", ""), "guild_id": b.get("guild_id", "")}
-        util.update_config(lambda c: c["discord"]["channels"].append(ch)
-                           if all(x["id"] != ch["id"] for x in c["discord"]["channels"]) else None)
+        ch = {"id": str(b["id"]), "name": b["name"], "guild": b.get("guild", ""), "guild_id": str(b.get("guild_id", ""))}
+        util.update_config(lambda c: c["discord"].setdefault("channels", []).append(ch)
+                           if all(x["id"] != ch["id"] for x in c["discord"].get("channels", [])) else None)
         return discord_state()
     if action == "remove":
         util.update_config(lambda c: c["discord"].__setitem__(
-            "channels", [x for x in c["discord"]["channels"] if x["id"] != str(b["id"])]))
+            "channels", [x for x in c["discord"].get("channels", []) if x["id"] != str(b["id"])]))
         return discord_state()
-    if action == "open":
-        launch_discord(minimized=False)
-        return {"ok": True}
+    if action == "signout":
+        DISCORD.sign_out_local()
+        return discord_state()
     raise KeyError(action)
 
 
@@ -219,10 +202,10 @@ def r_uninstall(b):
 
 
 def r_launch(b):
-    p = provider(b["provider"])
+    p = emulation.EMU if b["provider"] == "emu" else provider(b["provider"])
     before = {w["con_id"] for w in system.windows()}
     title = b.get("title", "")
-    live = not demo_on() and os.environ.get("SWAYSOCK")
+    live = (b["provider"] == "emu" or not demo_on()) and os.environ.get("SWAYSOCK")
 
     def progress(msg):
         if live:
@@ -360,6 +343,18 @@ GET = {
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
     "/api/ps5": lambda q: ps5hw.status(),
+    "/api/emulation": lambda q: emulation.status(),
+    "/api/trophies": lambda q: trophies.status(),
+    "/api/trophies/ra": lambda q: {**trophies.ra_summary(), "consoles": trophies.ra_consoles()},
+    "/api/trophies/ra/game": lambda q: trophies.ra_game(q["id"]),
+    "/api/trophies/steam": lambda q: trophies.steam_games(),
+    "/api/trophies/steam/game": lambda q: trophies.steam_game(q["id"]),
+    "/api/emulation/emulators": lambda q: emulation.emulators(),
+    "/api/emulation/systems": lambda q: emulation.systems_with_games(),
+    "/api/emulation/all-systems": lambda q: [{"id": k, "name": s["name"], "exts": s["exts"]} for k, s in emulation.SYSTEMS.items()],
+    "/api/emulation/games": lambda q: emulation.games(q["system"]),
+    "/api/emulation/bios": lambda q: emulation.bios_status(),
+    "/api/emulation/choices": lambda q: emulation.choices(q["system"]),
     "/api/ps5/temps": lambda q: ps5hw.temps(),
     "/api/audio/apps": lambda q: system.app_streams(),
     "/api/audio/devices": lambda q: system.audio_devices(),
@@ -529,6 +524,69 @@ def route_post(path, b):
         pause_spotify()
         player.play_video(b["paths"], b.get("index", 0), mpv_gamepad=mpv_should_read_gamepad(PADS))
         return {"ok": True}
+    if head == "trophies" and len(parts) > 1 and parts[1] == "steam-setup":
+        return trophies.steam_setup(b.get("key"), b.get("steamid", ""))
+    if head == "emulation":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "install":
+            emu = b["emu"]
+            if emu not in emulation.EMULATORS:
+                raise KeyError(emu)
+            return JOBS.start("install", emulation.EMULATORS[emu]["name"], lambda j: emulation.install(j, emu), "emulation").as_dict()
+        if what == "uninstall":
+            emulation.uninstall(b["emu"])
+            return {"ok": True}
+        if what == "folders":
+            return {"path": emulation.create_folders()}
+        if what == "settings":
+            kw = {}
+            if b.get("aspect") in emulation.ASPECT:
+                kw["aspect"] = b["aspect"]
+            if "integer_scale" in b:
+                kw["integer_scale"] = bool(b["integer_scale"])
+            if "root" in b and b["root"]:
+                kw["root"] = os.path.expanduser(str(b["root"]))
+            if "ra_enabled" in b or "hardcore" in b or "web_key" in b:
+                ra = dict(emulation.prefs().get("ra") or {})
+                if "ra_enabled" in b:
+                    ra["enabled"] = bool(b["ra_enabled"])
+                if "hardcore" in b:
+                    ra["hardcore"] = bool(b["hardcore"])
+                if "web_key" in b:
+                    ra["web_key"] = str(b["web_key"]).strip()
+                kw["ra"] = ra
+            if "ra_signout" in b:
+                kw["ra"] = {}
+            emulation.save_prefs(**kw)
+            return {**emulation.status(), "applied": emulation.apply_defaults()}
+        if what == "ra-login":
+            return emulation.ra_login(b.get("user", "").strip(), b.get("password", ""), b.get("web_key", "").strip())
+        if what == "configure":
+            emulation.configure(b["emu"])
+            return {"ok": True}
+        if what == "choose":
+            if b["system"] not in emulation.SYSTEMS:
+                raise KeyError(b["system"])
+            util.update_config(lambda c: c.setdefault("emulation", {}).setdefault("emulator", {}).__setitem__(b["system"], b["value"]))
+            return {"ok": True}
+        raise KeyError(what)
+    if head == "osk":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "show":                 # the system keyboard (overlay) opened / closed
+            on = bool(b.get("on"))
+            if on and not quick.overlay_available():
+                raise RuntimeError("The on-screen keyboard needs the Quick Menu overlay (gtk4-layer-shell)")
+            if on and b.get("auto") and not PADS.pad_recent():
+                return {"open": False}     # typing on a real keyboard: don't pop up
+            f = system.focused() or {}
+            if on and b.get("auto") and (system.is_steam_client(f) or (f.get("app") or "").lower().startswith("steam_app")):
+                return {"open": False}     # Steam has its own keyboard
+            PADS.set_osk(on)
+            HUB.publish({"type": "osk", "open": on})
+            return {"open": on}
+        if what == "type":
+            return {"typed": PADS.type_keys(b.get("text", ""), b.get("special"))}
+        raise KeyError(what)
     if head == "ps5":
         what = parts[1] if len(parts) > 1 else ""
         if what == "fan-target":
@@ -820,9 +878,9 @@ def main():
         display.apply_saved()
         ps5hw.apply_saved()
         SPOTIFY.ensure_receiver()
-        if DISCORD.linked() and not DISCORD.running():
+        if util.load_config()["discord"].get("signed_in"):
             try:
-                launch_discord(minimized=True)     # voice runs in Discord; keep it ready, hidden
+                DISCORD.start()                   # voice runs in Discord's window; keep it ready, hidden
             except Exception as e:
                 print(f"discord: {e}", flush=True)
     threading.Thread(target=background_start, daemon=True).start()

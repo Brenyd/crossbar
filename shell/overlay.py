@@ -34,6 +34,7 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crossbar.overlay_model import Model  # noqa: E402
 from crossbar import glyphs  # noqa: E402
+from osk_window import OskWindow  # noqa: E402
 
 BASE = "http://127.0.0.1:7777"
 # keyboard: browser key names (the shared mapping) -> GDK names
@@ -145,6 +146,9 @@ class Overlay(Gtk.Application):
 
         self.win, self.scale = win, scale
         self.make_hud(scale)
+        self.glyph_data = {}
+        self.osk = OskWindow(self, self.api, lambda t: glyphs.render(t, self.glyph_data or self.model.data.get("glyphs")), scale)
+        self.osk.start_input_method()
         self.hold()
         threading.Thread(target=self.listen, daemon=True).start()
         threading.Thread(target=self.poll, daemon=True).start()
@@ -328,6 +332,17 @@ class Overlay(Gtk.Application):
                             GLib.idle_add(self.show, bool(ev.get("visible")))
                         elif ev.get("type") == "input" and ev.get("to") == "overlay":
                             GLib.idle_add(self.act, ev["action"])
+                        elif ev.get("type") == "input" and ev.get("to") == "osk":
+                            GLib.idle_add(self.osk.act, ev["action"])
+                        elif ev.get("type") == "osk":
+                            if ev.get("open"):
+                                try:
+                                    self.glyph_data = (self.api.get("/api/quick") or {}).get("glyphs") or {}
+                                except Exception:
+                                    pass
+                            GLib.idle_add(self.osk.show, bool(ev.get("open")))
+                        elif ev.get("type") == "physical-input" and self.osk.visible:
+                            threading.Thread(target=self.osk.close, daemon=True).start()
             except Exception as e:
                 print(f"overlay: event stream: {e!r}", flush=True)
             GLib.idle_add(self.show, False)

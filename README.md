@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.9.3
+# Crossbar — prototype 0.10
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -269,19 +269,56 @@ you don't own can be played but their track list can't be shown (a Spotify restr
 
 ## Social: Discord voice channels
 
-Join and leave Discord voice channels straight from the XMB, like party chat: **Social** lists the
-voice channels you've added, who's in them, and A joins (or leaves). While you're in one, the
-Quick Menu shows it too (A mutes, ◀ leaves). Voice runs in the Discord app, started minimized.
+**Social** lists your Discord voice channels: A joins (or leaves), with Mute / Deafen while you're
+in one, and the Quick Menu shows the call too (A mutes, ◀ leaves). No developer app or setup.
 
-One-time setup (Discord only lets "tester" accounts control voice from other apps):
+How it works: Crossbar runs Discord's own web client (discord.com/app) in a window it keeps hidden,
+and drives it the way you would, by clicking the voice channel, Disconnect, Mute and Deafen,
+through Chromium's private DevTools pipe (only Crossbar's backend can use it; no open port).
+Things are found by their accessibility labels, not screen positions, so Discord's redesigns
+rarely break it; if one does, an action reports "couldn't find" and **Open Discord** still works.
 
-1. On any device: [discord.com/developers/applications](https://discord.com/developers/applications) › **New Application**.
-2. **OAuth2 › Redirects**: add `http://127.0.0.1:7777/discord/callback`, save.
-3. Create the application with **the same Discord account** you'll use on the console: Discord
-   only lets unapproved apps control voice for their owner (and testers you invite, for other accounts).
-4. Copy the **Client ID** and **Client Secret** (OAuth2 page).
-5. Crossbar: **Social › Set Up Discord**, paste both, sign in to Discord if asked, approve Crossbar.
-6. **Social › Add Voice Channel…** › pick a server › pick channels.
+1. **Social › Sign In to Discord**: Discord shows a QR code; scan it with the Discord app on your phone.
+2. **Social › Browse Voice Channels** › a server › a channel: A joins; Y › **Add to Social** pins it.
+3. **Open Discord** shows the full client (text chat, friends) with controller keys and the
+   on-screen keyboard; the Quick Menu brings you back.
+
+Automating your own Discord client is a grey area in Discord's terms; Crossbar only does what you
+ask for (join, leave, mute) and never reads or sends messages on its own.
+
+## Emulation
+
+**Game › Emulation** has **ROMs** (a folder per system, shown once it has games; A plays) and
+**Emulators** (install / uninstall, from Flathub; DuckStation as its official AppImage). Games
+launch like any other: the "Starting…" screen, the memory-saving game mode, and the Quick Menu's
+Close to quit. Folder layout is EmuDeck's, so an existing EmuDeck folder works as-is:
+
+```
+~/Emulation/roms/<system>/   nes snes n64 gb gbc gba nds n3ds gc wii wiiu mastersystem genesis segacd
+                             gamegear saturn dreamcast psx ps2 ps3 psp xbox pcengine atari2600 arcade scummvm
+~/Emulation/bios/            BIOS / firmware files
+```
+
+**Settings › Emulation**: the folder, **BIOS Files** (checked per system, with what's missing),
+**Emulator Settings & Controls** (opens each emulator to map buttons; pads are detected
+automatically), **Default Emulator per System**, **Aspect Ratio**, **Pixel-Perfect Scaling** and
+**RetroAchievements** (sign in once; emulators get a login token, not your password). Crossbar writes
+these into RetroArch, Dolphin, PCSX2, DuckStation and PPSSPP's own settings.
+
+## Trophies
+
+**Game › Trophies**: **RetroAchievements** by console (your points and rank, each game's progress,
+every badge) once you add your Web API key (retroachievements.org › Settings › Keys), and **Steam**
+achievements per game with a free Steam Web API key (steamcommunity.com/dev/apikey; your profile's
+Game details must be public). GOG and Epic don't share achievements with other apps.
+
+## On-screen keyboard
+
+Text fields open a QWERTY keyboard when you're using a controller: A types, B deletes, Y/△ is
+shift, L1/R1 move the cursor, Start is Done. Touch a real keyboard or mouse and it closes.
+In other apps it opens by itself in apps that support Wayland's text-input (GTK, Qt, and Crossbar's
+own web windows like Discord and TV apps), typing any character; anywhere else use **Quick Menu ›
+Keyboard**. It stays away from Steam, which has its own.
 
 ## Games
 

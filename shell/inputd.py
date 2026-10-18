@@ -9,7 +9,11 @@ and decides where input goes) and carries out three requests:
 
   {"cmd": "grab", "on": true|false}   exclusive access (games/browsers stop seeing the pad)
   {"cmd": "key", "code": N}           tap a key on a virtual keyboard (drives web apps)
+  {"cmd": "keys", "seq": [[N, shift]...]}  type with the virtual keyboard (on-screen keyboard)
   {"cmd": "list"}                     re-send the device list
+
+It also watches (never grabs) real keyboards and mice and sends {"e": "physical"} when
+one is used, so the on-screen keyboard can get out of the way.
 
 Socket: /run/crossbar/input.sock. Anyone can connect, but each connection is
 checked (SO_PEERCRED) and only root or the user logged in at the screen (the
@@ -51,9 +55,36 @@ def is_virtual(d):
         return False
 
 
+# what the virtual keyboard may type: letters, digits, punctuation, editing keys, media keys
+TYPING_KEYS = sorted(set(range(E.KEY_ESC, E.KEY_SLASH + 1)) | {
+    E.KEY_SPACE, E.KEY_LEFTSHIFT, E.KEY_RIGHTSHIFT, E.KEY_LEFTCTRL, E.KEY_LEFTALT, E.KEY_CAPSLOCK,
+    E.KEY_UP, E.KEY_DOWN, E.KEY_LEFT, E.KEY_RIGHT, E.KEY_HOME, E.KEY_END, E.KEY_DELETE, E.KEY_PAGEUP, E.KEY_PAGEDOWN,
+    E.KEY_PLAYPAUSE, E.KEY_NEXTSONG, E.KEY_PREVIOUSSONG, E.KEY_F})
+
+
+def physical_kind(d):
+    """'keyboard' / 'mouse' for real typing and pointing devices, else None."""
+    if d.name.startswith("Crossbar "):
+        return None
+    try:
+        if d.info.vendor == 0x28DE:              # Steam's virtual keyboard/mouse
+            return None
+        caps = d.capabilities()
+    except (OSError, AttributeError):
+        return None
+    keys = caps.get(E.EV_KEY, [])
+    if E.KEY_A in keys and E.KEY_Z in keys and E.KEY_ENTER in keys:
+        return "keyboard"
+    if E.REL_X in caps.get(E.EV_REL, []) and E.BTN_LEFT in keys:
+        return "mouse"
+    return None
+
+
 class Daemon:
     def __init__(self):
         self.devices = {}      # path -> InputDevice
+        self.others = {}       # path -> InputDevice: real keyboards and mice, watched only
+        self.last_physical = 0
         self.clients = []
         self.grabbed = False
         self.uinput = None
@@ -78,7 +109,10 @@ class Daemon:
             except OSError:
                 continue
             if not is_pad(d):
-                d.close()
+                if path not in self.others and physical_kind(d):
+                    self.others[path] = d           # read-only: never grabbed
+                else:
+                    d.close()
                 continue
             self.devices[path] = d
             if self.grabbed:
@@ -119,16 +153,30 @@ class Daemon:
             self._grab(d, on)
 
     # ---- virtual keyboard ------------------------------------------------
-    def key(self, code):
+    def _kbd(self):
         if self.uinput is None:
-            keys = [E.KEY_UP, E.KEY_DOWN, E.KEY_LEFT, E.KEY_RIGHT, E.KEY_ENTER, E.KEY_ESC, E.KEY_TAB,
-                    E.KEY_SPACE, E.KEY_BACKSPACE, E.KEY_PLAYPAUSE, E.KEY_NEXTSONG, E.KEY_PREVIOUSSONG, E.KEY_F]
-            self.uinput = evdev.UInput({E.EV_KEY: keys}, name="Crossbar Controller Keys")
+            self.uinput = evdev.UInput({E.EV_KEY: TYPING_KEYS}, name="Crossbar Controller Keys")
             time.sleep(0.15)       # let the compositor pick up the new keyboard
-        self.uinput.write(E.EV_KEY, code, 1)
-        self.uinput.syn()
-        self.uinput.write(E.EV_KEY, code, 0)
-        self.uinput.syn()
+        return self.uinput
+
+    def key(self, code, shift=False):
+        if code not in TYPING_KEYS:
+            return
+        u = self._kbd()
+        if shift:
+            u.write(E.EV_KEY, E.KEY_LEFTSHIFT, 1)
+        u.write(E.EV_KEY, code, 1)
+        u.syn()
+        u.write(E.EV_KEY, code, 0)
+        if shift:
+            u.write(E.EV_KEY, E.KEY_LEFTSHIFT, 0)
+        u.syn()
+
+    def keys(self, seq):
+        for item in seq[:256]:
+            code, shift = (item + [False])[:2] if isinstance(item, list) else (item, False)
+            self.key(int(code), bool(shift))
+            time.sleep(0.004)
 
     # ---- who may connect ------------------------------------------------------
     @staticmethod
@@ -199,6 +247,11 @@ class Daemon:
                 self.key(int(m["code"]))
             except Exception as e:
                 print(f"inputd: uinput: {e}", flush=True)
+        elif cmd == "keys":
+            try:
+                self.keys(list(m.get("seq") or []))
+            except Exception as e:
+                print(f"inputd: uinput: {e}", flush=True)
         elif cmd == "list":
             for path, d in self.devices.items():
                 c.sendall((json.dumps(self.dev_msg(path, d, True)) + "\n").encode())
@@ -211,7 +264,7 @@ class Daemon:
             if time.time() - last_scan > 2:
                 last_scan = time.time()
                 self.scan()
-            fds = [self.server] + self.clients + list(self.devices.values())
+            fds = [self.server] + self.clients + list(self.devices.values()) + list(self.others.values())
             r, _, _ = select.select(fds, [], [], 1)
             for x in r:
                 if x is self.server:
@@ -242,6 +295,15 @@ class Daemon:
                     while b"\n" in bufs[x]:
                         line, bufs[x] = bufs[x].split(b"\n", 1)
                         self.command(x, line)
+                elif x.path in self.others and self.others.get(x.path) is x:
+                    try:
+                        used = any(ev.type == E.EV_REL or (ev.type == E.EV_KEY and ev.value == 1) for ev in x.read())
+                    except OSError:
+                        self.others.pop(x.path, None)
+                        continue
+                    if used and time.time() - self.last_physical > 1:
+                        self.last_physical = time.time()
+                        self.broadcast({"e": "physical"})
                 else:
                     try:
                         for ev in x.read():

@@ -526,6 +526,7 @@ def open_web(url, profile, tv_ui=False, app=True):
     args = ["chromium", "--ozone-platform-hint=auto", f"--user-data-dir={os.path.join(util.CONFIG_DIR, profile)}",
             "--no-first-run", "--autoplay-policy=no-user-gesture-required", "--noerrdialogs",
             "--disable-infobars", "--disable-session-crashed-bubble", "--hide-crash-restore-bubble",
+            "--enable-wayland-ime", "--wayland-text-input-version=3",   # text fields open the on-screen keyboard
             f"--window-size={w},{h}", "--window-position=0,0"]
     if tv_ui:
         # YouTube serves its controller-friendly TV interface to console browsers.

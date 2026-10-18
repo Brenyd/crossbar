@@ -39,6 +39,9 @@ Object.assign(ICONS, {
   account: '<circle cx="32" cy="24" r="10"/><path d="M14 54c2-10 9-16 18-16s16 6 18 16"/><circle cx="50" cy="16" r="6"/>',
   system: '<rect x="14" y="14" width="36" height="36" rx="3"/><rect x="24" y="24" width="16" height="16"/><path d="M24 8v6M32 8v6M40 8v6M24 50v6M32 50v6M40 50v6M8 24h6M8 32h6M8 40h6M50 24h6M50 32h6M50 40h6"/>',
   check: '<path d="M14 34l12 12 24-26"/>',
+  trophy: '<path d="M20 10h24v12a12 12 0 0 1-24 0z"/><path d="M20 14h-8v4a8 8 0 0 0 8 8M44 14h8v4a8 8 0 0 1-8 8"/><path d="M32 34v10M22 54h20M26 44h12v10H26z"/>',
+  retro: '<rect x="6" y="20" width="52" height="26" rx="6"/><path d="M14 33h10M19 28v10"/><circle cx="42" cy="36" r="2.5"/><circle cx="50" cy="30" r="2.5"/><path d="M28 30h4M33 30h4"/>',
+  keyboard: '<rect x="4" y="16" width="56" height="32" rx="4"/><path d="M12 25h4M22 25h4M32 25h4M42 25h4M52 25h0M12 33h4M22 33h4M32 33h4M42 33h4M20 41h24"/>',
   browser: '<rect x="6" y="10" width="52" height="44" rx="3"/><path d="M6 22h52"/><circle cx="13" cy="16" r="1.5"/><circle cx="19" cy="16" r="1.5"/>',
 });
 Object.assign(ICONS, {

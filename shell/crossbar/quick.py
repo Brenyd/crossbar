@@ -195,9 +195,12 @@ def info():
     devices = system.audio_devices()
     voice = None
     try:
-        from .discord import DISCORD
-        if DISCORD.sock:
-            voice = {"channel": DISCORD.state["channel"], "mute": DISCORD.state["mute"], "deaf": DISCORD.state["deaf"]}
+        from .discordweb import DISCORD
+        if DISCORD.running():
+            st = DISCORD.status()
+            if st.get("voice"):
+                voice = {"channel": {"name": st["voice"]["channel"], "guild": st["voice"].get("guild"), "members": []},
+                         "mute": st.get("mute"), "deaf": st.get("deaf")}
     except Exception:
         pass
     return {

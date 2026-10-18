@@ -53,9 +53,14 @@
 - [x] PS5 hardware: temperatures, overlay HUD, fan target, fan mode/boost, front light
 - [x] PlayStation glyphs drawn as centred shapes
 
+## 0.10
+- [x] Emulation: ROMs by system, emulator installs (Flathub/AppImage), BIOS checks, defaults, RetroAchievements
+- [x] Trophies: RetroAchievements by console, Steam achievements
+- [x] On-screen keyboard: QWERTY, in Crossbar and system-wide (input method + Quick Menu), closes on real keyboard/mouse
+- [x] Discord rebuilt on its own web client: voice channels in Social without a developer app
+- [x] XMB spacing: rows below a big highlighted tile, rows under the button hints
+
 ## Next
-- **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
-  virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.
 

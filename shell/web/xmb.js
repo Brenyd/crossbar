@@ -120,19 +120,56 @@ const Dialog = {
     this.renderButtons();
     $('#dialog').hidden = false;
     const first = $('.dlg-fields input');
-    if (first) setTimeout(() => first.focus(), 50);
+    this.fi = first ? 0 : -1;               // controller focus: a field index, or -1 = the buttons
+    if (first) setTimeout(() => {
+      first.focus();
+      this.padFocus();
+      if (S.lastInput === 'pad') this.editField();     // on a controller: straight to the keyboard
+    }, 60);
     return new Promise((res) => { this.resolve = res; });
   },
   renderButtons() {
     $('.dlg-buttons').innerHTML = this.buttons.map((b, i) => `<div class="dlg-btn ${i === this.sel ? 'on' : ''}">${esc(b)}</div>`).join('');
   },
   move(d) { this.sel = (this.sel + d + this.buttons.length) % this.buttons.length; this.renderButtons(); Sfx.move(); },
+  fields() { return [...document.querySelectorAll('.dlg-fields input')]; },
+  padFocus() {
+    const fs = this.fields();
+    fs.forEach((f, i) => f.classList.toggle('padfocus', i === this.fi));
+    $('.dlg-buttons').classList.toggle('dim', this.fi >= 0 && fs.length > 0);
+    if (this.fi >= 0 && fs[this.fi]) fs[this.fi].focus(); else document.activeElement?.blur();
+  },
+  editField() {
+    const f = this.fields()[this.fi];
+    if (!f) return;
+    Osk.show(f, (done) => {
+      if (!this.open) return;
+      if (done) { this.fi = this.fi + 1 < this.fields().length ? this.fi + 1 : -1; }   // Done: on to the next field
+      this.padFocus();
+    });
+  },
+  pad(action) {   // controller in a dialog with text fields
+    const n = this.fields().length;
+    if (this.fi >= 0) {
+      if (action === 'up') { this.fi = Math.max(0, this.fi - 1); this.padFocus(); Sfx.move(); }
+      else if (action === 'down') { this.fi = this.fi + 1 < n ? this.fi + 1 : -1; this.padFocus(); Sfx.move(); }
+      else if (action === 'ok') this.editField();
+      else if (action === 'back') this.close(null);
+      return;
+    }
+    if (action === 'up' && n) { this.fi = n - 1; this.padFocus(); Sfx.move(); }
+    else if (action === 'left') this.move(-1);
+    else if (action === 'right') this.move(1);
+    else if (action === 'ok') this.close(this.sel);
+    else if (action === 'back') this.close(null);
+  },
   close(idx) {
     if (!this.open) return;
     clearInterval(this.timer);
     const values = {};
     document.querySelectorAll('.dlg-fields input').forEach((i) => { values[i.dataset.k] = i.value; });
     $('#dialog').hidden = true; this.open = false;
+    if (Osk.open) Osk.hide(false);
     document.activeElement?.blur();
     (idx === null ? Sfx.back : Sfx.ok)();
     this.resolve({ button: idx, values });
@@ -286,6 +323,8 @@ const CATS = [   // more categories are added by media.js and settings.js
       for (const j of S.jobs.filter((j) => j.kind === 'install' && j.status === 'running')) {
         items.push({ key: `job:${j.id}`, label: j.title, icon: 'download', sub: `Downloading… ${j.message}`, progress: j.progress, badge: STORE_NAMES[j.provider] });
       }
+      if (typeof EMULATION_FOLDER !== 'undefined') items.push(EMULATION_FOLDER);
+      if (typeof TROPHIES_FOLDER !== 'undefined') items.push(TROPHIES_FOLDER);
       const games = await api.get('/api/installed');
       items.push(...games.map((g) => gameItem(g, false)));
       if (!games.length) items.push({ key: 'none', label: 'No games installed', icon: 'store', sub: 'Get some from the Store', action: () => goCat('store') });
@@ -446,19 +485,23 @@ function renderColumn(rebuild = true) {
 
 function position() {
   const items = list(), s = sel();
+  // the rows below make room for the *highlighted* row's size (a 140px artwork tile, a progress
+  // bar), not their own: otherwise an icon row tucks under a big tile
+  const selArt = items[s]?.art !== undefined;
+  const selExtra = items[s]?.progress != null ? 18 : 0;
   columnEls.forEach((el, i) => {
     const on = i === s;
     const isArt = items[i].art !== undefined;
     const slotW = isArt ? (on ? 300 : 150) : (on ? 104 : 72);
     let y;
     if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
-    else if (i === s) y = isArt ? 500 : 480;
-    else y = (isArt ? 640 : 590) + (i - s - 1) * 100;
+    else if (i === s) y = selArt ? 500 : 480;
+    else y = (selArt ? 648 : 596) + selExtra + (i - s - 1) * 100;
     const x = CAT_X - slotW / 2;
     el.style.transform = `translate(${x}px, ${y}px)`;
     el.classList.toggle('on', on);
     el.classList.toggle('dim', !on);
-    el.style.opacity = y < -60 || y > 1140 ? 0 : '';
+    el.style.opacity = y < -60 || y > 900 ? 0 : '';     // > 900 would run under the button hints
     if (Math.abs(i - s) <= 8) ensureArt(el, items[i]);
   });
 }
@@ -508,10 +551,12 @@ function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
 function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
 
 function handle(action) {
+  if (Osk.open) return Osk.handle(action);
   if (Term.open && !Dialog.open) return Term.handle(action);
   if (QuickMenu.open && !Dialog.open) return QuickMenu.handle(action);
   if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
+    if (Dialog.fields().length) return Dialog.pad(action);
     if (action === 'left') Dialog.move(-1);
     else if (action === 'right') Dialog.move(1);
     else if (action === 'ok') Dialog.close(Dialog.sel);
@@ -550,6 +595,7 @@ function act(action) {
 }
 
 addEventListener('keydown', (e) => {
+  if (e.isTrusted) S.lastInput = 'kbd';
   if (KeyCapture.active) { e.preventDefault(); KeyCapture.active(keyName(e)); return; }
   if (Term.open && !Dialog.open) return;
   const typing = e.target.tagName === 'INPUT';
@@ -646,9 +692,7 @@ function pollPads(now) {
   requestAnimationFrame(pollPads);
 }
 function fire(a) {
-  if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (a === 'up' || a === 'down')) {
-    document.activeElement.blur(); return;
-  }
+  S.lastInput = 'pad';
   act(a);
 }
 function browserCapture(combo, timeout = 10000) {
@@ -683,10 +727,9 @@ function connectEvents() {
     if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
     if (ev.type === 'input' && ev.to === 'overlay') return;      // meant for the overlay window
+    if (ev.type === 'physical-input') { S.lastInput = 'kbd'; if (Osk.open) Osk.hide(false); return; }
     if (ev.type === 'input') {
-      if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (ev.action === 'up' || ev.action === 'down')) {
-        document.activeElement.blur(); return;
-      }
+      S.lastInput = 'pad';
       act(ev.action);
     } else if (ev.type === 'quick') {
       if (ev.open) { api.get('/api/quick/pending').catch(() => {}); QuickMenu.show(ev.shot); } else QuickMenu.toggle();

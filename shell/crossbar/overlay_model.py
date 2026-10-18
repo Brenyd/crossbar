@@ -194,7 +194,7 @@ class Model:
         if voice and voice.get("channel"):
             ch = voice["channel"]
             rows.append({"key": "voice", "icon": "call-start-symbolic", "label": f"Voice: {ch.get('name')}",
-                         "sub": f"{len(ch.get('members', []))} in channel · {'Muted' if voice.get('mute') else 'Mic on'}",
+                         "sub": f"{ch.get('guild') or 'Discord'} · {'Deafened' if voice.get('deaf') else 'Muted' if voice.get('mute') else 'Mic on'}",
                          "hint": "{ok} mute · ◀ leave",
                          "ok": lambda: (api.post("/api/discord/mute", {}), self.refresh()),
                          "adjust": lambda d_: (api.post("/api/discord/leave", {}), self.refresh()) if d_ < 0 else None})
@@ -242,6 +242,8 @@ class Model:
         wins = d.get("windows") or []
         rows.append({"key": "apps", "icon": "view-app-grid-symbolic", "label": "Switch App",
                      "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
+        rows.append({"key": "osk", "icon": "input-keyboard-symbolic", "label": "Keyboard",
+                     "sub": "Type into the app with the controller", "ok": self._keyboard})
         rows.append({"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller & Keyboard", "sub": "Button mapping",
                      "ok": lambda: api.post("/api/overlay/settings", {"folder": "controls"})})
         rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings", "sub": "Display, sound, network…",
@@ -260,6 +262,10 @@ class Model:
         title = (self.data.get("app") or {}).get("title", "")
         self.api.post("/api/overlay/close-app", {})
         self.notice = f"Closed {title}"
+
+    def _keyboard(self):
+        self.close(True)
+        self.api.post("/api/osk/show", {"on": True})
 
     def _next_output(self):
         r = self.api.post("/api/quick/output", {}) or {}

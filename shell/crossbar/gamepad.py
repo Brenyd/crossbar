@@ -109,6 +109,8 @@ class Gamepads:
     def _target(self, fresh=False):
         if self.overlay_open:
             return "overlay"
+        if getattr(self, "osk_open", False):
+            return "osk"                  # the system on-screen keyboard is up: it gets the pad
         now = time.time()
         if not fresh and now - self._focus_cache[0] < 0.25:
             return self._focus_cache[1]
@@ -155,7 +157,7 @@ class Gamepads:
                         pass
 
     def _send(self, action, target, repeat=False):
-        if target in ("xmb", "overlay"):
+        if target in ("xmb", "overlay", "osk"):
             HUB.publish({"type": "input", "action": action, "to": target, "repeat": repeat})
         elif target == "video":
             if not repeat or action in ("up", "down"):
@@ -163,21 +165,75 @@ class Gamepads:
         elif target == "web":
             self._web_key(action)
 
+    def pad_recent(self):
+        """True when the controller was used more recently than a real keyboard/mouse."""
+        return getattr(self, "last_pad", 0) > getattr(self, "last_physical", 0)
+
     def _press(self, action, token=""):
         if action == "home":
             self.log.appendleft({"t": time.time(), "token": token, "action": action, "to": "quick menu"})
             self.on_home()
             return
         target = self._target()
+        self.last_pad = time.time()
         self.log.appendleft({"t": time.time(), "token": token, "action": action, "to": target})
         self._send(action, target)
-        if action in controls.DIRECTIONS and target in ("xmb", "video", "web", "overlay"):
+        if action in controls.DIRECTIONS and target in ("xmb", "video", "web", "overlay", "osk"):
             self._held[action] = time.time() + REPEAT_DELAY
 
     def _release(self, action):
         self._held.pop(action, None)
 
     # ---- virtual keyboard for web apps --------------------------------------
+    # ---- typing (on-screen keyboard) -------------------------------------------------
+    US = {**{c: (c, False) for c in "abcdefghijklmnopqrstuvwxyz0123456789"},
+          **{c.upper(): (c, True) for c in "abcdefghijklmnopqrstuvwxyz"},
+          " ": ("SPACE", False), "\n": ("ENTER", False), "\t": ("TAB", False),
+          "-": ("MINUS", False), "_": ("MINUS", True), "=": ("EQUAL", False), "+": ("EQUAL", True),
+          "[": ("LEFTBRACE", False), "{": ("LEFTBRACE", True), "]": ("RIGHTBRACE", False), "}": ("RIGHTBRACE", True),
+          ";": ("SEMICOLON", False), ":": ("SEMICOLON", True), "'": ("APOSTROPHE", False), '"': ("APOSTROPHE", True),
+          "`": ("GRAVE", False), "~": ("GRAVE", True), "\\": ("BACKSLASH", False), "|": ("BACKSLASH", True),
+          ",": ("COMMA", False), "<": ("COMMA", True), ".": ("DOT", False), ">": ("DOT", True),
+          "/": ("SLASH", False), "?": ("SLASH", True),
+          "!": ("1", True), "@": ("2", True), "#": ("3", True), "$": ("4", True), "%": ("5", True),
+          "^": ("6", True), "&": ("7", True), "*": ("8", True), "(": ("9", True), ")": ("0", True)}
+    SPECIAL = {"backspace": "BACKSPACE", "enter": "ENTER", "left": "LEFT", "right": "RIGHT", "up": "UP",
+               "down": "DOWN", "tab": "TAB", "esc": "ESC", "home": "HOME", "end": "END", "delete": "DELETE"}
+
+    def type_keys(self, text="", special=None):
+        """Type text (US layout) or one special key through the virtual keyboard."""
+        import evdev
+        ec = evdev.ecodes.ecodes
+        seq = []
+        if special:
+            name = self.SPECIAL.get(special)
+            if name:
+                seq.append([ec["KEY_" + name], False])
+        for ch in text[:256]:
+            k = self.US.get(ch)
+            if k:
+                seq.append([ec["KEY_" + k[0].upper()], k[1]])
+        if not seq:
+            return 0
+        if self.mode == "inputd":
+            self._cmd({"cmd": "keys", "seq": seq})
+        else:
+            if self._uinput is None or not getattr(self, "_uinput_full", False):
+                keys = sorted({c for c, _ in seq} | {ec["KEY_LEFTSHIFT"]} | {ec["KEY_" + v] for v in self.SPECIAL.values()}
+                              | {ec["KEY_" + v[0].upper()] for v in self.US.values()})
+                self._uinput = evdev.UInput({evdev.ecodes.EV_KEY: keys}, name="Crossbar Controller Keys")
+                self._uinput_full = True
+                time.sleep(0.15)
+            for code, shift in seq:
+                if shift:
+                    self._uinput.write(evdev.ecodes.EV_KEY, ec["KEY_LEFTSHIFT"], 1)
+                self._uinput.write(evdev.ecodes.EV_KEY, code, 1)
+                self._uinput.write(evdev.ecodes.EV_KEY, code, 0)
+                if shift:
+                    self._uinput.write(evdev.ecodes.EV_KEY, ec["KEY_LEFTSHIFT"], 0)
+                self._uinput.syn()
+        return len(seq)
+
     def _web_key(self, action):
         name = WEB_KEYS.get(action)
         if not name:
@@ -353,6 +409,9 @@ class Gamepads:
                         elif m["e"] == "abs":
                             lo, hi = self.absinfo.get(path, {}).get(str(m["code"]), (-32768, 32767))
                             self._on_abs(path, m["code"], m["value"], lo, hi)
+                        elif m["e"] == "physical":       # a real keyboard/mouse was used
+                            self.last_physical = time.time()
+                            HUB.publish({"type": "physical-input"})
                         elif m["e"] == "dev":
                             table = self.virtual if m.get("virtual") else self.names
                             if m["added"]:
@@ -519,6 +578,11 @@ class Gamepads:
     def start(self):
         threading.Thread(target=self.run, daemon=True).start()
         threading.Thread(target=self._watch_focus, daemon=True).start()
+
+    def set_osk(self, on):
+        self.osk_open = bool(on)
+        self._held.clear()
+        self.update_grab()
 
     def set_overlay(self, on):
         self.overlay_open = on

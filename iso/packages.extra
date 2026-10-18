@@ -47,6 +47,7 @@ pipewire-pulse
 pipewire-alsa
 wireplumber
 # stores / games
+flatpak
 steam
 gamescope
 # Windows games (GOG / Epic) through Proton
