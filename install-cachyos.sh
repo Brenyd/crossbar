@@ -90,17 +90,11 @@ mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$HERE/iso/packages.extra" | sed 's/\s.
 MISSING=()
 # pacman -T also counts packages "provided" by something else (e.g. a -git build) as present
 for p in "${PKGS[@]}"; do pacman -T "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
-FAILED=()
+source "$HERE/packages-safe.sh"
 if ((${#MISSING[@]})); then
-  echo "installing: ${MISSING[*]}"
-  if ! pacman -S --needed --noconfirm "${MISSING[@]}"; then
-    # one unknown name fails the whole batch: retry one by one and collect what's not in the repos
-    for p in "${MISSING[@]}"; do
-      pacman -T "$p" >/dev/null 2>&1 && continue
-      pacman -S --needed --noconfirm "$p" >/dev/null 2>&1 || FAILED+=("$p")
-    done
-  fi
+  safe_install "${MISSING[@]}"
 else
+  FAILED=(); KERNEL_SKIPPED=()
   echo "all packages present"
 fi
 if ((${#FAILED[@]})); then
@@ -115,6 +109,7 @@ if ((${#FAILED[@]})); then
   for p in "${FAILED[@]}"; do pacman -T "$p" >/dev/null 2>&1 || STILL+=("$p"); done
   ((${#STILL[@]})) && warn "couldn't install: ${STILL[*]} — Crossbar works without them, but some features won't"
 fi
+((${#KERNEL_SKIPPED[@]})) && warn "not installed because they'd need a different kernel: ${KERNEL_SKIPPED[*]} (your kernel was left alone)"
 
 # ---- 2. Crossbar itself -----------------------------------------------------------------------
 step "Installing Crossbar"

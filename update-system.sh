@@ -38,8 +38,9 @@ if ! id player >/dev/null 2>&1; then
 fi
 for p in "${PKGS[@]}"; do pacman -T "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
 if ((${#MISSING[@]})); then
-  echo "installing: ${MISSING[*]}"
-  pacman -S --needed --noconfirm "${MISSING[@]}"
+  source "$HERE/packages-safe.sh"     # never lets pacman pull in or swap a kernel
+  safe_install "${MISSING[@]}"
+  ((${#FAILED[@]})) && echo "couldn't install: ${FAILED[*]} (Crossbar works without them)"
 else
   echo "all packages present"
 fi
