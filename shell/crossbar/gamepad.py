@@ -336,6 +336,8 @@ class Gamepads:
                     while b"\n" in buf:
                         line, buf = buf.split(b"\n", 1)
                         m = json.loads(line)
+                        if m.get("e") == "error":
+                            raise ConnectionError(m.get("msg", "refused"))
                         path = m.get("path")
                         if m["e"] in ("key", "abs") and path in self.virtual:
                             continue      # Steam's virtual pad mirrors the real one: ignore
@@ -441,15 +443,21 @@ class Gamepads:
                     self._close_direct()
                     self._run_inputd()      # returns/raises when the service goes away
             except Exception as e:
-                self.inputd_error = repr(e)
-                print(f"gamepad: controller service unavailable ({e!r}); reading controllers directly", flush=True)
+                msg = repr(e)
+                if isinstance(e, PermissionError):
+                    msg = "the controller service refused this user (update crossbar-inputd)"
+                if msg != self.inputd_error:      # log each new problem once, not every second
+                    print(f"gamepad: controller service unavailable: {msg}; reading controllers directly", flush=True)
+                self.inputd_error = msg
             # Fallback for a while, then try the service again.
             deadline = time.time() + 5
             while time.time() < deadline:
                 try:
                     self._run_direct(evdev)
                 except Exception as e:
-                    print(f"gamepad: {e!r}", flush=True)
+                    if repr(e) != getattr(self, "_last_direct_error", None):
+                        print(f"gamepad: {e!r}", flush=True)
+                        self._last_direct_error = repr(e)
                     time.sleep(1)
 
     def _watch_focus(self):

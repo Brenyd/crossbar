@@ -11,7 +11,9 @@ and decides where input goes) and carries out three requests:
   {"cmd": "key", "code": N}           tap a key on a virtual keyboard (drives web apps)
   {"cmd": "list"}                     re-send the device list
 
-Socket: /run/crossbar/input.sock, owned by the console user (CROSSBAR_USER, default player).
+Socket: /run/crossbar/input.sock. Anyone can connect, but each connection is
+checked (SO_PEERCRED) and only root or the user logged in at the screen (the
+active logind session on seat0, whatever their username) is served.
 Messages are JSON, one per line.
 """
 import json
@@ -19,6 +21,8 @@ import os
 import pwd
 import select
 import socket
+import struct
+import subprocess
 import sys
 import time
 
@@ -26,7 +30,7 @@ import evdev
 
 SOCK_DIR = "/run/crossbar"
 SOCK = os.path.join(SOCK_DIR, "input.sock")
-USER = os.environ.get("CROSSBAR_USER", "player")
+USER = os.environ.get("CROSSBAR_USER", "")     # optional extra user to always allow
 E = evdev.ecodes
 
 
@@ -60,12 +64,7 @@ class Daemon:
             pass
         self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.server.bind(SOCK)
-        try:
-            pw = pwd.getpwnam(USER)
-            os.chown(SOCK, pw.pw_uid, pw.pw_gid)
-        except KeyError:
-            pass
-        os.chmod(SOCK, 0o600)
+        os.chmod(SOCK, 0o666)          # access is decided per connection, see allowed()
         self.server.listen(4)
         self.server.setblocking(False)
 
@@ -131,6 +130,43 @@ class Daemon:
         self.uinput.write(E.EV_KEY, code, 0)
         self.uinput.syn()
 
+    # ---- who may connect ------------------------------------------------------
+    @staticmethod
+    def console_uids():
+        """uid(s) of whoever is logged in at the screen right now (any username)."""
+        uids = set()
+        try:
+            out = subprocess.run(["loginctl", "list-sessions", "--no-legend"], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                parts = line.split()
+                if not parts:
+                    continue
+                props = subprocess.run(["loginctl", "show-session", parts[0], "-p", "User", "-p", "Seat", "-p", "Active",
+                                        "-p", "Remote"], capture_output=True, text=True, timeout=5).stdout
+                p = dict(x.split("=", 1) for x in props.splitlines() if "=" in x)
+                if p.get("Seat") and p.get("Active") == "yes" and p.get("Remote") != "yes" and p.get("User", "").isdigit():
+                    uids.add(int(p["User"]))
+        except (OSError, subprocess.SubprocessError):
+            pass
+        if USER:
+            try:
+                uids.add(pwd.getpwnam(USER).pw_uid)
+            except KeyError:
+                pass
+        return uids
+
+    def allowed(self, c):
+        try:
+            pid, uid, gid = struct.unpack("3i", c.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, struct.calcsize("3i")))
+        except OSError:
+            return False, None
+        if uid == 0:
+            return True, uid
+        uids = self.console_uids()
+        if not uids:                    # no logind info (unusual): fall back to regular users
+            return uid >= 1000, uid
+        return uid in uids, uid
+
     # ---- clients -----------------------------------------------------------
     def broadcast(self, msg):
         data = (json.dumps(msg) + "\n").encode()
@@ -170,7 +206,7 @@ class Daemon:
     def run(self):
         bufs = {}
         last_scan = 0
-        print(f"inputd: listening on {SOCK} for {USER}", flush=True)
+        print(f"inputd: listening on {SOCK} (console user(s): {sorted(self.console_uids())})", flush=True)
         while True:
             if time.time() - last_scan > 2:
                 last_scan = time.time()
@@ -180,6 +216,15 @@ class Daemon:
             for x in r:
                 if x is self.server:
                     c, _ = self.server.accept()
+                    ok, uid = self.allowed(c)
+                    if not ok:
+                        print(f"inputd: refused uid {uid} (not the user at the screen)", flush=True)
+                        try:
+                            c.sendall((json.dumps({"e": "error", "msg": f"uid {uid} isn't the user logged in at the screen"}) + "\n").encode())
+                            c.close()
+                        except OSError:
+                            pass
+                        continue
                     self.clients.append(c)
                     bufs[c] = b""
                     for path, d in self.devices.items():

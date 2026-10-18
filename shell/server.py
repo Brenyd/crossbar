@@ -531,9 +531,10 @@ def route_post(path, b):
             raise RuntimeError("Couldn't upload the report — is the internet connected?")
         return {"url": url}
     if head == "update":
-        return {"cmd": "cd /tmp && rm -rf crossbar-main && "
+        # a fresh private folder each time (a leftover root-owned /tmp/crossbar-main broke updates)
+        return {"cmd": 'd=$(mktemp -d) && cd "$d" && '
                        "curl -fL https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz && "
-                       "cd crossbar-main && ./update-system.sh"}
+                       "cd crossbar-main && sudo ./update-system.sh"}
     if head == "installer":
         return system.open_installer()
     if head == "power":

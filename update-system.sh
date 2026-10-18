@@ -12,7 +12,14 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ $EUID -eq 0 ]] || exec sudo "$0" "$@"
-U=player
+# The user Crossbar runs as: whoever ran this through sudo, else whoever is at the screen.
+U="${SUDO_USER:-}"
+if [[ -z "$U" || "$U" == root ]]; then
+  U=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$4 ~ /seat/ {print $3; exit}')
+fi
+[[ -n "$U" && "$U" != root ]] || U=player
+UHOME=$(getent passwd "$U" | cut -d: -f6)
+echo "Updating Crossbar for user: $U ($UHOME)"
 
 step() { printf '\n\e[1m:: %s\e[0m\n' "$*"; }
 
@@ -69,8 +76,8 @@ if [[ -n "$SOCK" ]]; then
   pkill -u "$U" -f "/usr/lib/crossbar/overlay.py" || true
   sudo -u "$U" SWAYSOCK="$SOCK" swaymsg exit >/dev/null 2>&1 || true
   echo "Crossbar will come back in a few seconds."
-  ( sleep 15; sudo -u "$U" HOME=/home/$U /usr/local/bin/crossbar-doctor >/home/$U/crossbar-report.txt 2>&1 ) &
-  echo "A report will be saved to /home/$U/crossbar-report.txt (run: cat ~/crossbar-report.txt)"
+  ( sleep 15; sudo -u "$U" HOME="$UHOME" /usr/local/bin/crossbar-doctor >"$UHOME/crossbar-report.txt" 2>&1 ) &
+  echo "A report will be saved to $UHOME/crossbar-report.txt (run: cat ~/crossbar-report.txt)"
 else
   echo "Not in a Crossbar session right now; log in on tty1 to start it."
 fi

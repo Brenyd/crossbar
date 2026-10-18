@@ -4,7 +4,7 @@ After=systemd-udevd.service
 Wants=systemd-udevd.service
 
 [Service]
-Environment=CROSSBAR_USER=player
+# Serves whoever is logged in at the screen (checked per connection).
 ExecStartPre=-/usr/bin/modprobe uinput
 ExecStart=/usr/bin/python3 /usr/lib/crossbar/inputd.py
 Restart=always
