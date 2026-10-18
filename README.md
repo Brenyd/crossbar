@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.5
+# Crossbar — prototype 0.6
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -42,6 +42,20 @@ PAD=054c:0ce6 ./run-vm.sh       # pass a USB controller through (ids from `lsusb
 
 To install permanently, open **Settings › Install to Disk** from the live system
 (UEFI only, erases the chosen disk). See [docs/INSTALL.md](docs/INSTALL.md).
+
+### Updating without rebuilding the ISO
+
+Code changes in this repo include system parts (services, device rules, packages) that a
+plain `git pull` doesn't install. On a running Crossbar (live or installed):
+**Settings › System Settings › Update Crossbar**, or press Ctrl+Alt+T and run:
+
+```bash
+curl -L https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz
+cd crossbar-main && ./update-system.sh
+```
+
+It installs what's missing, restarts Crossbar, and saves a report to `~/crossbar-report.txt`.
+On the live ISO an update lasts until reboot — rebuild the ISO to make it permanent.
 
 ## Controls
 

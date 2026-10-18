@@ -300,11 +300,13 @@ const SETTINGS_FOLDERS = [
           } },
         { key: 'sys', label: 'System Information', icon: 'info', action: async () => {
           const i = await api.get('/api/sysinfo');
-          message(`${i.os}\nKernel ${i.kernel}\n${i.cpu}\nMemory ${i.memory}\nGames folder ${i.games_dir}`, 'System Information');
+          message(`Crossbar ${i.version}\n${i.os}\nKernel ${i.kernel}\n${i.cpu}\nMemory ${i.memory}\nGames folder ${i.games_dir}`, 'System Information');
         } },
         ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
           action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.5', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.5', 'About') },
+        { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
+          action: async () => { if (await confirmBox('Update Crossbar now?\nA terminal opens; Crossbar restarts when it finishes.')) call(() => api.post('/api/update')); } },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.6', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.6', 'About') },
       ];
     },
   },
@@ -312,4 +314,18 @@ const SETTINGS_FOLDERS = [
 
 CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return SETTINGS_FOLDERS; } });
 
+// After boot: if this is the Crossbar session but parts are missing (e.g. code
+// updated without rebuilding the ISO), say so plainly instead of half-working.
+async function checkComponents() {
+  const d = await api.get('/api/diagnostics').catch(() => null);
+  if (!d || !d.sway) return;
+  const missing = [];
+  if (!d.inputd) missing.push('controller service');
+  if (!d.overlay_window) missing.push('Quick Menu overlay');
+  if (missing.length) {
+    toast(`Not installed: ${missing.join(' and ')}. Settings › System Settings › Update Crossbar`, 'info');
+  }
+}
+
 boot();
+setTimeout(checkComponents, 12000);

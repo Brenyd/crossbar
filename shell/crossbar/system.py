@@ -167,6 +167,8 @@ def sysinfo():
         "cpu": cpu.group(1) if cpu else os.uname().machine,
         "memory": f"{int(mem.group(1)) // 1024} MB" if mem else "?",
         "games_dir": util.GAMES_DIR,
+        "version": open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")).read().strip()
+        if os.path.exists(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "VERSION")) else "dev",
     }
 
 

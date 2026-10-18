@@ -35,6 +35,10 @@ from crossbar.providers.steam import Steam  # noqa: E402
 from crossbar.spotify import SPOTIFY  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+try:
+    VERSION = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "VERSION")).read().strip()
+except OSError:
+    VERSION = "dev"
 REAL = {p.id: p for p in (Steam(), GOG(), Epic())}
 DEMO = {pid: Demo(pid) for pid in REAL}
 JOBS = JobManager()
@@ -118,6 +122,7 @@ def diagnostics():
         "grim": bool(util.which("grim")),
         "mpv": bool(util.which("mpv")),
         "event_stream_listeners": HUB.listeners(),
+        "version": VERSION,
         "overlay_window": quick.overlay_available(),
         "inputd": os.path.exists("/run/crossbar/input.sock"),
     }
@@ -372,6 +377,12 @@ def route_post(path, b):
         return r_tv(parts[1], b)
     if head == "browser":
         system.open_web(b.get("url") or "https://duckduckgo.com", "browser", app=False)
+        return {"ok": True}
+    if head == "update":
+        util.spawn(["foot", "--title", "Update Crossbar", "sh", "-c",
+                    "cd /tmp && rm -rf crossbar-main && "
+                    "curl -fL https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz && "
+                    "cd crossbar-main && ./update-system.sh; echo; echo 'Press Enter to close'; read x"])
         return {"ok": True}
     if head == "installer":
         system.open_installer()
