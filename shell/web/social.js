@@ -22,32 +22,54 @@ function openDiscord(msg) {
   return call(() => api.post('/api/discord/open'));
 }
 
-function browseServers(saved) {
+// Settings › Accounts › Discord: sign in, and pick which voice channels show up in Social
+// (none by default, so Social only lists the ones you use).
+function voiceChannelPicker() {
   return {
-    key: 'dc-browse', label: 'Browse Voice Channels', icon: 'folder', sub: 'Your servers — join, or add channels here',
+    key: 'dc-pick', label: 'Voice Channels in Social', icon: 'voice', sub: 'Choose which voice channels show up in Social',
     children: async () => {
+      const st = await api.get('/api/discord/state').catch(() => ({}));
+      const saved = st.saved || [];
       const guilds = await api.get('/api/discord/guilds').catch((e) => { toast(e.message, 'info'); return []; });
       if (!guilds.length) return [{ key: 'none', label: 'No servers found', icon: 'info', sub: 'Sign in to Discord first' }];
       return guilds.map((g) => ({
         key: `g:${g.id}`, label: g.name, icon: 'folder',
+        sub: (() => { const n = saved.filter((x) => x.guild_id === g.id).length; return n ? `${n} shown in Social` : 'None shown'; })(),
         children: async () => {
           const chans = await api.get(`/api/discord/channels?guild_id=${encodeURIComponent(g.id)}`).catch(() => []);
           if (!chans.length) return [{ key: 'none', label: 'No voice channels found', icon: 'info', sub: 'Collapsed categories hide channels: open Discord to expand them' }];
+          const now = (await api.get('/api/discord/state').catch(() => ({}))).saved || saved;
           return chans.map((c) => {
-            const ch = { id: c.id, name: c.name, guild: g.name, guild_id: g.id };
-            const isSaved = saved.some((x) => x.id === c.id);
-            return { key: `c:${c.id}`, label: c.name, icon: 'voice', badge: isSaved ? 'IN SOCIAL' : '',
-              sub: `${c.users ? `${c.users} in channel` : 'Empty'} · {ok} join · {menu} more`,
-              action: () => joinVoice(ch, null),
-              options: [{ label: 'Join', action: () => joinVoice(ch, null) },
-                        isSaved ? { label: 'Remove from Social', action: () => discordAction('remove', { id: c.id }, `Removed ${c.name}`) }
-                                : { label: 'Add to Social', action: () => discordAction('save', ch, `Added ${c.name} to Social`) }] };
+            const on = now.some((x) => x.id === c.id);
+            return { key: `c:${c.id}`, label: c.name, icon: on ? 'check' : 'voice', sub: on ? 'Shown in Social — {ok} to hide' : 'Hidden — {ok} to show',
+              action: async () => {
+                await call(() => api.post(`/api/discord/${on ? 'remove' : 'save'}`, { id: c.id, name: c.name, guild: g.name, guild_id: g.id }),
+                  on ? `${c.name} hidden` : `${c.name} shown in Social`);
+                reloadFolder();
+              } };
           });
         },
       }));
     },
   };
 }
+
+const DISCORD_ACCOUNT_FOLDER = {
+  key: 'discord', label: 'Discord', icon: 'voice', sub: 'Sign in, voice channels shown in Social',
+  children: async () => {
+    const d = await api.get('/api/discord/state').catch(() => ({}));
+    if (!d.signed_in) {
+      return [{ key: 'signin', label: 'Sign In to Discord', icon: 'voice', sub: 'Scan the QR code with the Discord app on your phone',
+        action: () => openDiscord('Scan the QR code with the Discord app on your phone, then come back with the Quick Menu') }];
+    }
+    return [
+      voiceChannelPicker(),
+      { key: 'open', label: 'Open Discord', icon: 'window', sub: 'Full client: chat, friends, Discord settings', action: () => openDiscord() },
+      { key: 'out', label: 'Sign Out on This Console', icon: 'account', sub: d.error ? `Not answering: ${d.error}` : 'Signed in',
+        action: async () => { if (await confirmBox('Sign out of Discord on this console?')) { await discordAction('signout'); reloadFolder(); } } },
+    ];
+  },
+};
 
 async function socialItems() {
   const items = [];
@@ -77,13 +99,12 @@ async function socialItems() {
                   { label: 'Remove from Social', action: () => discordAction('remove', { id: c.id }, `Removed ${c.name}`) }],
       });
     }
-    items.push(browseServers(d.saved || []));
+    if (!(d.saved || []).length) {
+      items.push({ key: 'dc-choose', label: 'Choose Voice Channels', icon: 'voice', sub: 'Pick which ones show here (Settings › Accounts › Discord)',
+        action: () => { openSettingsFolder('accounts'); setTimeout(() => openFolder(DISCORD_ACCOUNT_FOLDER), 400); } });
+    }
     items.push({ key: 'dc-open', label: 'Open Discord', icon: 'window', sub: 'Text chat, friends and settings — Quick Menu (Select + Start) to come back',
       action: () => openDiscord() });
-    items.push({ key: 'dc-acct', label: 'Discord on This Console', icon: 'account', sub: d.error ? `Not answering: ${d.error}` : 'Signed in',
-      action: () => Options.show([
-        { label: 'Open Discord', action: () => openDiscord() },
-        { label: 'Sign Out on This Console', action: async () => { if (await confirmBox('Sign out of Discord on this console?')) discordAction('signout'); } }]) });
   }
   // other voice apps (Mumble, TeamSpeak, Element…) and saved links, as before
   const pty = S.state.party;

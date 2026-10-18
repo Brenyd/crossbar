@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.10
+# Crossbar — prototype 0.11
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -13,7 +13,19 @@ anything mpv can, with a controller-friendly control panel.
 
 ![Music category](docs/music.png)
 
-### What's new
+### What's new in 0.11
+
+| | |
+|---|---|
+| ![Artwork picker](docs/artwork-picker.png) | ![Grouped settings](docs/settings-grouped.png) |
+| **Change Artwork** — any game or ROM, from SteamGridDB's community art (Y › Change Artwork…) | **Tidier Settings** — related sections grouped: Display & Sound, Network & Bluetooth, Games & Emulation… |
+| ![Discord channels](docs/discord-channels.png) | ![Quick Menu](docs/quick-menu-grouped.png) |
+| **Pick your voice channels** — Social only shows the ones you turn on in Settings › Accounts › Discord | **Shorter Quick Menu** — Sound and Performance open their own page; long lists scroll |
+
+Also: **Trophies** at the top of Game, a **frame rate overlay** for games (MangoHud), and on a PS5
+**ps5_control** is set up for fan modes and boost.
+
+### Earlier
 
 | | |
 |---|---|
@@ -112,7 +124,7 @@ your previous boot. `--no-autologin` installs without changing what boots. Updat
 
 Code changes in this repo include system parts (services, device rules, packages) that a
 plain `git pull` doesn't install. On a running Crossbar (live or installed):
-**Settings › System Settings › Update Crossbar**, or press Ctrl+Alt+T and run:
+**Settings › System › Update Crossbar**, or press Ctrl+Alt+T and run:
 
 ```bash
 curl -L https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz
@@ -156,7 +168,7 @@ the game reads the controller itself. Guide/PS always reaches the Quick Menu.
 
 ### If something isn't working
 
-**Settings › System Settings › Share Support Report** uploads a diagnostic report and shows a
+**Settings › System › Share Support Report** uploads a diagnostic report and shows a
 short link — paste that link when asking for help.
 
 ### If the controller works in the menu but not in videos, web apps or the Quick Menu
@@ -178,7 +190,12 @@ When the PS5 fan and LED kernel drivers are present, **Settings › PS5 Hardware
   everything including games (it never takes input).
 - **Fan Target Temperature** — 40–95 °C: the fan speeds up to keep the chip below it (lower = cooler,
   louder). Remembered and re-applied at every start.
-- **Fan Mode / Boost** — fixed patterns (On / Off / Max) through `ps5_control`, if it's installed.
+- **Fan Mode / Boost** — fixed patterns (On / Off / Max) through `ps5_control`. On a PS5, installing or
+  updating Crossbar downloads [ps5-linux/ps5-linux-tools](https://github.com/ps5-linux/ps5-linux-tools)
+  and builds `ps5_control` into /usr/local/sbin (`./ps5-tools.sh` does just that step; `--update`
+  rebuilds it). Its `ps5fan` / `ps5boost` services are installed but left off. It isn't shipped
+  inside Crossbar because that project has no license yet. Nothing else is touched: not the kernel,
+  drivers or boot setup.
 - **Front Light** — every colour and animation the LED driver offers.
 
 The Quick Menu has the temperatures (A shows/hides the overlay) and the fan target (◀ ▶).
@@ -205,17 +222,27 @@ Keyboard can give it to Crossbar instead). It has:
 - **Resume** / **Close** the game or video (closing returns you straight to the XMB)
 - **Go to Home** — the XMB, leaving the game open
 - **Now Playing** — your music or Spotify: ◀ ▶ skip, A play/pause
-- **Volume** (◀ ▶, A mutes), **Sound Output** switch, **Microphone** mute
+- **Volume** (◀ ▶, A mutes)
+- **Sound ▸** — its own page: **Sound Output** switch, **Microphone** mute, and **App Volume**: every
+  app playing sound right now (Spotify, a game, Discord, a video, YouTube…) with its own level
+  (◀ ▶ changes it, A mutes it). Also in Settings › Display & Sound › Sound › App Volume.
+- **Performance ▸** — **Frame Rate Overlay** (◀ ▶ Off / FPS only / FPS + frame time graph / Full with
+  CPU, GPU and temperatures; A turns it on or off), its **position**, and on a PS5 the
+  **Temperature Overlay** and **Fan Target**. Changes show up in the running game straight away.
 - **Switch App** — every open app and game, plus Crossbar: A switches to it, Y opens
   **Switch To / Close / Force Close** (force close ends a frozen app right away)
-- **Controller & Keyboard**, **Settings**
-- **App Volume** — every app playing sound right now (Spotify, a game, Discord, a video, YouTube…)
-  with its own level: ◀ ▶ changes it, A mutes it, plus the master volume. Also in
-  Settings › Sound › App Volume.
+- **Keyboard** — the on-screen keyboard, for apps that don't open it themselves
+- **Settings ▸** — jump to Controller & Keyboard, Display, Network or the full Settings
 - **Power…** — its own page that opens with **Cancel** selected: Restart Crossbar, Restart
   Computer, Turn Off Computer. A stray A press can't turn the machine off.
 
-B resumes what you were doing (or goes back a page).
+B goes back a page (back to the row you came from), or on the first page resumes what you were
+doing. When a page has more rows than fit on screen it scrolls, with ▲ / ▼ showing there's more.
+
+The **frame rate overlay** is [MangoHud](https://github.com/flightlessmango/MangoHud): games Crossbar
+starts load it hidden, so turning it on works mid-game. It works in Vulkan games, including Windows
+games through Proton. Steam games get it when Crossbar starts Steam (if Steam was already open,
+restart Steam once). Also in Settings › Games & Emulation › Game Settings › Frame Rate Overlay.
 
 If the Quick Menu ever fails to appear, Crossbar notices within a second and a half, gives the
 controller back and opens the menu inside the XMB instead.
@@ -223,19 +250,19 @@ controller back and opens the menu inside the XMB instead.
 **Game mode (saves memory):** when a game starts, the XMB window — a full browser and the biggest
 part of Crossbar — closes. The backend, Quick Menu, controller service, music, Spotify and Discord
 voice keep running, so everything in the Quick Menu still works. **Go to Home** (or quitting the
-game) brings the XMB back in a couple of seconds. Turn it off in Settings › Game Settings › Free
+game) brings the XMB back in a couple of seconds. Turn it off in Settings › Games & Emulation › Game Settings › Free
 Memory While Gaming. (It stays off if the Quick Menu overlay isn't available, so there's always a
 way back.)
 **While a video plays** (panel hidden): A pause · ◀/▶ seek −10 s/+30 s · ▲/▼ volume ·
 L1/R1 previous/next · Y show panel · B jump to Stop. With the panel open, ◀/▶ pick a
 button (previous, rewind, play/pause, forward, next, subtitles, audio track, stop), A presses
-it, B hides it. Videos resume where you stopped (toggle in Settings › Media Settings).
+it, B hides it. Videos resume where you stopped (toggle in Settings › Media).
 
 **Photo viewer:** ◀/▶ browse · A slideshow · Y hide captions · B back.
 
 ## Music, Video, Photo
 
-Pick your library folders in **Settings › Media Settings** (defaults `~/Music`, `~/Videos`,
+Pick your library folders in **Settings › Media** (defaults `~/Music`, `~/Videos`,
 `~/Pictures`; any drive under `/run/media` or `/mnt` works). Browse by folder, or use
 **All Songs / All Videos**.
 
@@ -279,7 +306,8 @@ Things are found by their accessibility labels, not screen positions, so Discord
 rarely break it; if one does, an action reports "couldn't find" and **Open Discord** still works.
 
 1. **Social › Sign In to Discord**: Discord shows a QR code; scan it with the Discord app on your phone.
-2. **Social › Browse Voice Channels** › a server › a channel: A joins; Y › **Add to Social** pins it.
+2. **Settings › Accounts › Discord › Voice Channels in Social** › a server: every voice channel is
+   hidden until you turn it on here (A shows / hides it), so Social only lists the ones you use.
 3. **Open Discord** shows the full client (text chat, friends) with controller keys and the
    on-screen keyboard; the Quick Menu brings you back.
 
@@ -299,7 +327,7 @@ Close to quit. Folder layout is EmuDeck's, so an existing EmuDeck folder works a
 ~/Emulation/bios/            BIOS / firmware files
 ```
 
-**Settings › Emulation**: the folder, **BIOS Files** (checked per system, with what's missing),
+**Settings › Games & Emulation › Emulation**: the folder, **BIOS Files** (checked per system, with what's missing),
 **Emulator Settings & Controls** (opens each emulator to map buttons; pads are detected
 automatically), **Default Emulator per System**, **Aspect Ratio**, **Pixel-Perfect Scaling** and
 **RetroAchievements** (sign in once; emulators get a login token, not your password). Crossbar writes
@@ -320,9 +348,18 @@ In other apps it opens by itself in apps that support Wayland's text-input (GTK,
 own web windows like Discord and TV apps), typing any character; anywhere else use **Quick Menu ›
 Keyboard**. It stays away from Steam, which has its own.
 
+## Artwork (SteamGridDB)
+
+Highlight any game — Steam, GOG, Epic or a ROM — press **Y** and choose **Change Artwork…** to pick
+from [SteamGridDB](https://www.steamgriddb.com)'s community artwork, search under a different name,
+or go back to the original. Needs a free API key (steamgriddb.com › sign in › Preferences › API),
+added in **Settings › Games & Emulation › Artwork**. With the key, games that have no picture (most
+ROMs, some GOG / Epic games) get one automatically in the background (turn off with **Fill In
+Missing Artwork**). Your picks are kept in Crossbar's settings; **Reset All Artwork** undoes them.
+
 ## Games
 
-Sign in to **Steam, GOG and Epic** in **Settings › Account Settings**; your libraries then show
+Sign in to **Steam, GOG and Epic** in **Settings › Accounts**; your libraries then show
 in **Store**, and installed games in **Game**.
 
 - If Steam isn't running yet — or is updating itself — Crossbar starts it first, shows Steam's
@@ -336,14 +373,14 @@ in **Store**, and installed games in **Game**.
 - **GOG** Windows games install from GOG's own installers (unpacked with innoextract) and run with
   Proton through **umu-launcher**; native Linux builds are used when GOG has one.
 - **Epic** games run through the same Proton setup (legendary + umu).
-- **Settings › Game Settings › Windows Games**: choose the default tool (UMU-Proton, newest
+- **Settings › Games & Emulation › Game Settings › Windows Games**: choose the default tool (UMU-Proton, newest
   GE-Proton, a GE-Proton version you download there, Steam's Proton, or Wine). Per game:
   Y › *Compatibility Tool…*. Each game gets its own prefix in `~/Games/prefixes`.
 - Closing a game from the Quick Menu asks it to quit, and ends it if it hangs.
 
 Launching shows a *Starting…* screen until the game's window appears, then hands over. Steam runs
 in the background with its library window tucked away, and **Steam's overlay works normally**
-inside Steam games. GOG and Epic games can optionally run in gamescope (Settings › Game Settings).
+inside Steam games. GOG and Epic games can optionally run in gamescope (Settings › Games & Emulation › Game Settings).
 When a game closes you're back in the menu.
 
 ## Files, network drives, IPTV
@@ -358,7 +395,7 @@ When a game closes you're back in the menu.
   under `/mnt/nas/<name>` (with `nofail`, so an offline NAS never blocks boot); the password lives in
   a root-only file in `/etc/crossbar/nas/`, never in fstab. Use a drive as your Music/Video/Photo
   folder from its options.
-- **IPTV (Xtream Codes)** — **Settings › Media Settings › IPTV**: sign in with the server, username
+- **IPTV (Xtream Codes)** — **Settings › Media › IPTV**: sign in with the server, username
   and password from your provider, then choose which **Live TV**, **Movie** and **TV Show**
   categories appear (and hide channels you don't want). Live TV shows under TV & Video Services
   (L1/R1 change channel while watching); Movies and TV Shows under Video.
@@ -369,6 +406,10 @@ When a game closes you're back in the menu.
 
 ## Settings
 
+The Settings column groups related sections: **Display & Sound**, **Network & Bluetooth**,
+**Controller & Keyboard**, **Games & Emulation** (Game Settings, Artwork, Emulation), **Media**,
+**Accounts**, **Theme & Time** and **System** (with PS5 Hardware on a PS5).
+
 | Section | What's in it |
 |---|---|
 | Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep. Screens that report no modes get common sizes as custom modes, rate shown as Auto |
@@ -376,11 +417,12 @@ When a game closes you're back in the menu.
 | Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
-| Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, demo library |
+| Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, frame rate overlay, demo library |
+| Artwork | SteamGridDB API key, fill in missing artwork, reset all |
 | Theme | Background colour, or automatic by month |
 | Media | Music / Video / Photo folders, IPTV, resume videos, subtitles default |
 | Date & Time | Time zone, automatic time, 12/24-hour clock |
-| Accounts | Steam, GOG, Epic sign-in; Spotify; Discord; user name |
+| Accounts | Steam, GOG, Epic sign-in; Spotify; Discord (sign in, which voice channels show in Social); user name |
 | System | Terminal, **Restart Crossbar** (restarts every Crossbar piece — useful while testing), **Exit Crossbar**, update, share support report, system information, install to disk |
 
 Everything is set inside Crossbar — no separate settings apps. Under the hood these are the same
@@ -436,7 +478,6 @@ Boot path: autologin `player` on tty1 → sway (tabbed, so one app is visible at
 
 - GOG Windows-only games and Epic games run through plain Wine; Proton/umu integration is next.
 - Steam owned-games listing needs a Web API key; a QR/password login through the client would be smoother.
-- No on-screen keyboard yet — text fields (Wi-Fi password, Spotify Client ID, search) need a physical keyboard.
 - Netflix/Disney+/Spotify's web player need Widevine DRM, which Arch's Chromium doesn't ship.
 - In the YouTube TV interface the controller works only if the site picks it up; arrow keys always work.
 - The installer erases the whole disk (no dual-boot), and NVIDIA drivers aren't included yet.

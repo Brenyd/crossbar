@@ -18,6 +18,12 @@ def kind_of(app):
     return "App" if "chrom" in (app.get("app") or "").lower() else "Game"
 
 
+PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings"}
+FPS_MODES = ["off", "fps", "graph", "full"]
+FPS_NAMES = {"off": "Off", "fps": "FPS", "graph": "FPS + frame time", "full": "FPS, frame time, CPU/GPU"}
+CORNERS = ["top-right", "top-left", "bottom-left", "bottom-right"]
+
+
 class Model:
     """api: object with get(path) -> dict and post(path, body) -> dict."""
 
@@ -25,7 +31,7 @@ class Model:
         self.api = api
         self.data = {}
         self.armed = None          # "close" while waiting for the confirming second press
-        self.page = "main"         # main | apps | app | power | mixer
+        self.page = "main"         # main | apps | app | power | sound | perf | settings
         self.app = None            # the app picked in the switcher
         self.sel = 0
         self.rows = []
@@ -52,8 +58,8 @@ class Model:
             return self.app["title"]
         if self.page == "power":
             return "Power"
-        if self.page == "mixer":
-            return "App Volume"
+        if self.page in PAGE_TITLES:
+            return PAGE_TITLES[self.page]
         app = self.data.get("app")
         return app["title"] if app else "Crossbar"
 
@@ -76,9 +82,27 @@ class Model:
             return self.build_app()
         if self.page == "power":
             return self.build_power()
-        if self.page == "mixer":
-            return self.build_mixer(d)
+        if self.page == "sound":
+            return self.build_sound(d)
+        if self.page == "perf":
+            return self.build_perf(d)
+        if self.page == "settings":
+            return self.build_settings()
         return self.build_main(d)
+
+    def build_sound(self, d):
+        api, rows = self.api, []
+        if len(d.get("outputs") or []) > 1:
+            rows.append({"key": "out", "icon": "audio-speakers-symbolic", "label": "Sound Output",
+                         "sub": (d.get("output") or {}).get("name") or "Default", "hint": "{ok} switch",
+                         "ok": self._next_output})
+        mic = (d.get("audio") or {}).get("mic") or {}
+        if mic.get("volume") is not None:
+            rows.append({"key": "mic", "icon": "audio-input-microphone-symbolic", "label": "Microphone",
+                         "sub": "Muted" if mic.get("muted") else f"{mic['volume']}%", "hint": "{ok} mute",
+                         "ok": lambda: (api.post("/api/audio", {"target": "mic", "mute": True}), self.refresh())})
+        rows += self.build_mixer(d)
+        return rows
 
     def build_mixer(self, d):
         api, rows = self.api, []
@@ -100,7 +124,7 @@ class Model:
             rows.append({"key": "mix:none", "icon": "audio-volume-muted-symbolic", "label": "Nothing is playing sound",
                          "sub": "Apps show up here while they play audio", "ok": lambda: self.go("main")})
         out = (d.get("audio") or {}).get("output") or {}
-        if out.get("volume") is not None:
+        if out.get("volume") is not None and self.page != "sound":
             def vol(delta):
                 api.post("/api/audio", {"target": "output", "delta": delta})
                 self.refresh()
@@ -209,14 +233,59 @@ class Model:
                          "bar": 0 if out.get("muted") else min(1, out["volume"] / 100), "hint": "◀ ▶ adjust · {ok} mute",
                          "ok": lambda: (api.post("/api/audio", {"target": "output", "mute": True}), self.refresh()),
                          "adjust": lambda d_: vol(5 if d_ > 0 else -5)})
-        ps5 = d.get("ps5") or {}
+        rows.append({"key": "sound", "icon": "multimedia-volume-control-symbolic", "label": "Sound",
+                     "sub": self._sound_sub(d), "ok": lambda: self.go("sound")})
+        rows.append({"key": "perf", "icon": "utilities-system-monitor-symbolic", "label": "Performance",
+                     "sub": self._perf_sub(d), "ok": lambda: self.go("perf")})
+        wins = d.get("windows") or []
+        rows.append({"key": "apps", "icon": "view-app-grid-symbolic", "label": "Switch App",
+                     "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
+        rows.append({"key": "osk", "icon": "input-keyboard-symbolic", "label": "Keyboard",
+                     "sub": "Type into the app with the controller", "ok": self._keyboard})
+        rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings",
+                     "sub": "Controller, all settings", "ok": lambda: self.go("settings")})
+        rows.append({"key": "power", "icon": "system-shutdown-symbolic", "label": "Power",
+                     "sub": "Restart Crossbar, restart or turn off", "ok": lambda: self.go("power")})
+        return rows
+
+    def _sound_sub(self, d):
+        n = len(d.get("apps_audio") or [])
+        out = (d.get("output") or {}).get("name")
+        return " · ".join(x for x in (out, f"{n} app{'s' if n != 1 else ''} playing" if n else "") if x) or "Outputs, microphone, app volume"
+
+    def _perf_sub(self, d):
+        perf, ps5 = d.get("perf") or {}, d.get("ps5") or {}
+        parts = [f"Frame rate: {FPS_NAMES.get(perf.get('fps', 'off'), 'Off')}"]
+        t = (ps5.get("temps") or {}) if ps5.get("available") else {}
+        if t.get("cpu") is not None:
+            parts.append(f"CPU {t['cpu']}°")
+        return " · ".join(parts)
+
+    def build_perf(self, d):
+        api, rows = self.api, []
+        perf, ps5 = d.get("perf") or {}, d.get("ps5") or {}
+        mode = perf.get("fps", "off")
+
+        def set_fps(m):
+            api.post("/api/perf/fps", {"mode": m})
+            self.refresh()
+        if perf.get("available"):
+            i = FPS_MODES.index(mode) if mode in FPS_MODES else 0
+            rows.append({"key": "fps", "icon": "utilities-system-monitor-symbolic", "label": "Frame Rate Overlay",
+                         "sub": FPS_NAMES[mode] + ("" if mode == "off" else " — shows in games"),
+                         "hint": "◀ ▶ choose · {ok} on/off",
+                         "ok": lambda: set_fps("off" if mode != "off" else (perf.get("last") or "fps")),
+                         "adjust": lambda d_: set_fps(FPS_MODES[(i + (1 if d_ > 0 else -1)) % len(FPS_MODES)])})
+        else:
+            rows.append({"key": "fps", "icon": "utilities-system-monitor-symbolic", "label": "Frame Rate Overlay",
+                         "sub": "Needs MangoHud (Settings › System › Update Crossbar installs it)"})
         if ps5.get("available"):
             t = ps5.get("temps") or {}
             parts = [f"{k.upper() if k != 'nvme' else 'NVMe'} {v}°" for k, v in (("cpu", t.get("cpu")), ("gpu", t.get("gpu")), ("nvme", t.get("nvme"))) if v is not None]
             hot = max([v for v in t.values() if v is not None] or [0])
             rows.append({"key": "temps", "icon": "temperature-symbolic" if hot < 80 else "dialog-warning-symbolic",
-                         "label": "Temperatures", "sub": " · ".join(parts) or "No sensors",
-                         "hint": "{ok} " + ("hide" if ps5.get("hud") else "show") + " on screen",
+                         "label": "Temperature Overlay", "sub": (" · ".join(parts) or "No sensors") + (" · on screen" if ps5.get("hud") else ""),
+                         "hint": "{ok} " + ("hide" if ps5.get("hud") else "show"),
                          "ok": lambda: (api.post("/api/ps5/hud", {"on": not ps5.get("hud")}), self.refresh())})
             if ps5.get("fan_target") is not None:
                 lo, hi = ps5.get("target_range") or (40, 95)
@@ -226,31 +295,25 @@ class Model:
                                     else f"Fixed pattern: {ps5['fan_mode']}",
                              "bar": (ft - lo) / (hi - lo), "hint": "◀ ▶ adjust",
                              "adjust": lambda d_: (api.post("/api/ps5/fan-target", {"delta": 5 if d_ > 0 else -5}), self.refresh())})
-        n = len(d.get("apps_audio") or [])
-        rows.append({"key": "mixer", "icon": "multimedia-volume-control-symbolic", "label": "App Volume",
-                     "sub": f"{n} app{'s' if n != 1 else ''} playing sound" if n else "Nothing playing right now",
-                     "ok": lambda: self.go("mixer")})
-        if len(d.get("outputs") or []) > 1:
-            rows.append({"key": "out", "icon": "audio-speakers-symbolic", "label": "Sound Output",
-                         "sub": (d.get("output") or {}).get("name") or "Default", "hint": "{ok} switch",
-                         "ok": self._next_output})
-        mic = (d.get("audio") or {}).get("mic") or {}
-        if mic.get("volume") is not None:
-            rows.append({"key": "mic", "icon": "audio-input-microphone-symbolic", "label": "Microphone",
-                         "sub": "Muted" if mic.get("muted") else f"{mic['volume']}%", "hint": "{ok} mute",
-                         "ok": lambda: (api.post("/api/audio", {"target": "mic", "mute": True}), self.refresh())})
-        wins = d.get("windows") or []
-        rows.append({"key": "apps", "icon": "view-app-grid-symbolic", "label": "Switch App",
-                     "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
-        rows.append({"key": "osk", "icon": "input-keyboard-symbolic", "label": "Keyboard",
-                     "sub": "Type into the app with the controller", "ok": self._keyboard})
-        rows.append({"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller & Keyboard", "sub": "Button mapping",
-                     "ok": lambda: api.post("/api/overlay/settings", {"folder": "controls"})})
-        rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings", "sub": "Display, sound, network…",
-                     "ok": lambda: api.post("/api/overlay/settings", {"folder": ""})})
-        rows.append({"key": "power", "icon": "system-shutdown-symbolic", "label": "Power…",
-                     "sub": "Restart Crossbar, restart or turn off", "ok": lambda: self.go("power")})
+        corner = perf.get("corner", "top-right")
+        ci = CORNERS.index(corner) if corner in CORNERS else 0
+        rows.append({"key": "corner", "icon": "view-restore-symbolic", "label": "Overlay Position",
+                     "sub": corner.replace("-", " ").capitalize(), "hint": "◀ ▶ move",
+                     "adjust": lambda d_: (api.post("/api/perf/corner", {"corner": CORNERS[(ci + (1 if d_ > 0 else -1)) % 4]}), self.refresh())})
         return rows
+
+    def build_settings(self):
+        api = self.api
+        return [
+            {"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller & Keyboard", "sub": "Button mapping, glyphs",
+             "ok": lambda: api.post("/api/overlay/settings", {"folder": "controls"})},
+            {"key": "display", "icon": "video-display-symbolic", "label": "Display & Sound", "sub": "Resolution, outputs",
+             "ok": lambda: api.post("/api/overlay/settings", {"folder": "display"})},
+            {"key": "net", "icon": "network-wireless-symbolic", "label": "Network & Bluetooth", "sub": "Wi-Fi, pairing",
+             "ok": lambda: api.post("/api/overlay/settings", {"folder": "network"})},
+            {"key": "all", "icon": "emblem-system-symbolic", "label": "All Settings", "sub": "Opens Settings in the menu",
+             "ok": lambda: api.post("/api/overlay/settings", {"folder": ""})},
+        ]
 
     # ---- actions --------------------------------------------------------------
     def _close_app(self):

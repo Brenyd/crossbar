@@ -198,9 +198,10 @@ class Gamepads:
           "!": ("1", True), "@": ("2", True), "#": ("3", True), "$": ("4", True), "%": ("5", True),
           "^": ("6", True), "&": ("7", True), "*": ("8", True), "(": ("9", True), ")": ("0", True)}
     SPECIAL = {"backspace": "BACKSPACE", "enter": "ENTER", "left": "LEFT", "right": "RIGHT", "up": "UP",
-               "down": "DOWN", "tab": "TAB", "esc": "ESC", "home": "HOME", "end": "END", "delete": "DELETE"}
+               "down": "DOWN", "tab": "TAB", "esc": "ESC", "home": "HOME", "end": "END", "delete": "DELETE",
+               "f4": "F4", "f12": "F12"}
 
-    def type_keys(self, text="", special=None):
+    def type_keys(self, text="", special=None, shift=False):
         """Type text (US layout) or one special key through the virtual keyboard."""
         import evdev
         ec = evdev.ecodes.ecodes
@@ -208,7 +209,7 @@ class Gamepads:
         if special:
             name = self.SPECIAL.get(special)
             if name:
-                seq.append([ec["KEY_" + name], False])
+                seq.append([ec["KEY_" + name], bool(shift)])
         for ch in text[:256]:
             k = self.US.get(ch)
             if k:

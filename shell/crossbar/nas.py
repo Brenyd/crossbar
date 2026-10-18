@@ -1,4 +1,4 @@
-"""Network drives (Settings › Network Settings › Network Drives).
+"""Network drives (Settings › Network & Bluetooth › Network › Network Drives).
 
 Reading is done here (fstab is world-readable); changes go through the root
 helper admin.py via pkexec, which polkit allows for the console user.

@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import compat, controls, emulation, files, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import artwork, compat, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -79,7 +79,7 @@ def installed_games():
     played = cfg.get("last_played", {})
     with ThreadPoolExecutor(3) as ex:
         results = list(ex.map(lambda p: safe(p.installed, []), providers().values()))
-    games = [g for r in results for g in r]
+    games = artwork.apply([g for r in results for g in r])
     for g in games:
         g["last_played"] = played.get(f"{g['provider']}:{g['id']}", 0)
     # most recently played first, like the original
@@ -97,6 +97,7 @@ def state():
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
                       for p in providers().values()],
         "party": {**cfg["party"], "services": party.services()},
+        "perf": perf.status(),
         "jobs": JOBS.list(),
         "windows": system.windows(),
         "live": system.is_live(),
@@ -304,6 +305,7 @@ def r_search(q):
     for p in providers().values():
         if safe(lambda: p.status()["linked"], False):
             out += [g for g in safe(p.library, []) if q in g["title"].lower()]
+    artwork.apply(out)
     return sorted(out, key=lambda g: g["title"].lower())
 
 
@@ -335,7 +337,10 @@ GET = {
     "/api/audio": lambda q: system.audio(),
     "/api/sysinfo": lambda q: system.sysinfo(),
     "/api/search": lambda q: r_search(q.get("q", "")),
-    "/api/library": lambda q: provider(q.get("provider", "")).library(),
+    "/api/library": lambda q: artwork.apply(provider(q.get("provider", "")).library()),
+    "/api/art": lambda q: artwork.status(),
+    "/api/art/search": lambda q: artwork.search(q.get("q", "")),
+    "/api/art/grids": lambda q: artwork.grids(game_id=q.get("game_id"), steam_appid=q.get("steam_appid")),
     "/api/media/list": lambda q: media.listdir(q["kind"], q.get("path") or None),
     "/api/media/scan": lambda q: media.scan(q["kind"]),
     "/api/fs": lambda q: media.browse_dirs(q.get("path") or None),
@@ -352,7 +357,7 @@ GET = {
     "/api/emulation/emulators": lambda q: emulation.emulators(),
     "/api/emulation/systems": lambda q: emulation.systems_with_games(),
     "/api/emulation/all-systems": lambda q: [{"id": k, "name": s["name"], "exts": s["exts"]} for k, s in emulation.SYSTEMS.items()],
-    "/api/emulation/games": lambda q: emulation.games(q["system"]),
+    "/api/emulation/games": lambda q: artwork.apply(emulation.games(q["system"]), lambda g, s=q["system"]: f"rom:{s}:{g['id']}"),
     "/api/emulation/bios": lambda q: emulation.bios_status(),
     "/api/emulation/choices": lambda q: emulation.choices(q["system"]),
     "/api/ps5/temps": lambda q: ps5hw.temps(),
@@ -526,6 +531,17 @@ def route_post(path, b):
         return {"ok": True}
     if head == "trophies" and len(parts) > 1 and parts[1] == "steam-setup":
         return trophies.steam_setup(b.get("key"), b.get("steamid", ""))
+    if head == "art":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "set":
+            return artwork.set_override(b["key"], b["url"])
+        if what == "reset":
+            return artwork.reset(b["key"])
+        if what == "reset-all":
+            return artwork.reset_all()
+        if what == "settings":
+            return artwork.set_settings(key=b.get("key"), auto=b.get("auto"))
+        raise KeyError(path)
     if head == "emulation":
         what = parts[1] if len(parts) > 1 else ""
         if what == "install":
@@ -570,6 +586,18 @@ def route_post(path, b):
             util.update_config(lambda c: c.setdefault("emulation", {}).setdefault("emulator", {}).__setitem__(b["system"], b["value"]))
             return {"ok": True}
         raise KeyError(what)
+    if head == "perf":
+        def reload_key():
+            # only into a game (never the menu or another app): MangoHud's "reload config" keys
+            if PADS._target(fresh=True) == "app":
+                PADS.type_keys(special="f4", shift=True)
+        if parts[1] == "fps":
+            return perf.set_mode(b["mode"], reload_key)
+        if parts[1] == "corner":
+            ps5hw.set_hud(corner=b["corner"])          # the temperature overlay moves with it
+            HUB.publish({"type": "ps5-hud"})
+            return perf.set_corner(b["corner"], reload_key)
+        raise KeyError(parts[1])
     if head == "osk":
         what = parts[1] if len(parts) > 1 else ""
         if what == "show":                 # the system keyboard (overlay) opened / closed
@@ -884,6 +912,7 @@ def main():
             except Exception as e:
                 print(f"discord: {e}", flush=True)
     threading.Thread(target=background_start, daemon=True).start()
+    artwork.on_change = lambda: HUB.publish({"type": "art"})
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"crossbard listening on http://127.0.0.1:{a.port} (demo={demo_on()})", flush=True)
     srv.serve_forever()

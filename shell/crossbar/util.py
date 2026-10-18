@@ -151,7 +151,9 @@ def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5):
     start = log.tell()
     if os.environ.get("CROSSBAR_WRAP") == "gamescope" and shutil.which("gamescope"):
         argv = ["gamescope", "-f", "--", *argv]
-    p = subprocess.Popen(argv, cwd=cwd, env={**os.environ, **(env or {})}, stdin=subprocess.DEVNULL,
+    from . import perf
+    env = {**perf.env(), **(env or {})}           # frame-rate overlay (hidden unless turned on)
+    p = subprocess.Popen(argv, cwd=cwd, env={**os.environ, **env}, stdin=subprocess.DEVNULL,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     log.close()
     end = time.time() + wait

@@ -60,6 +60,15 @@
 - [x] Discord rebuilt on its own web client: voice channels in Social without a developer app
 - [x] XMB spacing: rows below a big highlighted tile, rows under the button hints
 
+## 0.11
+- [x] Quick Menu grouped into pages (Sound, Performance, Settings); long pages scroll instead of overflowing
+- [x] Settings column grouped (Display & Sound, Network & Bluetooth, Games & Emulation, Theme & Time, System)
+- [x] Trophies at the top of Game
+- [x] Discord: voice channels hidden by default, chosen in Settings › Accounts › Discord
+- [x] SteamGridDB artwork: change any game's or ROM's picture, fill in missing art
+- [x] Frame rate overlay (MangoHud) from the Quick Menu
+- [x] PS5: ps5_control built at install/update time (services left off)
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

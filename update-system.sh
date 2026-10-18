@@ -84,6 +84,11 @@ systemctl restart crossbar-inputd.service
 sleep 1
 systemctl is-active --quiet crossbar-inputd && echo "crossbar-inputd: running" || { echo "crossbar-inputd FAILED:"; journalctl -u crossbar-inputd -n 15 --no-pager; }
 
+if "$HERE/ps5-tools.sh" detect 2>/dev/null; then
+  step "PS5: fan and boost tool (ps5_control)"
+  "$HERE/ps5-tools.sh" || echo "warning: ps5_control not installed (Crossbar works without it)"
+fi
+
 if [[ -n "${CROSSBAR_NO_RESTART:-}" ]]; then exit 0; fi
 step "Restarting Crossbar"
 UID_U=$(id -u "$U")

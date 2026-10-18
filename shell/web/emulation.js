@@ -1,5 +1,5 @@
 'use strict';
-// Game › Emulation (Emulators, ROMs) and Settings › Emulation. EmuDeck-style folders:
+// Game › Emulation (Emulators, ROMs) and Settings › Games & Emulation › Emulation. EmuDeck-style folders:
 // ~/Emulation/roms/<system> for games, ~/Emulation/bios for BIOS files.
 
 const ASPECT_NAMES = { auto: 'Original (as the game intended)', '4:3': '4:3', '16:9': '16:9 (widescreen)', stretch: 'Stretch to fill' };
@@ -67,9 +67,10 @@ function romsFolder() {
         key: `sys:${sys.id}`, label: sys.name, icon: 'folder', sub: `${sys.count} game${sys.count === 1 ? '' : 's'}`,
         options: [{ label: 'Choose Emulator', action: () => chooseEmulator(sys) }],
         children: async () => (await api.get(`/api/emulation/games?system=${sys.id}`)).map((g) => ({
-          key: `rom:${g.id}`, label: g.title, art: '', artTitle: g.title, sub: g.tags || sys.name,
+          key: `rom:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, sub: g.tags || sys.name,
           action: () => launchRom(sys, g),
-          options: [{ label: 'Play', action: () => launchRom(sys, g) }, { label: 'Choose Emulator', action: () => chooseEmulator(sys) }],
+          options: [{ label: 'Play', action: () => launchRom(sys, g) }, { label: 'Choose Emulator', action: () => chooseEmulator(sys) },
+            { label: 'Change Artwork…', action: () => changeArtwork({ key: `rom:${sys.id}:${g.id}`, title: g.title, custom: !!g.art_custom }) }],
         })),
       }));
     },
@@ -81,7 +82,7 @@ const EMULATION_FOLDER = {
   children: async () => [romsFolder(), emulatorsFolder()],
 };
 
-// ---- Settings › Emulation -----------------------------------------------------------------------
+// ---- Settings › Games & Emulation › Emulation -----------------------------------------------------------------------
 async function raSignIn() {
   const r = await Dialog.ask({ title: 'RetroAchievements', buttons: ['Sign In', 'Cancel'],
     body: 'Your retroachievements.org account. The password is only used to sign in; emulators get a token.\nThe Web API key (retroachievements.org › Settings) lets Trophies show your progress.',

@@ -78,6 +78,7 @@ def css(scale):
     .notice {{ color: white; font-size: {px(17)}; margin-top: {px(8)}; }}
     progressbar trough {{ min-height: {px(4)}; background: rgba(255,255,255,0.18); border: none; }}
     progressbar progress {{ min-height: {px(4)}; background: white; border: none; }}
+    .more {{ color: rgba(255,255,255,0.55); font-size: {px(16)}; }}
     image {{ color: inherit; }}
     """
 
@@ -145,6 +146,9 @@ class Overlay(Gtk.Application):
         win.add_controller(keys)
 
         self.win, self.scale = win, scale
+        # rows that fit between the header and the footer; the list scrolls past that
+        self.max_rows = max(4, int((height - 330 * scale) / (92 * scale)))
+        self.offset = 0
         self.make_hud(scale)
         self.glyph_data = {}
         self.osk = OskWindow(self, self.api, lambda t: glyphs.render(t, self.glyph_data or self.model.data.get("glyphs")), scale)
@@ -253,7 +257,21 @@ class Overlay(Gtk.Application):
             nxt = child.get_next_sibling()
             self.rows.remove(child)
             child = nxt
+        # scroll: keep the selected row in view, show ▲ / ▼ when there's more
+        n = self.max_rows
+        if m.sel < self.offset:
+            self.offset = m.sel
+        elif m.sel >= self.offset + n:
+            self.offset = m.sel - n + 1
+        self.offset = max(0, min(self.offset, max(0, len(m.rows) - n)))
+        more_up, more_down = self.offset > 0, self.offset + n < len(m.rows)
+        if more_up:
+            up = Gtk.Label(label="▲")
+            up.add_css_class("more")
+            self.rows.append(up)
         for i, r in enumerate(m.rows):
+            if i < self.offset or i >= self.offset + n:
+                continue
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=int(16 * self.scale))
             row.add_css_class("row")
             if i == m.sel:
@@ -285,6 +303,10 @@ class Overlay(Gtk.Application):
                 hint.add_css_class("hint")
                 row.append(hint)
             self.rows.append(row)
+        if more_down:
+            down = Gtk.Label(label="▼")
+            down.add_css_class("more")
+            self.rows.append(down)
         return False
 
     # ---- input -----------------------------------------------------------------

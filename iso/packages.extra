@@ -50,6 +50,8 @@ wireplumber
 flatpak
 steam
 gamescope
+mangohud
+lib32-mangohud
 # Windows games (GOG / Epic) through Proton
 umu-launcher
 innoextract

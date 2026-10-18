@@ -1,6 +1,6 @@
 'use strict';
 // IPTV (Xtream): Live TV under TV & Video Services, Movies + TV Shows under Video.
-// What shows up is chosen in Settings › Media Settings › IPTV.
+// What shows up is chosen in Settings › Media › IPTV.
 
 const IPTV_KIND = { live: 'Live TV', vod: 'Movies', series: 'TV Shows' };
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -12,7 +12,7 @@ async function iptvPlay(body, label) {
 
 function iptvSetupItem(kind) {
   return { key: `iptv-setup-${kind}`, label: `Choose ${IPTV_KIND[kind]} Categories`, icon: 'settings',
-    sub: 'Pick what shows here in Settings › Media Settings › IPTV', action: () => openIptvSettings(kind) };
+    sub: 'Pick what shows here in Settings › Media › IPTV', action: () => openIptvSettings(kind) };
 }
 
 function iptvTopFolder(kind) {
@@ -64,7 +64,7 @@ async function iptvItems(kind, cat) {
   return kind === 'live' ? list.map(make) : iptvPaged(list, make);
 }
 
-// ---- Settings › Media Settings › IPTV ------------------------------------------------
+// ---- Settings › Media › IPTV ------------------------------------------------
 async function iptvLogin() {
   const st = S.state.iptv || {};
   const r = await Dialog.ask({ title: 'IPTV Sign In (Xtream Codes)', buttons: ['Sign In', 'Cancel'],

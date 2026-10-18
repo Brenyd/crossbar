@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 
-from . import glyphs, ps5hw, player, system, util
+from . import glyphs, perf, ps5hw, player, system, util
 from .events import HUB
 from .spotify import SPOTIFY
 
@@ -212,6 +212,7 @@ def info():
         "audio": system.audio(),
         "apps_audio": system.app_streams(),
         "ps5": ps5hw.status() if ps5hw.available() else None,
+        "perf": perf.status(),
         "glyphs": glyphs.current(),
         "output": next((d for d in devices["outputs"] if d["default"]), None),
         "outputs": devices["outputs"],

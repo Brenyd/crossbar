@@ -59,6 +59,7 @@ def is_virtual(d):
 TYPING_KEYS = sorted(set(range(E.KEY_ESC, E.KEY_SLASH + 1)) | {
     E.KEY_SPACE, E.KEY_LEFTSHIFT, E.KEY_RIGHTSHIFT, E.KEY_LEFTCTRL, E.KEY_LEFTALT, E.KEY_CAPSLOCK,
     E.KEY_UP, E.KEY_DOWN, E.KEY_LEFT, E.KEY_RIGHT, E.KEY_HOME, E.KEY_END, E.KEY_DELETE, E.KEY_PAGEUP, E.KEY_PAGEDOWN,
+    E.KEY_F4, E.KEY_F12,                       # MangoHud's reload / toggle keys (with Shift)
     E.KEY_PLAYPAUSE, E.KEY_NEXTSONG, E.KEY_PREVIOUSSONG, E.KEY_F})
 
 

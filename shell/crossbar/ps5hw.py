@@ -80,7 +80,7 @@ def status():
     names, on = leds()
     cfg = util.load_config().get("ps5") or {}
     return {"available": True, "temps": temps(), "fan_target": fan_target(), "target_range": list(TARGET_RANGE),
-            "leds": names, "led": on, "ps5_control": bool(util.which("ps5_control")),
+            "leds": names, "led": on, "ps5_control": bool(util.which("ps5_control") or os.access("/usr/local/sbin/ps5_control", os.X_OK)),
             "fan_mode": cfg.get("fan_mode", "auto"), "boost": cfg.get("boost", False),
             "hud": cfg.get("hud", False), "hud_corner": cfg.get("hud_corner", "top-right")}
 

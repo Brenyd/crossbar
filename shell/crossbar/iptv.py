@@ -1,6 +1,6 @@
 """IPTV through the Xtream Codes API (player_api.php).
 
-Sign in once (Settings › Media Settings › IPTV); Live TV shows under TV & Video
+Sign in once (Settings › Media › IPTV); Live TV shows under TV & Video
 Services, Movies and TV Shows under Video. You choose which categories appear
 and can hide channels. Streams play in Crossbar's video player; the password
 stays here (in a 0600 file) and never goes to the menu.
@@ -84,7 +84,7 @@ def _reach_error(e):
 def require():
     a = _account()
     if not a:
-        raise RuntimeError("Sign in to IPTV first (Settings › Media Settings › IPTV)")
+        raise RuntimeError("Sign in to IPTV first (Settings › Media › IPTV)")
     return a
 
 

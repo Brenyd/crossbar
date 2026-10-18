@@ -1,4 +1,4 @@
-"""Terminal sessions for the built-in terminal (Settings › System Settings › Terminal).
+"""Terminal sessions for the built-in terminal (Settings › System › Terminal).
 
 A shell runs in a pseudo-terminal here; the XMB page shows it (xterm.js) and
 sends keystrokes back. Output is streamed over server-sent events.

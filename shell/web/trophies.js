@@ -21,9 +21,9 @@ function achievementItems(data) {
 function raFolder(st) {
   return {
     key: 'ra', label: 'RetroAchievements', icon: 'trophy',
-    sub: st.ra.ready ? `${st.ra.user} · by console` : 'Sign in and add your Web API key in Settings › Emulation',
+    sub: st.ra.ready ? `${st.ra.user} · by console` : 'Sign in and add your Web API key in Settings › Games & Emulation › Emulation',
     children: async () => {
-      if (!st.ra.ready) return [{ key: 'setup', label: 'Set Up RetroAchievements', icon: 'settings', sub: 'Settings › Emulation › RetroAchievements', action: () => openSettingsFolder('emulation') }];
+      if (!st.ra.ready) return [{ key: 'setup', label: 'Set Up RetroAchievements', icon: 'settings', sub: 'Settings › Games & Emulation › Emulation › RetroAchievements', action: () => openSettingsFolder('emulation') }];
       const d = await api.get('/api/trophies/ra');
       const items = [{ key: 'me', label: d.user, icon: 'user', sub: `${d.points} points${d.hardcore_points ? ` · ${d.hardcore_points} hardcore` : ''}${d.rank ? ` · rank #${d.rank}` : ''}`,
         ...(d.pic ? { art: d.pic, artTitle: d.user, artShape: 'poster' } : {}) }];

@@ -174,7 +174,9 @@ def start_steam(bpm=True):
     import subprocess
     os.makedirs(os.path.dirname(STEAM_LOG), exist_ok=True)
     log = open(STEAM_LOG, "w")
+    from .. import perf
     subprocess.Popen(["steam", "-gamepadui"] if bpm else ["steam", "-silent"], stdin=subprocess.DEVNULL,
+                     env={**os.environ, **perf.env()},          # Steam passes MangoHud on to its games
                      stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 
 

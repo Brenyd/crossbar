@@ -233,6 +233,10 @@ function gameItem(g, inStore) {
     it.action = () => install(g);
     options.push({ label: 'Download', action: () => install(g) });
   }
+  if (typeof changeArtwork !== 'undefined' && g.provider !== 'demo') {
+    options.push({ label: 'Change Artwork…', action: () => changeArtwork({ key: `${g.provider}:${g.id}`, title: g.title, custom: !!g.art_custom,
+      steam: g.provider === 'steam' && /^\d+$/.test(g.id) ? g.id : null }) });
+  }
   if (g.windows) options.push({ label: 'Compatibility Tool…', action: () => pickCompatTool(`${g.provider}:${g.id}`, g.title) });
   options.push({ label: 'Information', action: () => message(`${g.title}\n${STORE_NAMES[g.provider]} · ${g.installed ? 'Installed' : 'Not installed'}${g.note ? '\n' + g.note : ''}`, 'Information') });
   it.options = options;
@@ -314,6 +318,7 @@ const CATS = [   // more categories are added by media.js and settings.js
     id: 'game', label: 'Game', icon: 'game',
     async load() {
       const items = [];
+      if (typeof TROPHIES_FOLDER !== 'undefined') items.push(TROPHIES_FOLDER);   // always first
       for (const w of S.state.windows || []) {
         items.push({ key: `win:${w.con_id}`, label: `Return to ${w.title}`, icon: 'window', sub: 'Running',
           action: () => api.post('/api/window/focus', { con_id: w.con_id }),
@@ -324,7 +329,6 @@ const CATS = [   // more categories are added by media.js and settings.js
         items.push({ key: `job:${j.id}`, label: j.title, icon: 'download', sub: `Downloading… ${j.message}`, progress: j.progress, badge: STORE_NAMES[j.provider] });
       }
       if (typeof EMULATION_FOLDER !== 'undefined') items.push(EMULATION_FOLDER);
-      if (typeof TROPHIES_FOLDER !== 'undefined') items.push(TROPHIES_FOLDER);
       const games = await api.get('/api/installed');
       items.push(...games.map((g) => gameItem(g, false)));
       if (!games.length) items.push({ key: 'none', label: 'No games installed', icon: 'store', sub: 'Get some from the Store', action: () => goCat('store') });
@@ -340,7 +344,7 @@ const CATS = [   // more categories are added by media.js and settings.js
       const linked = S.state.providers.filter((p) => p.linked);
       items.push(...linked.map(storeFolder));
       if (!linked.length) {
-        items.push({ key: 'signin', label: 'Sign In to a Store', icon: 'account', sub: 'Steam, GOG and Epic accounts are in Settings › Account Settings',
+        items.push({ key: 'signin', label: 'Sign In to a Store', icon: 'account', sub: 'Steam, GOG and Epic accounts are in Settings › Accounts',
           action: () => openSettingsFolder('accounts') });
       }
       return items;
@@ -719,6 +723,7 @@ function connectEvents() {
       $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
       clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
     }
+    if (ev.type === 'art') { refresh('game'); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }
     if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }

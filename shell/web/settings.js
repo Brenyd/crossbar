@@ -222,7 +222,7 @@ async function runInTerminal(path, label) {
 
 async function pickCompatTool(gameKey, title) {
   const c = await api.get(`/api/compat?game=${encodeURIComponent(gameKey || '')}`);
-  if (!c.tools.length) return message('No way to run Windows games yet.\nInstall umu-launcher: Settings › System Settings › Terminal, then\nsudo pacman -S umu-launcher', 'Windows Games');
+  if (!c.tools.length) return message('No way to run Windows games yet.\nInstall umu-launcher: Settings › System › Terminal, then\nsudo pacman -S umu-launcher', 'Windows Games');
   const current = gameKey ? (c.games[gameKey] || '') : c.default;
   const opts = (gameKey ? [{ id: '', name: `Use Default (${c.tools.find((t) => t.id === c.default)?.name || c.default})` }] : []).concat(c.tools);
   Options.show(opts.map((t) => ({
@@ -273,6 +273,21 @@ const GAMES_FOLDER = {
       { key: 'freemem', label: 'Free Memory While Gaming', icon: 'game',
         sub: st.free_memory_in_games !== false ? 'On — the menu closes while a game runs; Quick Menu, music and voice keep working' : 'Off — the menu stays open behind games',
         action: async () => { await setSetting({ free_memory_in_games: st.free_memory_in_games === false }); reloadFolder(); } },
+      { key: 'fps', label: 'Frame Rate Overlay', icon: 'display',
+        sub: !st.perf?.available ? 'Needs MangoHud (installed with Crossbar 0.11)' : `${({ off: 'Off', fps: 'FPS only', graph: 'FPS + frame time graph', full: 'Full: FPS, CPU, GPU, temperatures' })[st.perf.fps] || st.perf.fps} · ${st.perf.corner.replace('-', ' ')} — also in the Quick Menu`,
+        children: async () => {
+          const p = (await api.get('/api/quick')).perf || {};
+          const pick = async (body) => { await call(() => api.post(body.mode ? '/api/perf/fps' : '/api/perf/corner', body)); S.state = await api.get('/api/state'); reloadFolder(); };
+          return [
+            ...[['off', 'Off'], ['fps', 'FPS Only'], ['graph', 'FPS + Frame Time Graph'], ['full', 'Full (CPU, GPU, Temperatures)']].map(([m, l]) => ({
+              key: `m:${m}`, label: l, icon: p.fps === m ? 'check' : 'display', sub: p.fps === m ? 'Current' : '', action: () => pick({ mode: m }) })),
+            ...['top-right', 'top-left', 'bottom-left', 'bottom-right'].map((c) => ({
+              key: `c:${c}`, label: `Position: ${c.replace('-', ' ').replace(/\b\w/g, (x) => x.toUpperCase())}`, icon: p.corner === c ? 'check' : 'display',
+              sub: p.corner === c ? 'Current' : '', action: () => pick({ corner: c }) })),
+            { key: 'how', label: 'Which Games?', icon: 'info', sub: 'Vulkan games, incl. Windows games through Proton',
+              action: () => message('The frame rate overlay is MangoHud. It works in Vulkan games, including Windows games running through Proton.\nSteam games get it when Crossbar starts Steam; if Steam was already open, restart Steam once.', 'Frame Rate Overlay') },
+          ];
+        } },
       { key: 'steamov', label: 'Steam Overlay', icon: 'info', sub: 'Works in Steam games: Steam button or Shift+Tab. Crossbar\'s Quick Menu: Select + Start',
         action: () => message('Steam games run through Steam, so Steam\'s overlay works as usual (Steam/Guide button or Shift+Tab).\nCrossbar\'s Quick Menu uses Select + Start so the two never fight over a button.\nChange either in Controller & Keyboard.', 'Steam Overlay') },
       { key: 'demo', label: 'Demo Library', icon: 'demo', sub: st.demo ? 'On — showing sample games' : 'Off — using your real accounts',
@@ -351,7 +366,7 @@ const APP_VOLUME_FOLDER = {
 
 const SETTINGS_FOLDERS = [
   {
-    key: 'display', label: 'Display Settings', icon: 'display', sub: 'Resolution, refresh rate, scale',
+    key: 'display', label: 'Display', icon: 'display', sub: 'Resolution, refresh rate, scale',
     children: async () => {
       const outs = await api.get('/api/display');
       if (!outs.length) return [{ key: 'na', label: 'Not available here', icon: 'info', sub: 'Display settings work in the Crossbar session' }];
@@ -386,7 +401,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'sound', label: 'Sound Settings', icon: 'sound', sub: 'Output and input devices, volume',
+    key: 'sound', label: 'Sound', icon: 'sound', sub: 'Output and input devices, volume',
     children: async () => {
       const a = await api.get('/api/audio').catch(() => ({ output: {}, mic: {} }));
       const vol = (x) => (x.volume == null ? 'Unavailable' : `${x.name || 'Default'} · ${x.volume}%${x.muted ? ' (muted)' : ''}`);
@@ -404,7 +419,7 @@ const SETTINGS_FOLDERS = [
   CONTROLS_FOLDER,
   GAMES_FOLDER,
   {
-    key: 'theme', label: 'Theme Settings', icon: 'palette', sub: 'Background colour',
+    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Background colour',
     children: async () => {
       const st = S.state;
       const cur = st.theme === 'auto' ? 0 : st.theme + 1;
@@ -415,7 +430,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'media', label: 'Media Settings', icon: 'folder', sub: 'Library folders, video playback',
+    key: 'media', label: 'Media', icon: 'folder', sub: 'Library folders, video playback',
     children: async () => {
       const m = S.state.media, v = S.state.video;
       return [
@@ -431,7 +446,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'network', label: 'Network Settings', icon: 'network', sub: 'Wi-Fi, connection status',
+    key: 'network', label: 'Network', icon: 'network', sub: 'Wi-Fi, connection status',
     children: async () => {
       const n = await api.get('/api/network').catch(() => ({ available: false, devices: [] }));
       if (!n.available) return [{ key: 'na', label: 'Network settings need NetworkManager', icon: 'info' }];
@@ -500,7 +515,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'accounts', label: 'Account Settings', icon: 'account', sub: 'Steam, GOG, Epic, Spotify, user name',
+    key: 'accounts', label: 'Accounts', icon: 'account', sub: 'Steam, GOG, Epic, Spotify, user name',
     children: async () => {
       const sp = S.state.spotify;
       return [
@@ -519,6 +534,7 @@ const SETTINGS_FOLDERS = [
             if (!sp.linked) return spotifySetup();
             if (await confirmBox('Sign out of Spotify on this console?')) { S.state = await api.post('/api/spotify/logout'); reloadFolder(); }
           } },
+        ...(typeof DISCORD_ACCOUNT_FOLDER !== 'undefined' ? [DISCORD_ACCOUNT_FOLDER] : []),
       ];
     },
   },
@@ -556,7 +572,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.10', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.10', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.11', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.11', 'About') },
       ];
     },
   },
@@ -599,6 +615,10 @@ const PS5_FOLDER = {
       items.push({ key: 'boost', label: 'Boost', icon: 'settings', sub: p.boost ? 'On' : 'Off',
         action: () => post('/api/ps5/boost', { on: !p.boost }) });
     }
+    if (!p.ps5_control) {
+      items.push({ key: 'ps5c', label: 'Fan Mode & Boost', icon: 'info', sub: 'Needs ps5_control: Settings › System › Update Crossbar installs it',
+        action: () => message('Fan modes and boost use ps5_control from the ps5-linux project.\nCrossbar downloads and builds it when you update (Settings › System › Update Crossbar) or run ps5-tools.sh.\nIts own fan / boost services stay off unless you turn them on.', 'PS5 Hardware') });
+    }
     if (p.leds.length) {
       const names = ['off', ...p.leds];
       items.push({ key: 'led', label: 'Front Light', icon: 'theme', sub: ledName(p.led || 'off'),
@@ -613,7 +633,37 @@ SETTINGS_FOLDERS.push(PS5_FOLDER);
 const SETTINGS_ORDER = ['display', 'sound', 'network', 'bluetooth', 'controls', 'games', 'ps5', 'theme', 'media', 'time', 'accounts', 'system'];
 SETTINGS_FOLDERS.sort((a, b) => SETTINGS_ORDER.indexOf(a.key) - SETTINGS_ORDER.indexOf(b.key));
 
-CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return SETTINGS_FOLDERS.filter((f) => f.key !== 'ps5' || S.state?.ps5hw); } });
+// The Settings column: related folders grouped, so the list stays short.
+const SETTINGS_GROUPS = [
+  { key: 'g-av', label: 'Display & Sound', icon: 'display', sub: 'Resolution, refresh rate, outputs, volume', keys: ['display', 'sound'] },
+  { key: 'g-net', label: 'Network & Bluetooth', icon: 'network', sub: 'Wi-Fi, network drives, pairing', keys: ['network', 'bluetooth'] },
+  { key: 'controls' },
+  { key: 'g-games', label: 'Games & Emulation', icon: 'game', sub: 'Launching, Proton, artwork, emulators, achievements', keys: ['games', 'artwork', 'emulation'] },
+  { key: 'media' },
+  { key: 'accounts' },
+  { key: 'g-look', label: 'Theme & Time', icon: 'palette', sub: 'Background colour, clock, time zone', keys: ['theme', 'time'] },
+  { key: 'g-system', label: 'System', icon: 'system', sub: 'Updates, power, terminal, information', keys: ['ps5', 'system'], flatten: 'system' },
+];
+const settingsFolder = (k) => SETTINGS_FOLDERS.find((f) => f.key === k);
+const settingsVisible = (f) => f && (f.key !== 'ps5' || S.state?.ps5hw);
+
+function settingsColumn() {
+  return SETTINGS_GROUPS.map((g) => {
+    if (!g.keys) return settingsFolder(g.key);
+    return { key: g.key, label: g.label, icon: g.icon, sub: g.sub,
+      children: async () => {
+        const out = [];
+        for (const k of g.keys) {
+          const f = settingsFolder(k);
+          if (!settingsVisible(f)) continue;
+          if (g.flatten === k) out.push(...await f.children());   // System's own items sit right here
+          else out.push(f);
+        }
+        return out;
+      } };
+  }).filter(Boolean);
+}
+CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return settingsColumn(); } });
 
 // After boot: if this is the Crossbar session but parts are missing (e.g. code
 // updated without rebuilding the ISO), say so plainly instead of half-working.
@@ -624,7 +674,7 @@ async function checkComponents() {
   if (!d.inputd) missing.push('controller service');
   if (!d.overlay_window) missing.push('Quick Menu overlay');
   if (missing.length) {
-    toast(`Not installed: ${missing.join(' and ')}. Settings › System Settings › Update Crossbar`, 'info');
+    toast(`Not installed: ${missing.join(' and ')}. Settings › System › Update Crossbar`, 'info');
   }
 }
 

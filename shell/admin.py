@@ -328,7 +328,9 @@ def ps5_control(req):
     allowed = [["--fan", "on"], ["--fan", "off"], ["--fan", "max"], ["--boost", "on"], ["--boost", "off"]]
     if args not in allowed:
         fail("Not an allowed ps5_control command")
-    exe = shutil.which("ps5_control")
+    # pkexec's PATH may leave out /usr/local/sbin, where ps5-tools.sh installs it
+    exe = shutil.which("ps5_control") or next((p for p in ("/usr/local/sbin/ps5_control", "/usr/sbin/ps5_control")
+                                               if os.access(p, os.X_OK)), None)
     if not exe:
         fail("ps5_control isn't installed")
     r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=20)
