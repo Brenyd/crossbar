@@ -196,8 +196,12 @@ def items(kind, cat_id, include_hidden=False):
     a = require()
     hidden = set(map(str, prefs().get("hidden") or []))
     raw = _call(a, KINDS[kind][1], category_id=cat_id) or []
+    if isinstance(raw, dict):      # some panels wrap or key the list
+        raw = list(raw.values())
     out = []
     for s in raw:
+        if not isinstance(s, dict):
+            continue
         if kind == "series":
             sid = str(s.get("series_id"))
             out.append({"id": sid, "name": s.get("name", "?"), "icon": s.get("cover") or None,
@@ -211,17 +215,48 @@ def items(kind, cat_id, include_hidden=False):
     return out
 
 
+def _dict(x):
+    return x if isinstance(x, dict) else {}
+
+
+def _season_groups(episodes):
+    """Panels send episodes as {"1": [...], "2": [...]} or as [[...], [...]] (or a flat list)."""
+    if isinstance(episodes, dict):
+        return list(episodes.items())
+    if isinstance(episodes, list):
+        if episodes and all(isinstance(x, list) for x in episodes):
+            return [(str((_dict(g[0]).get("season") if g else None) or i + 1), g) for i, g in enumerate(episodes)]
+        groups = {}
+        for e in episodes:
+            if isinstance(e, dict):
+                groups.setdefault(str(e.get("season") or 1), []).append(e)
+        return list(groups.items())
+    return []
+
+
+def _num(x, default=0):
+    try:
+        return int(str(x).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def series_info(series_id):
     a = require()
-    data = _call(a, "get_series_info", series_id=series_id) or {}
+    data = _dict(_call(a, "get_series_info", series_id=series_id))
     seasons = []
-    for num, eps in sorted((data.get("episodes") or {}).items(), key=lambda kv: int(kv[0]) if str(kv[0]).isdigit() else 0):
+    for num, eps in sorted(_season_groups(data.get("episodes")), key=lambda kv: _num(kv[0])):
+        eps = sorted((e for e in eps if isinstance(e, dict) and e.get("id") is not None), key=lambda e: _num(e.get("episode_num")))
+        if not eps:
+            continue
         seasons.append({"season": str(num), "episodes": [
-            {"id": str(e.get("id")), "num": e.get("episode_num"), "title": e.get("title") or f"Episode {e.get('episode_num')}",
-             "ext": e.get("container_extension") or "mp4", "plot": ((e.get("info") or {}).get("plot") or "")[:200]}
-            for e in eps]})
-    info = data.get("info") or {}
-    return {"name": info.get("name", ""), "plot": (info.get("plot") or "")[:400], "cover": info.get("cover"), "seasons": seasons}
+            {"id": str(e.get("id")), "num": e.get("episode_num") or i + 1,
+             "title": e.get("title") or f"Episode {e.get('episode_num') or i + 1}",
+             "ext": (e.get("container_extension") or "mp4").lstrip("."),
+             "plot": (_dict(e.get("info")).get("plot") or "")[:200]}
+            for i, e in enumerate(eps)]})
+    info = _dict(data.get("info"))
+    return {"name": info.get("name") or "", "plot": (info.get("plot") or "")[:400], "cover": info.get("cover"), "seasons": seasons}
 
 
 # ---- playback (URLs built here so the password never leaves the backend) ---------------
@@ -235,11 +270,19 @@ def playlist(kind, cat_id=None, item_id=None, series_id=None):
         idx = next((i for i, c in enumerate(chans) if c["id"] == str(item_id)), 0)
         return entries, idx
     if kind == "vod":
-        raw = _call(a, "get_vod_streams", category_id=cat_id) or []
-        s = next((x for x in raw if str(x.get("stream_id")) == str(item_id)), None)
-        if not s:
-            raise RuntimeError("That movie isn't available anymore")
-        return [(s.get("name", "Movie"), f"{base}/movie/{u}/{p}/{s['stream_id']}.{s.get('container_extension') or 'mp4'}")], 0
+        raw = (_call(a, "get_vod_streams", category_id=cat_id) if cat_id else None) or []
+        s = next((x for x in raw if isinstance(x, dict) and str(x.get("stream_id")) == str(item_id)), None)
+        ext = (s or {}).get("container_extension")
+        if not ext:   # not in the cached list (or no extension given): ask for this one movie
+            try:
+                movie = _dict(_dict(_call(a, "get_vod_info", vod_id=item_id)).get("movie_data"))
+            except Exception:
+                movie = {}
+            if not s and not movie:
+                raise RuntimeError("That movie isn't available anymore")
+            ext = movie.get("container_extension") or "mp4"
+            s = s or {"name": movie.get("name"), "stream_id": movie.get("stream_id") or item_id}
+        return [(s.get("name") or "Movie", f"{base}/movie/{u}/{p}/{s['stream_id']}.{ext.lstrip('.')}")], 0
     if kind == "episode":
         info = series_info(series_id)
         eps = [(f"{info['name']} S{se['season']}E{e['num']} · {e['title']}", f"{base}/series/{u}/{p}/{e['id']}.{e['ext']}", e["id"])

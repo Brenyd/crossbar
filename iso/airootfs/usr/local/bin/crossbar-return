@@ -1,0 +1,17 @@
+#!/bin/bash
+# From the Plasma desktop: make Crossbar the login session again, then log out
+# (the login manager logs straight back in, into Crossbar).
+set -u
+out=$(echo '{"session":"crossbar"}' | pkexec /usr/lib/crossbar/admin.py boot-session 2>&1)
+if ! grep -q '"ok": true' <<<"$out"; then
+  msg="Couldn't switch to Crossbar: $out"
+  command -v kdialog >/dev/null && kdialog --error "$msg" || echo "$msg" >&2
+  exit 1
+fi
+if command -v qdbus6 >/dev/null; then
+  qdbus6 org.kde.Shutdown /Shutdown org.kde.Shutdown.logout && exit 0
+fi
+if command -v qdbus >/dev/null; then
+  qdbus org.kde.Shutdown /Shutdown org.kde.Shutdown.logout && exit 0
+fi
+loginctl terminate-session "${XDG_SESSION_ID:-}"

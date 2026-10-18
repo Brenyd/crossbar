@@ -27,11 +27,23 @@ function iptvTopFolder(kind) {
   };
 }
 
+// Big on-demand categories (thousands of titles, each with a poster) are shown a page at a time.
+const IPTV_PAGE = 60;
+function iptvPaged(list, make, start = 0) {
+  const out = list.slice(start, start + IPTV_PAGE).map(make);
+  if (list.length > start + IPTV_PAGE) {
+    const next = Math.min(list.length, start + 2 * IPTV_PAGE);
+    out.push({ key: `more:${start}`, label: `More… (${start + IPTV_PAGE + 1}–${next} of ${list.length})`, icon: 'folder',
+      children: async () => iptvPaged(list, make, start + IPTV_PAGE) });
+  }
+  return out;
+}
+
 async function iptvItems(kind, cat) {
   const list = await api.get(`/api/iptv/items?${qs({ kind, cat: cat.id })}`);
   if (!list.length) return [{ key: 'none', label: 'Nothing here', icon: 'info' }];
   if (kind === 'series') {
-    return list.map((s) => ({ key: `s:${s.id}`, label: s.name, art: s.icon || '', artTitle: s.name,
+    return iptvPaged(list, (s) => ({ key: `s:${s.id}`, label: s.name, art: s.icon || '', artTitle: s.name,
       sub: [s.year, s.rating && `★ ${s.rating}`].filter(Boolean).join(' · '),
       children: async () => {
         const info = await api.get(`/api/iptv/series?${qs({ id: s.id })}`);
@@ -41,14 +53,15 @@ async function iptvItems(kind, cat) {
             action: () => iptvPlay({ kind: 'episode', series: s.id, id: e.id }, e.title) })) }));
       } }));
   }
-  return list.map((it) => ({
+  const make = (it) => ({
     key: `i:${it.id}`, label: kind === 'live' && it.num ? `${it.num}  ${it.name}` : it.name,
     ...(it.icon ? { art: it.icon, artTitle: it.name } : { icon: kind === 'live' ? 'tv' : 'video' }),
     sub: kind === 'live' ? 'A: watch · L1/R1 change channel' : (it.rating ? `★ ${it.rating}` : ''),
     action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name),
     options: kind === 'live' ? [{ label: 'Watch', action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name) },
       { label: 'Hide This Channel', action: async () => { await call(() => api.post('/api/iptv/hide', { id: it.id, on: true }), `Hid ${it.name}`); reloadFolder(); } }] : undefined,
-  }));
+  });
+  return kind === 'live' ? list.map(make) : iptvPaged(list, make);
 }
 
 // ---- Settings › Media Settings › IPTV ------------------------------------------------

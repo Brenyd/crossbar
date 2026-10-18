@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Crossbar
+Comment=Console-style shell (XMB) for games and media
+Exec=/usr/local/bin/crossbar-session
+Type=Application
+DesktopNames=sway

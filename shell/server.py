@@ -7,6 +7,7 @@ Serves the web UI and a small JSON API on 127.0.0.1. Standard library only
     python3 server.py [--port 7777] [--demo]
 """
 import argparse
+import inspect
 import json
 import mimetypes
 import queue
@@ -109,6 +110,7 @@ def state():
         "gamescope": cfg.get("gamescope", False),
         "steam_bigpicture": cfg.get("steam_bigpicture", True),
         "free_memory_in_games": cfg.get("free_memory_in_games", True),
+        "desktop_available": session.desktop_available(),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),
@@ -215,29 +217,56 @@ def r_uninstall(b):
 def r_launch(b):
     p = provider(b["provider"])
     before = {w["con_id"] for w in system.windows()}
-    if b["provider"] in ("gog", "epic") and util.load_config().get("gamescope") and util.which("gamescope"):
-        os.environ["CROSSBAR_WRAP"] = "gamescope"
-    try:
-        p.launch(b["id"])
-    finally:
-        os.environ.pop("CROSSBAR_WRAP", None)
-    if not demo_on() and os.environ.get("SWAYSOCK"):
-        title = b.get("title", "")
-        HUB.publish({"type": "launching", "title": title})
+    title = b.get("title", "")
+    live = not demo_on() and os.environ.get("SWAYSOCK")
 
-        def watch():
-            # The game's window appears -> sway focuses it; tell the XMB to drop the splash.
-            for _ in range(180):
-                time.sleep(0.5)
-                new = [w for w in system.windows() if w["con_id"] not in before and not system.is_background_window(w) and "discord" not in (w.get("app") or "").lower()]
-                if new:
-                    system.focus_window(new[-1]["con_id"])
-                    HUB.publish({"type": "launched", "title": title})
-                    time.sleep(3)          # let the "launched" splash finish before the XMB closes
-                    session.enter_game_mode(title)
-                    return
-            HUB.publish({"type": "launch-timeout", "title": title})
-        threading.Thread(target=watch, daemon=True).start()
+    def progress(msg):
+        if live:
+            HUB.publish({"type": "launching", "title": title, "sub": msg})
+
+    def is_game(w):
+        app = (w.get("app") or "").lower()
+        return w["con_id"] not in before and not system.is_background_window(w) and "discord" not in app \
+            and not (w.get("title") or "").lower().startswith("steam")     # updater, sign-in, dialogs
+
+    def run():
+        if live:
+            HUB.publish({"type": "launching", "title": title, "sub": "Starting…"})
+            system.hold_launch(300)
+        if b["provider"] in ("gog", "epic") and util.load_config().get("gamescope") and util.which("gamescope"):
+            os.environ["CROSSBAR_WRAP"] = "gamescope"
+        try:
+            if "progress" in inspect.signature(p.launch).parameters:
+                p.launch(b["id"], progress=progress)
+            else:
+                p.launch(b["id"])
+        except Exception as e:
+            system.release_launch()
+            HUB.publish({"type": "launch-timeout", "title": title, "error": str(e)})
+            return
+        finally:
+            os.environ.pop("CROSSBAR_WRAP", None)
+        if not live:
+            return
+        system.hold_launch(300)
+        # The game's window appears -> bring it forward and drop the splash.
+        end = time.time() + 300       # first starts can compile shaders for a while
+        while time.time() < end:
+            time.sleep(0.5)
+            new = [w for w in system.windows() if is_game(w)]
+            if new:
+                system.release_launch()
+                system.focus_window(new[-1]["con_id"])
+                HUB.publish({"type": "launched", "title": title})
+                time.sleep(3)          # let the "launched" splash finish before the XMB closes
+                session.enter_game_mode(title)
+                return
+        system.release_launch()
+        HUB.publish({"type": "launch-timeout", "title": title})
+    if b["provider"] == "steam" or live:
+        threading.Thread(target=run, daemon=True).start()
+    else:
+        run()
     util.update_config(lambda c: c["last_played"].__setitem__(f"{p.id}:{b['id']}", time.time()))
     return {"ok": True, "demo": demo_on()}
 
@@ -367,8 +396,7 @@ def r_spotify(action, b):
         SPOTIFY.restart_speaker()
         return {"ok": True}
     if action == "control":
-        SPOTIFY.control(b["action"])
-        return {"ok": True}
+        return {"ok": True, "now": SPOTIFY.control(b["action"])}
     raise KeyError(action)
 
 
@@ -416,6 +444,8 @@ def route_post(path, b):
             session.restart()
         elif parts[1] == "exit":
             session.exit_session()
+        elif parts[1] == "desktop":
+            session.switch_to_desktop()
         return {"ok": True}
     if head == "overlay":
         if parts[1] == "ack":

@@ -146,19 +146,93 @@ class Steam(Provider):
     def uninstall(self, job, appid):
         util.spawn(["steam", f"steam://uninstall/{appid}"])
 
-    def launch(self, appid):
+    def launch(self, appid, progress=None):
         """Big Picture (Steam's console UI) by default, so Steam Input and its overlay
-        behave like on a Steam Deck. Crossbar hides Steam again when the game ends."""
+        behave like on a Steam Deck. Crossbar hides Steam again when the game ends.
+
+        If Steam isn't running (or is updating) it is started first and the game is only
+        sent once Steam is fully up: a game URL handed to Steam while it updates gets lost."""
+        progress = progress or (lambda msg: None)
         url = f"steam://rungameid/{appid}"
-        if not util.load_config().get("steam_bigpicture", True):
-            util.spawn(["steam", url])
-            return
+        bpm = util.load_config().get("steam_bigpicture", True)
         if not steam_running():
-            util.spawn(["steam", "-gamepadui", url])
-        else:
+            progress("Starting Steam…")
+            start_steam(bpm)
+            wait_ready(bpm, progress)
+        elif bpm:
             util.spawn(["steam", "steam://open/bigpicture"])
-            time.sleep(1.5)
-            util.spawn(["steam", url])
+            wait_ready(bpm, progress, quick=True)
+        progress("Starting the game…")
+        util.spawn(["steam", url])
+
+
+STEAM_LOG = os.path.expanduser("~/.cache/crossbar-steam.log")
+
+
+def start_steam(bpm=True):
+    """Start Steam with its output kept, so its update progress can be shown."""
+    import subprocess
+    os.makedirs(os.path.dirname(STEAM_LOG), exist_ok=True)
+    log = open(STEAM_LOG, "w")
+    subprocess.Popen(["steam", "-gamepadui"] if bpm else ["steam", "-silent"], stdin=subprocess.DEVNULL,
+                     stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def _update_status():
+    """Steam's bootstrapper prints lines like "[ 42%] Downloading update (…)"."""
+    import re
+    try:
+        with open(STEAM_LOG, errors="replace") as f:
+            f.seek(max(0, os.path.getsize(STEAM_LOG) - 8192))
+            tail = f.read().splitlines()
+    except OSError:
+        return None
+    for line in reversed(tail):
+        m = re.match(r"\[\s*(\d+%|-+)\]\s*(.+?)\.*$", line.strip())
+        if m:
+            what = m.group(2).lower()
+            if "verif" in what:
+                return "Steam is checking its files…"
+            if "download" in what or "extract" in what or "install" in what:
+                return f"Updating Steam… {m.group(1)}" if m.group(1).endswith("%") else "Updating Steam…"
+            if "check" in what:
+                return "Steam is checking for updates…"
+            return None
+    return None
+
+
+def _steam_windows():
+    from .. import system
+    return [w for w in system.all_windows() if system.is_steam_client(w)]
+
+
+def ready(bpm):
+    """Steam is up: Big Picture's window exists (or, without Big Picture, its web helper runs)."""
+    import subprocess
+    if bpm:
+        return any("big picture" in (w.get("title") or "").lower() for w in _steam_windows())
+    return subprocess.run(["pgrep", "-f", "steamwebhelper"], capture_output=True).returncode == 0 \
+        and bool(_steam_windows() or os.path.exists(os.path.expanduser("~/.steam/steam.pid")))
+
+
+def wait_ready(bpm, progress, quick=False, timeout=20 * 60):
+    """Wait (through updates and sign-in) until Steam can take a game URL."""
+    from .. import system
+    end, last, seen_ready = time.time() + (60 if quick else timeout), None, 0
+    system.hold_launch(timeout)
+    while time.time() < end:
+        if ready(bpm):
+            seen_ready += 1
+            if seen_ready >= 3:          # give Steam a few seconds after its window appears
+                return True
+        else:
+            seen_ready = 0
+        msg = _update_status() or ("Waiting for Steam…" if not quick else None)
+        if msg and msg != last:
+            progress(msg)
+            last = msg
+        time.sleep(1)
+    return False
 
 
 def steam_running():

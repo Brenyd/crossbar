@@ -33,6 +33,13 @@
 - [x] IPTV: player user agent, tries the usual Xtream ports, clearer errors
 - [x] Discord: explains the App Testers step when Discord refuses with invalid_scope
 
+## 0.9.1
+- [x] Music/Spotify play-pause shows "Now Playing · song" (Spotify's new non-JSON replies broke it)
+- [x] Steam: start Steam first, wait through updates/sign-in, then send the game
+- [x] IPTV on demand: all episode-list shapes, movie extension lookup, paging, stream reconnects
+- [x] Update Crossbar restarts in place instead of exiting the session
+- [x] install-cachyos.sh: install on CachyOS/Arch (PS5), boot straight into Crossbar, Switch to Desktop / Return to Crossbar
+
 ## Next
 - **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
   virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.

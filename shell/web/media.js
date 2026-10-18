@@ -101,7 +101,11 @@ function allItem(kind, label) {
 
 // ---------------------------------------------------------------- music now playing
 function musicNowItem(m) {
-  const ctl = (action) => async () => { await api.post('/api/music/control', { action }); refresh('music'); };
+  const ctl = (action) => async () => {
+    const r = await api.post('/api/music/control', { action });
+    if (['toggle', 'next', 'prev'].includes(action)) nowToast(r?.title, r && !r.paused, r?.artist);
+    refresh('music');
+  };
   return {
     key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING',
     sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(m.position)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
@@ -120,7 +124,11 @@ function musicNowItem(m) {
 
 // ---------------------------------------------------------------- Spotify
 function spotifyNowItem(n, key = 'sp-now') {
-  const ctl = (action) => async () => { await call(() => api.post('/api/spotify/control', { action })); setTimeout(reloadOrRefresh, 400); };
+  const ctl = (action) => async () => {
+    const r = await call(() => api.post('/api/spotify/control', { action }));
+    if (r && ['toggle', 'next', 'prev'].includes(action)) nowToast(r.now?.name, r.now?.playing, r.now?.artist);
+    setTimeout(reloadOrRefresh, 400);
+  };
   const opts = [
     { label: n.playing ? 'Pause' : 'Play', action: ctl('toggle') },
     { label: 'Next Track', action: ctl('next') },

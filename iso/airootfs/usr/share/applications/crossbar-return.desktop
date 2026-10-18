@@ -1,0 +1,7 @@
+[Desktop Entry]
+Name=Return to Crossbar
+Comment=Log out of the desktop and go back to Crossbar
+Exec=/usr/local/bin/crossbar-return
+Icon=input-gaming
+Type=Application
+Categories=System;Game;

@@ -645,9 +645,12 @@ function connectEvents() {
   const es = new EventSource('/api/events');
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
-    if (ev.type === 'launching') { $('#launch .l-title').textContent = ev.title; $('#launch').hidden = false; clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 95000); return; }
+    if (ev.type === 'launching') {
+      $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
+      clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
+    }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }
-    if (ev.type === 'launch-timeout') { $('#launch').hidden = true; toast(`${ev.title} didn't open a window — check Steam`, 'info'); return; }
+    if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
     if (ev.type === 'term-exit') { if (ev.id === Term.id) { Term.id = null; if (Term.open) Term.hide(); } return; }
     if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
@@ -667,15 +670,24 @@ function connectEvents() {
 }
 
 // Play/Pause and skip work anywhere in the XMB, for local music or Spotify.
+// "Now Playing · Song" / "Paused · Song" after a play/pause/skip
+function nowToast(title, playing, artist = '') {
+  if (!title) return;
+  toast(`${playing ? 'Now Playing' : 'Paused'} · ${title}${artist ? ' — ' + artist : ''}`, 'music');
+}
+
 async function mediaKey(action) {
   const m = await api.get('/api/music/state').catch(() => null);
   if (m) {
-    await api.post('/api/music/control', { action: action === 'toggle' ? 'toggle' : action });
+    const r = await api.post('/api/music/control', { action: action === 'toggle' ? 'toggle' : action });
+    Sfx.ok();
+    nowToast(r?.title, r && !r.paused, r?.artist);
   } else if (S.state?.spotify?.linked) {
-    await call(() => api.post('/api/spotify/control', { action }));
-  } else return;
-  Sfx.ok();
-  toast(action === 'toggle' ? 'Play / Pause' : action === 'next' ? 'Next track' : 'Previous track', 'music');
+    const r = await call(() => api.post('/api/spotify/control', { action }));
+    if (!r) return;
+    Sfx.ok();
+    nowToast(r.now?.name, r.now?.playing, r.now?.artist);
+  }
 }
 
 // ---------------------------------------------------------------- polling

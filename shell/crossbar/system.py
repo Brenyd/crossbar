@@ -36,6 +36,23 @@ def is_steam_client(w):
     return app == "steam" and not app.startswith("steam_app")
 
 
+_LAUNCH = {"until": 0}
+
+
+def hold_launch(seconds=300):
+    """A game is starting (Steam may be updating, windows come and go): don't treat
+    windows closing as "the game ended" until it's up."""
+    _LAUNCH["until"] = time.time() + seconds
+
+
+def release_launch():
+    _LAUNCH["until"] = 0
+
+
+def launching():
+    return time.time() < _LAUNCH["until"]
+
+
 def is_background_window(w):
     """Windows you wouldn't want left in front after a game closes: Steam's client.
     (Discord is NOT one: when you open it, it should stay in front.)"""

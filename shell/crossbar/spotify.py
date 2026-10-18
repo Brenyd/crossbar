@@ -179,7 +179,10 @@ class Spotify:
         try:
             with urllib.request.urlopen(req, timeout=15) as r:
                 raw = r.read()
-                return json.loads(raw) if raw else None
+                try:     # play/pause/next now answer 200 with a non-JSON body
+                    return json.loads(raw) if raw.strip() else None
+                except ValueError:
+                    return None
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read()).get("error", {}).get("message", "")
@@ -335,9 +338,11 @@ class Spotify:
                 "shuffle": d.get("shuffle_state", False), "repeat": d.get("repeat_state", "off")}
 
     def control(self, action):
+        """Returns what's playing afterwards (for the "Now Playing" notice)."""
         now = self.now() or {}
         if action == "toggle":
             self.api("PUT", "/me/player/pause" if now.get("playing") else "/me/player/play")
+            return {**now, "playing": not now.get("playing")}
         elif action == "pause":
             if now.get("playing") and now.get("here"):
                 self.api("PUT", "/me/player/pause")
@@ -349,6 +354,10 @@ class Spotify:
             self.api("PUT", "/me/player/shuffle", state="false" if now.get("shuffle") else "true")
         elif action == "repeat":
             self.api("PUT", "/me/player/repeat", state="off" if now.get("repeat") != "off" else "context")
+        if action in ("next", "prev"):
+            time.sleep(0.6)          # Spotify takes a moment to report the new track
+            return self.now() or now
+        return self.now() or now
 
 
 SPOTIFY = Spotify()

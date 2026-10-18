@@ -23,6 +23,9 @@ echo "Updating Crossbar for user: $U ($UHOME)"
 
 step() { printf '\n\e[1m:: %s\e[0m\n' "$*"; }
 
+if [[ -n "${CROSSBAR_SKIP_PACKAGES:-}" ]]; then
+  echo "(packages handled by the installer)"
+else
 step "Installing packages (only what's missing)"
 if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
   printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>/etc/pacman.conf
@@ -32,9 +35,10 @@ MISSING=()
 for p in "${PKGS[@]}"; do pacman -Qq "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
 if ((${#MISSING[@]})); then
   echo "installing: ${MISSING[*]}"
-  pacman -Sy --needed --noconfirm "${MISSING[@]}"
+  pacman -S --needed --noconfirm "${MISSING[@]}"
 else
   echo "all packages present"
+fi
 fi
 
 step "Fetching bundled web libraries (terminal)"
@@ -59,27 +63,46 @@ install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-inputd.service" /
 install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-setup.service" /etc/systemd/system/crossbar-setup.service
 install -Dm644 "$HERE/iso/airootfs/etc/polkit-1/rules.d/50-crossbar.rules" /etc/polkit-1/rules.d/50-crossbar.rules
 install -Dm644 "$HERE/iso/airootfs/usr/share/polkit-1/actions/org.crossbar.admin.policy" /usr/share/polkit-1/actions/org.crossbar.admin.policy
+install -Dm644 "$HERE/iso/airootfs/usr/share/wayland-sessions/crossbar.desktop" /usr/share/wayland-sessions/crossbar.desktop
+install -Dm644 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.desktop" /usr/share/applications/crossbar-return.desktop
 chmod 755 /usr/lib/crossbar/admin.py /usr/lib/crossbar/inputd.py /usr/lib/crossbar/overlay.py
 modprobe uinput || true
 udevadm control --reload
 udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change
 systemctl daemon-reload
-systemctl enable crossbar-inputd.service crossbar-setup.service bluetooth.service >/dev/null 2>&1 || true
+systemctl enable crossbar-inputd.service bluetooth.service >/dev/null 2>&1 || true
+# the boot setup is only for the Crossbar ISO's "player" user
+if id player >/dev/null 2>&1; then systemctl enable crossbar-setup.service >/dev/null 2>&1 || true
+else systemctl disable crossbar-setup.service >/dev/null 2>&1 || true; fi
 systemctl start bluetooth.service >/dev/null 2>&1 || true
 systemctl restart crossbar-inputd.service
 sleep 1
 systemctl is-active --quiet crossbar-inputd && echo "crossbar-inputd: running" || { echo "crossbar-inputd FAILED:"; journalctl -u crossbar-inputd -n 15 --no-pager; }
 
-step "Restarting the Crossbar session"
-SOCK=$(ls /run/user/"$(id -u $U)"/sway-ipc.*.sock 2>/dev/null | head -1 || true)
-if [[ -n "$SOCK" ]]; then
-  # stop the old backend so the new one starts with the session
-  pkill -u "$U" -f "/usr/lib/crossbar/server.py" || true
-  pkill -u "$U" -f "/usr/lib/crossbar/overlay.py" || true
-  sudo -u "$U" SWAYSOCK="$SOCK" swaymsg exit >/dev/null 2>&1 || true
-  echo "Crossbar will come back in a few seconds."
-  ( sleep 15; sudo -u "$U" HOME="$UHOME" /usr/local/bin/crossbar-doctor >"$UHOME/crossbar-report.txt" 2>&1 ) &
-  echo "A report will be saved to $UHOME/crossbar-report.txt (run: cat ~/crossbar-report.txt)"
+if [[ -n "${CROSSBAR_NO_RESTART:-}" ]]; then exit 0; fi
+step "Restarting Crossbar"
+UID_U=$(id -u "$U")
+SOCK=$(ls /run/user/"$UID_U"/sway-ipc.*.sock 2>/dev/null | head -1 || true)
+if [[ -n "$SOCK" ]] && sudo -u "$U" SWAYSOCK="$SOCK" swaymsg -t get_version >/dev/null 2>&1; then
+  # Restart Crossbar's pieces *inside* the running session (sway keeps running, so there's
+  # no drop to the TTY). This terminal belongs to the backend being restarted, so the restart
+  # runs detached and starts a couple of seconds after this script finishes.
+  sudo -u "$U" SWAYSOCK="$SOCK" XDG_RUNTIME_DIR="/run/user/$UID_U" setsid -f bash -c '
+    sleep 2
+    pkill -u "$(id -u)" -f "bash /usr/local/bin/crossbar-[s]hell"    # the old supervisor (and its loops)
+    # [x] patterns: so pkill doesn't match this script's own command line
+    pkill -u "$(id -u)" -f "/usr/lib/crossbar/[s]erver.py"
+    pkill -u "$(id -u)" -f "/usr/lib/crossbar/[o]verlay.py"
+    pkill -u "$(id -u)" -f "crossbar/[s]hell-browser"
+    sleep 1
+    swaymsg reload >/dev/null 2>&1                                   # new keybindings / rules
+    swaymsg exec /usr/local/bin/crossbar-shell >/dev/null 2>&1        # the new supervisor starts everything
+    sleep 20
+    HOME="'"$UHOME"'" /usr/local/bin/crossbar-doctor >"'"$UHOME"'/crossbar-report.txt" 2>&1
+  ' </dev/null >/dev/null 2>&1
+  echo
+  echo "Done. Crossbar restarts in a few seconds (the screen goes dark briefly)."
+  echo "A report will be saved to $UHOME/crossbar-report.txt"
 else
-  echo "Not in a Crossbar session right now; log in on tty1 to start it."
+  echo "Not in a Crossbar session right now; it starts with the new version next time."
 fi

@@ -43,6 +43,40 @@ PAD=054c:0ce6 ./run-vm.sh       # pass a USB controller through (ids from `lsusb
 To install permanently, open **Settings › Install to Disk** from the live system
 (UEFI only, erases the chosen disk). See [docs/INSTALL.md](docs/INSTALL.md).
 
+### Install on an existing CachyOS / Arch system (PS5 included)
+
+Keeps your kernel, bootloader, Plasma and Steam gaming mode installed, and makes the machine
+boot straight into Crossbar (no login screen; Plasma doesn't run unless you switch to it).
+
+```bash
+sudo pacman -Syu                      # be fully up to date first (Arch doesn't do partial upgrades)
+git clone https://github.com/Brenyd/crossbar.git && cd crossbar
+./install-cachyos.sh                  # asks for your password once
+sudo reboot
+```
+
+Over SSH works too (handy on a PS5). What it does:
+
+1. Installs the packages Crossbar needs — from the repos, falling back to `paru`/`yay` for
+   anything that's only in the AUR. VM-only bits (software rendering, spice) are skipped.
+2. Installs Crossbar (`/usr/lib/crossbar`, the controller service, device rules, polkit rules)
+   exactly like an update does.
+3. Adds a **Crossbar** login session and sets your login manager to log you straight in to it.
+   On CachyOS (Plasma Login Manager or SDDM) this is one drop-in file,
+   `/etc/plasmalogin.conf.d/zzz-crossbar.conf` (or `/etc/sddm.conf.d/…`). It's read after CachyOS's own
+   gaming-mode autologin file, so nothing of yours is edited. Without a login manager, greetd is set up.
+4. Adds **Return to Crossbar** to the Plasma app menu.
+
+Switching: **Settings › System › Switch to Desktop** logs you into Plasma; on the desktop,
+**Return to Crossbar** (app menu) comes back. Whichever you were in last is what boots next time.
+
+Options: `./install-cachyos.sh --no-autologin` (install only; pick "Crossbar" on the login screen),
+`./install-cachyos.sh --uninstall` (stop booting into Crossbar — removes the drop-in, so your
+previous login setup, e.g. Steam gaming mode, is back). Updates: **Settings › System › Update Crossbar**.
+
+The PS5 boots through its own loader, so the installer doesn't touch the kernel command line;
+the console is quietened (`kernel.printk`), and the login manager hands over without a screen.
+
 ### Updating without rebuilding the ISO
 
 Code changes in this repo include system parts (services, device rules, packages) that a
@@ -54,7 +88,8 @@ curl -L https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar 
 cd crossbar-main && ./update-system.sh
 ```
 
-It installs what's missing, restarts Crossbar, and saves a report to `~/crossbar-report.txt`.
+It installs what's missing, restarts Crossbar in place (the screen goes dark for a moment —
+no drop to the TTY), and saves a report to `~/crossbar-report.txt`.
 On the live ISO an update lasts until reboot — rebuild the ISO to make it permanent.
 
 ## Controls
@@ -194,6 +229,9 @@ One-time setup (Discord only lets "tester" accounts control voice from other app
 Sign in to **Steam, GOG and Epic** in **Settings › Account Settings**; your libraries then show
 in **Store**, and installed games in **Game**.
 
+- If Steam isn't running yet — or is updating itself — Crossbar starts it first, shows Steam's
+  update progress on the "Starting…" screen, and only sends the game once Steam is fully up
+  (a game sent while Steam updates is otherwise lost).
 - **Steam** games launch through **Big Picture** (Steam's console mode) by default, so Steam Input
   and Steam's overlay work like on a Steam Deck. When the game ends — or you close it from the
   Quick Menu — Steam is tucked away and you're back in Crossbar. (Toggle in Game Settings.)
@@ -223,6 +261,7 @@ When a game closes you're back in the menu.
   and password from your provider, then choose which **Live TV**, **Movie** and **TV Show**
   categories appear (and hide channels you don't want). Live TV shows under TV & Video Services
   (L1/R1 change channel while watching); Movies and TV Shows under Video.
+  Big Movie / TV Show categories are shown 60 titles at a time (**More…** at the end).
   If sign-in times out, use the exact address your provider gave **including the port**
   (e.g. `http://example.com:8080`); without one, Crossbar tries the usual Xtream ports (8080,
   25461, 8000, 80). Requests identify as VLC, since many providers block unknown players.

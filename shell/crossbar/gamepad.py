@@ -470,6 +470,12 @@ class Gamepads:
                                      stdout=subprocess.PIPE, text=True)
                 steam_guard = 0
                 for line in p.stdout:
+                    if system.launching():
+                        # a game is starting: Steam's updater / sign-in windows come and go
+                        if any(k in line for k in ('"focus"', '"close"', '"new"', '"fullscreen_mode"')):
+                            time.sleep(0.05)
+                            self.update_grab()
+                        continue
                     if ('"change": "focus"' in line or '"change":"focus"' in line) and time.time() < steam_guard:
                         # Steam brings Big Picture back after a game: send it away again
                         time.sleep(0.1)

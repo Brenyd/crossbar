@@ -4,6 +4,7 @@
     pkexec /usr/lib/crossbar/admin.py nas-add      < {"name","type","server","share","username","password","domain"}
     pkexec /usr/lib/crossbar/admin.py nas-remove   < {"name"}
     pkexec /usr/lib/crossbar/admin.py nas-remount  < {"name"}
+    pkexec /usr/lib/crossbar/admin.py boot-session < {"session": "crossbar" | "desktop"}
 
 Network drives go in /etc/fstab with a marker comment (# crossbar-nas:<name>),
 always mount under /mnt/nas/<name>, use x-systemd.automount + nofail so a
@@ -163,10 +164,71 @@ def nas_remount(req):
     print(json.dumps({"ok": True, "mounted": r.returncode == 0}))
 
 
+# ---- which session the login manager starts (Crossbar or the Plasma desktop) ------------
+WAYLAND_SESSIONS = "/usr/share/wayland-sessions"
+BOOT_CONF = "zzz-crossbar.conf"      # zzz: read after the distro's own autologin files
+
+
+def login_manager():
+    """sddm / plasmalogin (Plasma Login Manager, an SDDM fork) / other / None."""
+    try:
+        target = os.path.basename(os.path.realpath("/etc/systemd/system/display-manager.service"))
+    except OSError:
+        return None
+    for name in ("plasmalogin", "sddm"):
+        if target.startswith(name):
+            return name
+    return target.replace(".service", "") if target != "display-manager.service" else None
+
+
+def desktop_session():
+    for f in ("plasma.desktop", "plasmawayland.desktop"):
+        if os.path.exists(os.path.join(WAYLAND_SESSIONS, f)):
+            return f
+    return None
+
+
+def boot_session(req):
+    which = req.get("session")
+    if which not in ("crossbar", "desktop", "off"):
+        fail("session must be crossbar, desktop or off")
+    dm = login_manager()
+    if dm not in ("sddm", "plasmalogin"):
+        fail("Switching sessions needs SDDM or Plasma Login Manager")
+    conf_dir = f"/etc/{dm}.conf.d"
+    path = os.path.join(conf_dir, BOOT_CONF)
+    if which == "off":                  # back to the distro's own login behaviour
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        print(json.dumps({"ok": True}))
+        return
+    uid = int(os.environ.get("PKEXEC_UID") or req.get("uid") or -1)
+    import pwd
+    try:
+        user = pwd.getpwuid(uid).pw_name
+    except (KeyError, OverflowError):
+        fail("Couldn't tell which user asked")
+    if uid == 0:
+        fail("Run this as the console user, not root")
+    session = "crossbar.desktop" if which == "crossbar" else desktop_session()
+    if not session or not os.path.exists(os.path.join(WAYLAND_SESSIONS, session)):
+        fail("That session isn't installed")
+    os.makedirs(conf_dir, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", dir=conf_dir, delete=False) as f:
+        f.write("# Written by Crossbar (Settings › System › Switch to Desktop / Return to Crossbar).\n"
+                "# Delete this file to go back to your previous login setup.\n"
+                f"[Autologin]\nUser={user}\nSession={session}\nRelogin=true\n")
+    os.chmod(f.name, 0o644)
+    os.replace(f.name, path)
+    print(json.dumps({"ok": True, "session": session}))
+
+
 if __name__ == "__main__":
     if os.geteuid() != 0:
         fail("crossbar-admin must run as root (via pkexec)")
-    actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount}
+    actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

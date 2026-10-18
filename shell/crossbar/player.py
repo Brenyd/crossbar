@@ -201,7 +201,9 @@ def play_video(paths, index=0, mpv_gamepad=False, entries=None, user_agent=None)
         f"crossbar-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--input-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--playlist={m3u}", f"--playlist-start={int(index)}",
-    ] + ([f"--user-agent={user_agent}"] if user_agent else [])
+    ] + ([f"--user-agent={user_agent}", "--force-seekable=yes", "--cache=yes", "--demuxer-max-bytes=200MiB",
+          "--network-timeout=30", "--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5"]
+         if user_agent else [])
     VIDEO.start(args)
     threading.Thread(target=_focus_player, daemon=True).start()
 

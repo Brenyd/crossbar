@@ -65,9 +65,36 @@ def restart():
     except OSError:
         pass
     me = os.getpid()
-    subprocess.Popen(["sh", "-c", f"sleep 0.4; pkill -u {os.getuid()} -f /usr/lib/crossbar/overlay.py; "
-                                  f"pkill -u {os.getuid()} -f crossbar/shell-browser; kill {me}"],
+    # [x] patterns so pkill can't match this helper's own command line
+    subprocess.Popen(["sh", "-c", f"sleep 0.4; pkill -u {os.getuid()} -f '/usr/lib/crossbar/[o]verlay.py'; "
+                                  f"pkill -u {os.getuid()} -f 'crossbar/[s]hell-browser'; kill {me}"],
                      start_new_session=True)
+
+
+# ---- Crossbar <-> Plasma desktop (installs made with install-cachyos.sh) --------------------
+def desktop_available():
+    """True when the login manager starts Crossbar and a Plasma session exists to switch to."""
+    ws = "/usr/share/wayland-sessions"
+    if not os.path.exists(os.path.join(ws, "crossbar.desktop")):
+        return False
+    if not any(os.path.exists(os.path.join(ws, f)) for f in ("plasma.desktop", "plasmawayland.desktop")):
+        return False
+    target = os.path.basename(os.path.realpath("/etc/systemd/system/display-manager.service"))
+    return target.startswith(("sddm", "plasmalogin"))
+
+
+def switch_to_desktop():
+    import json
+    r = subprocess.run(["pkexec", "/usr/lib/crossbar/admin.py", "boot-session"], input=json.dumps({"session": "desktop"}),
+                       capture_output=True, text=True, timeout=60)
+    try:
+        res = json.loads(r.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        res = {"ok": False, "error": (r.stderr or r.stdout).strip()[-200:] or "The system helper failed"}
+    if not res.get("ok"):
+        raise RuntimeError(res.get("error"))
+    # the login manager logs straight back in, into the desktop
+    subprocess.Popen(["sh", "-c", "sleep 1; swaymsg exit"], start_new_session=True)
 
 
 def exit_session():
