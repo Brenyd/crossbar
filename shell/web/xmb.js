@@ -71,10 +71,20 @@ async function call(fn, okMsg) {
 // ---------------------------------------------------------------- dialog
 const Dialog = {
   open: false, sel: 0, buttons: [], resolve: null,
-  ask({ title = '', body = '', buttons = ['OK'], fields = [], def = 0 }) {
+  ask({ title = '', body = '', buttons = ['OK'], fields = [], def = 0, timeout = 0, timeoutButton = null }) {
     this.open = true; this.sel = def; this.buttons = buttons;
     $('.dlg-title').textContent = title;
     $('.dlg-body').textContent = body;
+    clearInterval(this.timer);
+    if (timeout) {  // e.g. "Keep this resolution?" reverts by itself
+      let left = Math.round(timeout / 1000);
+      const tickDown = () => {
+        $('.dlg-body').textContent = `${body}\n(${left} s)`;
+        if (left-- <= 0) this.close(timeoutButton);
+      };
+      tickDown();
+      this.timer = setInterval(tickDown, 1000);
+    }
     $('.dlg-fields').innerHTML = fields.map((f, i) =>
       `<label>${esc(f.label)}</label><input data-k="${esc(f.key)}" type="${f.secret ? 'password' : 'text'}" value="${esc(f.value || '')}" spellcheck="false">`).join('');
     this.renderButtons();
@@ -88,6 +98,8 @@ const Dialog = {
   },
   move(d) { this.sel = (this.sel + d + this.buttons.length) % this.buttons.length; this.renderButtons(); Sfx.move(); },
   close(idx) {
+    if (!this.open) return;
+    clearInterval(this.timer);
     const values = {};
     document.querySelectorAll('.dlg-fields input').forEach((i) => { values[i.dataset.k] = i.value; });
     $('#dialog').hidden = true; this.open = false;
@@ -102,13 +114,25 @@ const message = (body, title = '') => Dialog.ask({ title, body });
 // ---------------------------------------------------------------- options panel
 const Options = {
   open: false, sel: 0, list: [],
-  show(list) {
+  offset: 0,
+  show(list, sel = 0) {
     if (!list?.length) return;
-    this.list = list; this.sel = 0; this.open = true; this.render();
-    $('#options').hidden = false; Sfx.ok();
+    this.list = list; this.sel = sel; this.offset = 0; this.open = true;
+    $('#options').hidden = false; this.render(); Sfx.ok();
   },
   render() {
-    $('.opt-list').innerHTML = this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}">${esc(o.label)}</div>`).join('');
+    const el = $('.opt-list');
+    el.innerHTML = this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}">${esc(o.label)}</div>`).join('');
+    // Keep the highlighted entry on screen: the list starts at y=380 on the
+    // 1080px stage and slides up/down once the selection nears an edge.
+    const TOP = 380, MIN = 140, MAX = 960;
+    const row = el.children[this.sel];
+    const y = TOP + this.offset + row.offsetTop;
+    if (y < MIN) this.offset += MIN - y;
+    if (y + row.offsetHeight > MAX) this.offset -= y + row.offsetHeight - MAX;
+    el.style.transform = `translateY(${this.offset}px)`;
+    $('#options').classList.toggle('more-up', TOP + this.offset < MIN - 10);
+    $('#options').classList.toggle('more-down', TOP + this.offset + el.scrollHeight > MAX + 10);
   },
   move(d) { this.sel = (this.sel + d + this.list.length) % this.list.length; this.render(); Sfx.move(); },
   hide() { this.open = false; $('#options').hidden = true; },
@@ -117,8 +141,9 @@ const Options = {
 
 // ---------------------------------------------------------------- state
 const S = {
-  state: null, jobs: [], ci: 2, catSel: {}, stack: [], items: {},
+  state: null, jobs: [], ci: 0, catSel: {}, stack: [], items: {},
 };
+const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'network', 'store', 'party'];
 
 function prov(id) { return S.state.providers.find((p) => p.id === id); }
 
@@ -197,7 +222,7 @@ function storeFolder(p) {
 }
 
 // ---------------------------------------------------------------- categories
-const CATS = [
+const CATS = [   // more categories are added by media.js and settings.js
   {
     id: 'users', label: 'Users', icon: 'users',
     async load() {
@@ -205,36 +230,6 @@ const CATS = [
         { key: 'me', label: S.state.user, icon: 'user', sub: 'Signed in', options: [{ label: 'Rename', action: renameUser }], action: renameUser },
         { key: 'off', label: 'Turn Off System', icon: 'power', action: async () => { if (await confirmBox('Turn off the system?')) api.post('/api/power/poweroff'); } },
         { key: 'reboot', label: 'Restart System', icon: 'restart', action: async () => { if (await confirmBox('Restart the system?')) api.post('/api/power/reboot'); } },
-      ];
-    },
-  },
-  {
-    id: 'settings', label: 'Settings', icon: 'settings',
-    async load() {
-      const st = S.state;
-      const themeName = st.theme === 'auto' ? 'Automatic (changes monthly)' : MONTHS[st.theme];
-      const themeOpts = [{ label: 'Automatic (changes monthly)', action: () => setSetting({ theme: 'auto' }) }]
-        .concat(MONTHS.map((m, i) => ({ label: `${m} colour`, action: () => setSetting({ theme: i }) })));
-      const audio = await api.get('/api/audio').catch(() => ({ output: {} }));
-      const vol = audio.output.volume;
-      return [
-        { key: 'theme', label: 'Theme', icon: 'palette', sub: themeName, options: themeOpts, action: () => Options.show(themeOpts) },
-        { key: 'vol', label: 'Sound Output', icon: 'sound', sub: vol == null ? 'Unavailable' : `${audio.output.name || 'Default'} · ${vol}%${audio.output.muted ? ' (muted)' : ''}`,
-          options: volumeOptions('output'), action: () => Options.show(volumeOptions('output')) },
-        { key: 'sfx', label: 'Menu Sounds', icon: 'music', sub: st.sounds ? 'On' : 'Off', action: () => setSetting({ sounds: !st.sounds }) },
-        { key: 'demo', label: 'Demo Library', icon: 'demo', sub: st.demo ? 'On — showing sample games' : 'Off — using your real accounts',
-          action: async () => {
-            if (await confirmBox(st.demo ? 'Switch to your real Steam, GOG and Epic accounts?' : 'Show the demo library instead of your accounts?')) {
-              await setSetting({ demo: !st.demo }); refresh('game'); refresh('store');
-            }
-          } },
-        { key: 'sys', label: 'System Information', icon: 'info', action: async () => {
-            const i = await api.get('/api/sysinfo');
-            message(`${i.os}\nKernel ${i.kernel}\n${i.cpu}\nMemory ${i.memory}\nGames folder ${i.games_dir}`, 'System Information');
-          } },
-        ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
-          action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.1', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.1', 'About') },
       ];
     },
   },
@@ -310,7 +305,10 @@ const CATS = [
 ];
 
 function volumeOptions(target) {
-  const go = (b) => async () => { await call(() => api.post('/api/audio', { target, ...b })); refresh(target === 'mic' ? 'party' : 'settings'); };
+  const go = (b) => async () => {
+    await call(() => api.post('/api/audio', { target, ...b }));
+    if (S.stack.length) reloadFolder(); else refresh(target === 'mic' ? 'party' : 'settings');
+  };
   return [{ label: 'Volume +10', action: go({ delta: 10 }) }, { label: 'Volume −10', action: go({ delta: -10 }) }, { label: 'Mute / Unmute', action: go({ mute: true }) }];
 }
 async function setSetting(b) { S.state = await api.post('/api/settings', b); applyState(); refresh('settings'); }
@@ -369,7 +367,8 @@ async function reloadFolder() {
   const frame = S.stack.at(-1);
   if (!frame) return;
   const prevKey = frame.items[frame.sel]?.key;
-  frame.items = await frame.source.children();
+  try { frame.items = await frame.source.children(); } catch (e) { return; }
+  if (S.stack.at(-1) !== frame) return;
   const idx = frame.items.findIndex((i) => i.key === prevKey);
   frame.sel = idx >= 0 ? idx : Math.min(frame.sel, frame.items.length - 1);
   renderColumn(false);
@@ -377,6 +376,22 @@ async function reloadFolder() {
 
 // ---------------------------------------------------------------- rendering
 function hashHue(s) { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 360; }
+
+// Artwork loads lazily (only items near the selection) and is remembered, so
+// big photo/video folders and periodic refreshes don't flicker or stall.
+const artLoaded = new Set(), artFailed = new Set();
+function showArt(el, url) {
+  const a = el.querySelector('.art');
+  if (a) { a.style.backgroundImage = `url("${url}")`; a.textContent = ''; }
+}
+function ensureArt(el, it) {
+  if (!it.art || artLoaded.has(it.art) || artFailed.has(it.art) || el.dataset.loading) return;
+  el.dataset.loading = 1;
+  const img = new Image();
+  img.onload = () => { artLoaded.add(it.art); if (el.isConnected) showArt(el, it.art); };
+  img.onerror = () => artFailed.add(it.art);
+  img.src = it.art;
+}
 
 function itemEl(it) {
   const el = document.createElement('div');
@@ -388,11 +403,7 @@ function itemEl(it) {
   } else slot = `<div class="ico">${icon(it.icon)}</div>`;
   el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(it.label)}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
     <div class="sub">${esc(it.sub || '')}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
-  if (it.art) {  // swap in real artwork once it loads; keep the generated tile if offline
-    const img = new Image();
-    img.onload = () => { const a = el.querySelector('.art'); a.style.backgroundImage = `url("${it.art}")`; a.textContent = ''; };
-    img.src = it.art;
-  }
+  if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
   return el;
 }
 
@@ -439,6 +450,7 @@ function position() {
     el.classList.toggle('on', on);
     el.classList.toggle('dim', !on);
     el.style.opacity = y < -60 || y > 1140 ? 0 : '';
+    if (Math.abs(i - s) <= 8) ensureArt(el, items[i]);
   });
 }
 
@@ -487,6 +499,7 @@ function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
 function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
 
 function handle(action) {
+  if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
     if (action === 'left') Dialog.move(-1);
     else if (action === 'right') Dialog.move(1);
@@ -581,6 +594,7 @@ async function pollJobs() {
     if (j.status === 'error') { Sfx.err(); toast(`${j.title}: ${j.message}`, 'info'); }
     else if (j.kind === 'install') toast(`Download complete: ${j.title}`, 'download');
     else if (j.kind === 'login') toast(`Signed in to ${j.title}`, 'link');
+    else if (j.kind === 'wifi') toast(`Connected to ${j.title}`, 'wifi');
   }
   if (finished) await loadState();
   const cur = CATS[S.ci].id;
@@ -592,6 +606,13 @@ async function pollJobs() {
   if (finished) CATS.forEach((c) => c.id !== cur && refresh(c.id));
 }
 setInterval(pollJobs, 1200);
+// Now Playing items (music, Spotify, video) refresh themselves while visible.
+setInterval(() => {
+  if (Dialog.open || Options.open || Viewer.open || !S.state) return;
+  const f = S.stack.at(-1);
+  if (f) { if (f.source.live) reloadFolder(); }
+  else if (CATS[S.ci].live) refresh(CATS[S.ci].id);
+}, 2000);
 setInterval(async () => {   // pick up windows opening/closing (games, Discord)
   const before = JSON.stringify(S.state?.windows || []);
   try { await loadState(); } catch { return; }
@@ -599,7 +620,9 @@ setInterval(async () => {   // pick up windows opening/closing (games, Discord)
 }, 4000);
 
 // ---------------------------------------------------------------- boot
-(async function boot() {
+async function boot() {
+  CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+  S.ci = CATS.findIndex((c) => c.id === 'game');
   render();
   for (let tries = 0; ; tries++) {
     try { await loadState(); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
@@ -608,4 +631,4 @@ setInterval(async () => {   // pick up windows opening/closing (games, Discord)
   await Promise.all(CATS.map((c) => refresh(c.id)));
   render();
   setTimeout(() => { $('#boot').classList.add('done'); Sfx.ok(); }, 900);
-})();
+}

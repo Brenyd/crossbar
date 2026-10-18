@@ -28,6 +28,16 @@ mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/crossbar-setup.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/crossbar-setup.service"
 
+echo ":: Networking: NetworkManager instead of releng's systemd-networkd + iwd"
+SD="$PROFILE/airootfs/etc/systemd/system"
+rm -f "$SD"/multi-user.target.wants/{iwd,systemd-networkd}.service "$SD"/dbus-org.freedesktop.network1.service \
+      "$SD"/network-online.target.wants/systemd-networkd-wait-online.service "$SD"/sockets.target.wants/systemd-networkd.socket
+rm -rf "$PROFILE/airootfs/etc/systemd/network"
+mkdir -p "$SD/network-online.target.wants"
+ln -sf /usr/lib/systemd/system/NetworkManager.service "$SD/multi-user.target.wants/NetworkManager.service"
+ln -sf /usr/lib/systemd/system/NetworkManager-dispatcher.service "$SD/dbus-org.freedesktop.nm-dispatcher.service"
+ln -sf /usr/lib/systemd/system/NetworkManager-wait-online.service "$SD/network-online.target.wants/NetworkManager-wait-online.service"
+
 echo ":: Vendoring legendary (Epic Games CLI, not in the official repos)"
 pip install --quiet --no-deps --no-compile --target "$PROFILE/airootfs/usr/lib/crossbar/vendor" legendary-gl
 cat >"$PROFILE/airootfs/usr/local/bin/legendary" <<'EOF'

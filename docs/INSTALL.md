@@ -70,6 +70,8 @@ boot (only if it's blank) and keep games, Steam and settings there across reboot
 - Before step 6 (or with the VM off): select **VirtIO Disk 1 › Advanced options › Serial number**, enter `crossbar-games`, **Apply**.
 
 Without this, the live system keeps downloads in RAM and loses them on shutdown.
+With it, `~/Music`, `~/Videos` and `~/Pictures` live on that disk too. To get files in,
+point Settings › Media Settings at a shared folder or USB drive, or copy over the network.
 
 ### Option B — install to the virtual disk
 
@@ -118,21 +120,14 @@ It never formats real disks on its own.
 
 ### Install
 
-1. Wi-Fi only: press **Ctrl+Alt+T** and run:
-   ```bash
-   iwctl
-   # then inside iwctl:
-   station wlan0 scan
-   station wlan0 get-networks
-   station wlan0 connect "Your Network"
-   exit
-   ```
+1. Wi-Fi only: **Settings › Network Settings › Wi-Fi Networks**, pick your network and enter
+   the password (or press **Ctrl+Alt+T** and run `nmtui`).
 2. **Settings › Install to Disk** (or `sudo crossbar-install` in the terminal).
 3. Pick the disk, type its name again to confirm, set a password and time zone.
 4. When it says *Done*, reboot and remove the USB stick.
 
 The installed system autologins to the XMB, uses NetworkManager for networking
-(`nmtui` in the terminal for Wi-Fi), and updates like any Arch system: `sudo pacman -Syu`.
+(Wi-Fi from Settings, or `nmtui` in the terminal), and updates like any Arch system: `sudo pacman -Syu`.
 
 What the installer creates: a 1 GiB EFI partition and an ext4 root filling the rest,
 systemd-boot, user `player` with your password, and the same packages as the ISO.

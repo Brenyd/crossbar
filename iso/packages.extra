@@ -22,6 +22,14 @@ python-pywebview
 python-gobject
 webkit2gtk-4.1
 unzip
+# media
+mpv
+ffmpeg
+python-mutagen
+python-pillow
+librespot
+# networking (Wi-Fi from Settings)
+networkmanager
 # audio
 pipewire
 pipewire-pulse

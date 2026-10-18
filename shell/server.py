@@ -11,6 +11,7 @@ import json
 import mimetypes
 import os
 import sys
+import threading
 import time
 import traceback
 import urllib.parse
@@ -22,12 +23,13 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import party, system, util  # noqa: E402
+from crossbar import display, media, party, player, system, util  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
 from crossbar.providers.demo import Demo  # noqa: E402
 from crossbar.providers.epic import Epic  # noqa: E402
 from crossbar.providers.gog import GOG  # noqa: E402
 from crossbar.providers.steam import Steam  # noqa: E402
+from crossbar.spotify import SPOTIFY  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 REAL = {p.id: p for p in (Steam(), GOG(), Epic())}
@@ -85,6 +87,10 @@ def state():
         "jobs": JOBS.list(),
         "windows": system.windows(),
         "live": system.is_live(),
+        "media": cfg["media"],
+        "video": cfg["video"],
+        "tv": cfg["tv"],
+        "spotify": SPOTIFY.status(),
     }
 
 
@@ -119,6 +125,8 @@ def r_settings(b):
         for k, v in b.items():
             if k in allowed:
                 c[k] = v
+            elif k == "video" and isinstance(v, dict):
+                c["video"].update({kk: vv for kk, vv in v.items() if kk in ("resume", "subtitles")})
     util.update_config(apply)
     return state()
 
@@ -156,7 +164,73 @@ GET = {
     "/api/sysinfo": lambda q: system.sysinfo(),
     "/api/search": lambda q: r_search(q.get("q", "")),
     "/api/library": lambda q: provider(q.get("provider", "")).library(),
+    "/api/media/list": lambda q: media.listdir(q["kind"], q.get("path") or None),
+    "/api/media/scan": lambda q: media.scan(q["kind"]),
+    "/api/fs": lambda q: media.browse_dirs(q.get("path") or None),
+    "/api/music/state": lambda q: player.music_state(),
+    "/api/video/state": lambda q: player.video_state(),
+    "/api/display": lambda q: display.outputs(),
+    "/api/audio/devices": lambda q: system.audio_devices(),
+    "/api/network": lambda q: system.network_status(),
+    "/api/wifi": lambda q: system.wifi_networks(),
+    "/api/spotify/now": lambda q: SPOTIFY.now(),
+    "/api/spotify/playlists": lambda q: SPOTIFY.playlists(),
+    "/api/spotify/liked": lambda q: SPOTIFY.liked(),
+    "/api/spotify/playlist": lambda q: SPOTIFY.playlist_items(q["id"]),
+    "/api/spotify/search": lambda q: SPOTIFY.search(q.get("q", "")),
 }
+
+
+def r_music_play(b):
+    pause_spotify()
+    player.play_music(b["paths"], b.get("index", 0))
+    return {"ok": True}
+
+
+def pause_spotify():
+    try:
+        if SPOTIFY.status()["linked"]:
+            SPOTIFY.control("pause")
+    except Exception:
+        pass
+
+
+def r_spotify(action, b):
+    if action == "config":
+        util.update_config(lambda c: c["spotify"].__setitem__("client_id", b.get("client_id", "").strip()))
+        return state()
+    if action == "login":
+        return JOBS.start("login", "Spotify", SPOTIFY.login, "spotify").as_dict()
+    if action == "logout":
+        SPOTIFY.logout()
+        return state()
+    if action == "play":
+        player.pause_music()
+        SPOTIFY.play(b.get("context_uri"), b.get("uris"), b.get("offset"), b.get("shuffle", False))
+        return {"ok": True}
+    if action == "transfer":
+        player.pause_music()
+        SPOTIFY.transfer()
+        return {"ok": True}
+    if action == "control":
+        SPOTIFY.control(b["action"])
+        return {"ok": True}
+    raise KeyError(action)
+
+
+def r_tv(action, b):
+    if action == "open":
+        svc = util.load_config()["tv"][int(b["index"])]
+        player.pause_music()
+        system.open_web(svc["url"], "tv", tv_ui=svc.get("tv_ui", False))
+    elif action == "add":
+        url = b["url"].strip()
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        util.update_config(lambda c: c["tv"].append({"name": b.get("name", "").strip() or url, "url": url}))
+    elif action == "remove":
+        util.update_config(lambda c: c["tv"].pop(int(b["index"])))
+    return state()
 
 
 def route_post(path, b):
@@ -186,6 +260,38 @@ def route_post(path, b):
     if head == "home":
         system.focus_shell()
         return {"ok": True}
+    if head == "media" and parts[1] == "folder":
+        if b["kind"] not in media.KINDS or not media.allowed(b["path"]):
+            raise KeyError("folder")
+        util.update_config(lambda c: c["media"].__setitem__(b["kind"], b["path"]))
+        return state()
+    if head == "music":
+        if parts[1] == "play":
+            return r_music_play(b)
+        player.music_control(b["action"], b.get("value"))
+        return player.music_state()
+    if head == "video" and parts[1] == "play":
+        pause_spotify()
+        player.play_video(b["paths"], b.get("index", 0))
+        return {"ok": True}
+    if head == "display":
+        if parts[1] == "mode":
+            display.set_mode(b["name"], b["width"], b["height"], b["refresh"], b.get("save", True))
+        else:
+            display.set_scale(b["name"], b["scale"], b.get("save", True))
+        return display.outputs()
+    if head == "audio-device":
+        system.set_audio_device(b["id"])
+        return system.audio_devices()
+    if head == "wifi":
+        return JOBS.start("wifi", b["ssid"], lambda j: system.wifi_connect(b["ssid"], b.get("password", ""))).as_dict()
+    if head == "spotify":
+        return r_spotify(parts[1], b)
+    if head == "tv":
+        return r_tv(parts[1], b)
+    if head == "browser":
+        system.open_web(b.get("url") or "https://duckduckgo.com", "browser", app=False)
+        return {"ok": True}
     if head == "installer":
         system.open_installer()
         return {"ok": True}
@@ -211,6 +317,16 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _send_file(self, path, ctype, cache=False):
+        with open(path, "rb") as f:
+            data = f.read()
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "max-age=86400" if cache else "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def _guard(self):
         # Only the local shell may talk to us (blocks DNS-rebinding style requests).
         host = (self.headers.get("Host") or "").split(":")[0]
@@ -222,6 +338,28 @@ class Handler(BaseHTTPRequestHandler):
         path, _, qs = self.path.partition("?")
         q = dict(p.split("=", 1) if "=" in p else (p, "") for p in qs.split("&") if p)
         q = {k: urllib.parse.unquote_plus(v) for k, v in q.items()}
+        if path == "/spotify/callback":
+            try:
+                if "error" in q:
+                    raise RuntimeError(q["error"])
+                SPOTIFY.callback(q.get("code", ""), q.get("state", ""))
+                msg = "Spotify is connected. You can close this window."
+            except Exception as e:
+                msg = f"Spotify sign-in failed: {e}"
+            page = (f"<!doctype html><title>Spotify</title><body style='background:#000;color:#fff;font:28px sans-serif;"
+                    f"display:grid;place-items:center;height:100vh;margin:0'>{msg}</body>")
+            return self._send(200, page.encode(), "text/html; charset=utf-8")
+        if path in ("/api/thumb", "/api/file"):
+            p = q.get("path", "")
+            if path == "/api/thumb":
+                p = media.thumbnail(p, int(q.get("size", 480)))
+                if not p:
+                    return self._send(404, b"no thumbnail", "text/plain")
+                return self._send_file(p, "image/jpeg", cache=True)
+            ext = os.path.splitext(p)[1].lower()
+            if not media.allowed(p) or ext not in media.PHOTO or not os.path.isfile(p):
+                return self._send(404, b"not found", "text/plain")
+            return self._send_file(p, mimetypes.guess_type(p)[0] or "application/octet-stream", cache=True)
         if path.startswith("/api/"):
             fn = GET.get(path)
             if not fn:
@@ -260,7 +398,8 @@ def main():
     a = ap.parse_args()
     FORCE_DEMO = a.demo
     os.makedirs(util.GAMES_DIR, exist_ok=True)
-    system.start_home_button_daemon()
+    system.start_gamepad_daemon()
+    threading.Thread(target=lambda: (display.apply_saved(), SPOTIFY.ensure_receiver()), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"crossbard listening on http://127.0.0.1:{a.port} (demo={demo_on()})", flush=True)
     srv.serve_forever()

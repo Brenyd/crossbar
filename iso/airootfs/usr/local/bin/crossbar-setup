@@ -24,10 +24,13 @@ fi
 # Keep Steam, legendary and Crossbar settings on the games disk so they survive
 # reboots of the live system (and don't fill the RAM overlay).
 P="$H/Games/.persist"
-for d in .local/share/Steam .config/legendary .config/crossbar; do
+# Music/Videos/Pictures too, so a VM keeps your media. Only links that are
+# missing or already links are touched — a real folder is never replaced.
+for d in .local/share/Steam .config/legendary .config/crossbar Music Videos Pictures; do
   mkdir -p "$P/$d" "$(dirname "$H/$d")"
-  rm -rf "${H:?}/$d"
-  ln -sfn "$P/$d" "$H/$d"
+  if [ -L "$H/$d" ] || [ ! -e "$H/$d" ]; then
+    ln -sfn "$P/$d" "$H/$d"
+  fi
 done
 mkdir -p "$H/.steam"
 ln -sfn "$H/.local/share/Steam" "$H/.steam/steam"

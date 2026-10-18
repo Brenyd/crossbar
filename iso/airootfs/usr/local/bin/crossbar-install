@@ -8,7 +8,7 @@ red() { printf '\e[1;31m%s\e[0m\n' "$*"; }
 bold() { printf '\e[1m%s\e[0m\n' "$*"; }
 
 [[ -d /sys/firmware/efi ]] || { red "This installer needs a UEFI boot (turn off Legacy/CSM in firmware)."; exit 1; }
-ping -c1 -W3 archlinux.org >/dev/null 2>&1 || { red "No internet. Connect first (Ethernet works automatically; Wi-Fi: run 'iwctl')."; exit 1; }
+ping -c1 -W3 archlinux.org >/dev/null 2>&1 || { red "No internet. Connect first: Ethernet works automatically; for Wi-Fi use Settings › Network Settings › Wi-Fi Networks, or run 'nmtui'."; exit 1; }
 
 clear
 bold "Crossbar installer"

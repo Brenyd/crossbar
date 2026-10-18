@@ -27,3 +27,17 @@ const ICONS = {
 function icon(name) {
   return `<svg viewBox="0 0 64 64" class="i">${ICONS[name] || ICONS.folder}</svg>`;
 }
+Object.assign(ICONS, {
+  photo: '<rect x="8" y="14" width="48" height="38" rx="3"/><circle cx="22" cy="26" r="5"/><path d="M8 46l14-12 10 8 8-6 16 12"/>',
+  video: '<rect x="6" y="14" width="40" height="36" rx="3"/><path d="M46 26l12-7v26l-12-7z"/>',
+  tv: '<rect x="6" y="12" width="52" height="34" rx="3"/><path d="M22 54h20M32 46v8"/><path d="M27 23l11 6-11 6z"/>',
+  network: '<circle cx="32" cy="32" r="24"/><path d="M8 32h48M32 8c8 8 8 40 0 48M32 8c-8 8-8 40 0 48"/>',
+  display: '<rect x="6" y="10" width="52" height="34" rx="3"/><path d="M24 54h16M32 44v10"/>',
+  wifi: '<path d="M8 26a34 34 0 0 1 48 0M16 34a22 22 0 0 1 32 0M24 42a10 10 0 0 1 16 0"/><circle cx="32" cy="50" r="2.5"/>',
+  spotify: '<circle cx="32" cy="32" r="24"/><path d="M19 25c9-3 19-2 27 3M21 33c7-2 15-1 21 2M23 40c6-1 11 0 16 2"/>',
+  shuffle: '<path d="M8 20h10l22 24h14M8 44h10l6-7M34 27l6-7h14M48 14l6 6-6 6M48 38l6 6-6 6"/>',
+  account: '<circle cx="32" cy="24" r="10"/><path d="M14 54c2-10 9-16 18-16s16 6 18 16"/><circle cx="50" cy="16" r="6"/>',
+  system: '<rect x="14" y="14" width="36" height="36" rx="3"/><rect x="24" y="24" width="16" height="16"/><path d="M24 8v6M32 8v6M40 8v6M24 50v6M32 50v6M40 50v6M8 24h6M8 32h6M8 40h6M50 24h6M50 32h6M50 40h6"/>',
+  check: '<path d="M14 34l12 12 24-26"/>',
+  browser: '<rect x="6" y="10" width="52" height="44" rx="3"/><path d="M6 22h52"/><circle cx="13" cy="16" r="1.5"/><circle cx="19" cy="16" r="1.5"/>',
+});

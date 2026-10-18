@@ -21,6 +21,15 @@ DEFAULT_CONFIG = {
     "steam": {"api_key": "", "steamid": ""},
     "party": {"service": "discord", "channels": []},
     "last_played": {},
+    "media": {"music": "~/Music", "video": "~/Videos", "photo": "~/Pictures"},
+    "video": {"resume": True, "subtitles": "auto"},
+    "display": {},             # {"OUTPUT-NAME": {"mode": "1920x1080@60.000Hz", "scale": 1.0}}
+    "spotify": {"client_id": ""},
+    "tv": [
+        {"name": "YouTube", "url": "https://www.youtube.com/tv", "tv_ui": True},
+        {"name": "Twitch", "url": "https://www.twitch.tv"},
+        {"name": "Plex", "url": "https://app.plex.tv"},
+    ],
 }
 
 _lock = threading.RLock()
