@@ -57,8 +57,8 @@ sudo reboot
 
 Works over SSH (handy on a PS5). What it does:
 
-1. Installs the packages Crossbar needs that are missing — repos first, `paru`/`yay` for AUR-only
-   ones. **Graphics drivers (mesa, vulkan) are never installed or replaced**, and packages provided
+1. Installs **yay** if you don't have it (from CachyOS's repo, or built from the AUR on plain Arch),
+   then the packages Crossbar needs that are missing — repos first, yay for AUR-only ones. **Graphics drivers (mesa, vulkan) are never installed or replaced**, and packages provided
    by something you already have (e.g. a `-git` build) count as installed.
 2. Installs Crossbar (`/usr/lib/crossbar`, controller service, device rules, polkit rules).
 3. Boots into Crossbar:

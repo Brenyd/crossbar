@@ -5,7 +5,7 @@
 #   git clone https://github.com/Brenyd/crossbar.git && cd crossbar && ./install-cachyos.sh
 #
 # What it does:
-#   1. installs the packages Crossbar needs (pacman, then paru/yay for anything not in the repos)
+#   1. installs yay if it's missing, then the packages Crossbar needs (repos first, AUR via yay)
 #   2. installs Crossbar itself (same as update-system.sh: /usr/lib/crossbar, services, rules)
 #   3. makes tty1 autologin (or a login manager, if you use one) start Crossbar instead of your
 #      usual session; your autologin and startup scripts are kept, Plasma stays installed
@@ -58,6 +58,22 @@ command -v pacman >/dev/null || { echo "This needs an Arch-based system (pacman)
 echo "Installing Crossbar for $U ($UHOME); login manager: $DM"
 
 # ---- 1. packages ----------------------------------------------------------------------------
+step "Installing yay (AUR helper)"
+if command -v yay >/dev/null; then
+  echo "yay already installed"
+elif pacman -S --needed --noconfirm yay 2>/dev/null; then
+  echo "yay installed from the repos"            # CachyOS ships it in its own repo
+else
+  # Plain Arch: build the prebuilt yay-bin from the AUR (no Go toolchain needed).
+  pacman -S --needed --noconfirm base-devel git
+  B=$(sudo -u "$U" mktemp -d)
+  sudo -u "$U" git clone --depth 1 https://aur.archlinux.org/yay-bin.git "$B/yay-bin"
+  ( cd "$B/yay-bin" && sudo -u "$U" makepkg --noconfirm )     # build as you (makepkg refuses root)
+  pacman -U --noconfirm "$B"/yay-bin/yay-bin-*.pkg.tar.zst
+  rm -rf "$B"
+fi
+command -v yay >/dev/null || warn "yay couldn't be installed; AUR-only packages will be skipped"
+
 step "Installing packages"
 if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
   printf '\n[multilib]\nInclude = /etc/pacman.d/mirrorlist\n' >>/etc/pacman.conf
@@ -88,11 +104,12 @@ else
   echo "all packages present"
 fi
 if ((${#FAILED[@]})); then
-  AUR=$(command -v paru || command -v yay || true)
+  AUR=$(command -v yay || command -v paru || true)
   if [[ -n "$AUR" ]]; then
     echo "not in the repos, trying the AUR with $(basename "$AUR"): ${FAILED[*]}"
     # AUR helpers must run as the user, never root
-    sudo -u "$U" "$AUR" -S --needed --noconfirm "${FAILED[@]}" || true
+    # (it may ask for your password once more, for the final pacman step)
+    sudo -u "$U" "$AUR" -S --needed --noconfirm --sudoloop "${FAILED[@]}" || true
   fi
   STILL=()
   for p in "${FAILED[@]}"; do pacman -T "$p" >/dev/null 2>&1 || STILL+=("$p"); done
