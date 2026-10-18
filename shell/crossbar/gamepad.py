@@ -132,6 +132,13 @@ class Gamepads:
         """Own the controller unless a game/app is in front; tell the XMB if it's in front."""
         target = self._target(fresh=True)
         xmb = target == "xmb"
+        if xmb and not system.launching() and not self.overlay_open:
+            # the menu is in front but a Steam window is still showing: Steam would get
+            # the same presses (it reads controllers itself), so put it away
+            vis = system.visible_steam()
+            if vis:
+                for w in vis:
+                    system.hide_window(w["con_id"])
         if xmb != self.xmb_focused:
             self.xmb_focused = xmb
             HUB.publish({"type": "focus", "xmb": xmb})
@@ -490,13 +497,12 @@ class Gamepads:
                             f = system.focused()
                             if f is not None and not ("xmb" in f["marks"] or system.is_xmb(f)) \
                                     and (not f.get("con_id") or system.is_background_window(f)):
-                                system.hide_steam() if system.is_steam_client(f) else system.show_shell()
+                                system.after_game() if system.is_steam_client(f) else system.show_shell()
                         # game mode: the XMB is closed, so when the last game goes, bring it back
                         if session.game_mode() and not self.overlay_open and not any(
                                 not system.is_background_window(w) and not system.is_xmb(w)
                                 and "discord" not in (w.get("app") or "").lower() for w in system.windows()):
-                            system.hide_steam()
-                            system.show_shell()
+                            system.after_game()
                     if ('"change": "new"' in line or '"change":"new"' in line or '"change": "focus"' in line) \
                             and not session.game_mode():
                         f = system.focused()

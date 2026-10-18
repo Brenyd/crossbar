@@ -556,17 +556,64 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.9.2', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.9.2', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.9.3', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.9.3', 'About') },
       ];
     },
   },
 ];
 
 // Order in the Settings column.
-const SETTINGS_ORDER = ['display', 'sound', 'network', 'bluetooth', 'controls', 'games', 'theme', 'media', 'time', 'accounts', 'system'];
+// PS5 running Linux: temperatures, fan, front LED (only shown when the PS5 drivers are there)
+const ledName = (n) => (n === 'off' ? 'Off' : n.replace(/^zoneb_/, 'zone B ').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()));
+const tempText = (t) => [['CPU', t.cpu], ['GPU', t.gpu], ['NVMe', t.nvme]].filter(([, v]) => v != null).map(([k, v]) => `${k} ${v} °C`).join(' · ') || 'No sensors found';
+const PS5_FOLDER = {
+  key: 'ps5', label: 'PS5 Hardware', icon: 'game', sub: 'Temperatures, fan, front light',
+  children: async () => {
+    const p = await api.get('/api/ps5');
+    if (!p.available) return [{ key: 'na', label: 'PS5 drivers not found', icon: 'info', sub: 'Needs the PS5 fan and LED kernel drivers' }];
+    const post = async (path, body, msg) => { const r = await call(() => api.post(path, body), msg); if (r) reloadFolder(); };
+    const [lo, hi] = p.target_range;
+    const items = [
+      { key: 'temps', label: 'Temperatures', icon: 'info', sub: tempText(p.temps),
+        action: () => message(`${tempText(p.temps).replace(/ · /g, '\n')}\n\nFan target: ${p.fan_target ?? '?'} °C`, 'Temperatures') },
+      { key: 'hud', label: 'Temperature Overlay', icon: 'display',
+        sub: p.hud ? `On — ${p.hud_corner.replace('-', ' ')} of the screen, also over games` : 'Off — show CPU/GPU/NVMe temperatures on screen',
+        action: () => Options.show([
+          { label: `${check(!p.hud)}Off`, action: () => post('/api/ps5/hud', { on: false }) },
+          ...['top-right', 'top-left', 'bottom-right', 'bottom-left'].map((c) => ({
+            label: `${check(p.hud && p.hud_corner === c)}On — ${c.replace('-', ' ')}`, action: () => post('/api/ps5/hud', { on: true, corner: c }) })),
+        ]) },
+    ];
+    if (p.fan_target != null) {
+      const vals = []; for (let v = lo; v <= hi; v += 5) vals.push(v);
+      items.push({ key: 'fan', label: 'Fan Target Temperature', icon: 'settings',
+        sub: `${p.fan_target} °C — the fan speeds up to keep the chip below this. Lower = cooler but louder`,
+        action: () => Options.show(vals.map((v) => ({ label: `${check(v === p.fan_target)}${v} °C${v <= 60 ? ' (coolest, loudest)' : v >= 90 ? ' (quietest, warmest)' : ''}`,
+          action: () => post('/api/ps5/fan-target', { value: v }, `Fan target ${v} °C`) })), Math.max(0, vals.indexOf(p.fan_target))) });
+    }
+    if (p.ps5_control) {
+      const modes = [['auto', 'Automatic (follow the target)'], ['on', 'On'], ['off', 'Off'], ['max', 'Max']];
+      items.push({ key: 'fanmode', label: 'Fan Mode', icon: 'settings', sub: (modes.find(([m]) => m === p.fan_mode) || modes[0])[1],
+        action: () => Options.show(modes.map(([m, l]) => ({ label: `${check(m === p.fan_mode)}${l}`,
+          action: async () => { if (m !== 'off' || await confirmSafe('Turn the fan off?\nOnly for a moment: the PS5 can overheat without it.')) post('/api/ps5/fan-mode', { mode: m }); } }))) });
+      items.push({ key: 'boost', label: 'Boost', icon: 'settings', sub: p.boost ? 'On' : 'Off',
+        action: () => post('/api/ps5/boost', { on: !p.boost }) });
+    }
+    if (p.leds.length) {
+      const names = ['off', ...p.leds];
+      items.push({ key: 'led', label: 'Front Light', icon: 'theme', sub: ledName(p.led || 'off'),
+        action: () => Options.show(names.map((n) => ({ label: `${check((p.led || 'off') === n)}${ledName(n)}`,
+          action: () => post('/api/ps5/led', { name: n }) })), Math.max(0, names.indexOf(p.led || 'off'))) });
+    }
+    return items;
+  },
+};
+SETTINGS_FOLDERS.push(PS5_FOLDER);
+
+const SETTINGS_ORDER = ['display', 'sound', 'network', 'bluetooth', 'controls', 'games', 'ps5', 'theme', 'media', 'time', 'accounts', 'system'];
 SETTINGS_FOLDERS.sort((a, b) => SETTINGS_ORDER.indexOf(a.key) - SETTINGS_ORDER.indexOf(b.key));
 
-CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return SETTINGS_FOLDERS; } });
+CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return SETTINGS_FOLDERS.filter((f) => f.key !== 'ps5' || S.state?.ps5hw); } });
 
 // After boot: if this is the Crossbar session but parts are missing (e.g. code
 // updated without rebuilding the ISO), say so plainly instead of half-working.

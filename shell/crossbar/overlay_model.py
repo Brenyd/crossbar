@@ -209,6 +209,23 @@ class Model:
                          "bar": 0 if out.get("muted") else min(1, out["volume"] / 100), "hint": "◀ ▶ adjust · {ok} mute",
                          "ok": lambda: (api.post("/api/audio", {"target": "output", "mute": True}), self.refresh()),
                          "adjust": lambda d_: vol(5 if d_ > 0 else -5)})
+        ps5 = d.get("ps5") or {}
+        if ps5.get("available"):
+            t = ps5.get("temps") or {}
+            parts = [f"{k.upper() if k != 'nvme' else 'NVMe'} {v}°" for k, v in (("cpu", t.get("cpu")), ("gpu", t.get("gpu")), ("nvme", t.get("nvme"))) if v is not None]
+            hot = max([v for v in t.values() if v is not None] or [0])
+            rows.append({"key": "temps", "icon": "temperature-symbolic" if hot < 80 else "dialog-warning-symbolic",
+                         "label": "Temperatures", "sub": " · ".join(parts) or "No sensors",
+                         "hint": "{ok} " + ("hide" if ps5.get("hud") else "show") + " on screen",
+                         "ok": lambda: (api.post("/api/ps5/hud", {"on": not ps5.get("hud")}), self.refresh())})
+            if ps5.get("fan_target") is not None:
+                lo, hi = ps5.get("target_range") or (40, 95)
+                ft = ps5["fan_target"]
+                rows.append({"key": "fan", "icon": "weather-windy-symbolic", "label": "Fan Target",
+                             "sub": f"{ft} °C — lower keeps it cooler (louder)" if ps5.get("fan_mode", "auto") == "auto"
+                                    else f"Fixed pattern: {ps5['fan_mode']}",
+                             "bar": (ft - lo) / (hi - lo), "hint": "◀ ▶ adjust",
+                             "adjust": lambda d_: (api.post("/api/ps5/fan-target", {"delta": 5 if d_ > 0 else -5}), self.refresh())})
         n = len(d.get("apps_audio") or [])
         rows.append({"key": "mixer", "icon": "multimedia-volume-control-symbolic", "label": "App Volume",
                      "sub": f"{n} app{'s' if n != 1 else ''} playing sound" if n else "Nothing playing right now",

@@ -60,7 +60,7 @@ def _admin(action, req):
 
 
 def add(job, req):
-    job.set(0.2, "Saving and connecting…")
+    job.set(0.2, "Checking the NAS…")
     req = {k: req.get(k, "") for k in ("name", "type", "server", "share", "username", "password", "domain")}
     req["gid"] = os.getgid()
     res = _admin("nas-add", req)

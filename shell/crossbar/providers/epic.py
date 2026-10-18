@@ -102,9 +102,11 @@ class Epic(Provider):
             tool, env = compat.env_for(f"epic:{app}", "egs", app)
         except RuntimeError:
             tool, env = None, {}
+        title = (self._installed_map().get(app) or {}).get("title", app)
+        base = ["legendary", "launch", app, "--skip-version-check"]
         if tool == "wine":
-            util.spawn(["legendary", "launch", app, "--wine", "wine", "--wine-prefix", env["WINEPREFIX"]])
+            util.spawn_checked(base + ["--wine", "wine", "--wine-prefix", env["WINEPREFIX"]], what=title)
         elif tool:
-            util.spawn(["legendary", "launch", app, "--no-wine", "--wrapper", "umu-run"], env=env)
+            util.spawn_checked(base + ["--no-wine", "--wrapper", "umu-run"], env=env, what=title)
         else:
-            util.spawn(["legendary", "launch", app])
+            util.spawn_checked(base, what=title)

@@ -186,3 +186,6 @@ body.infolder #cats { opacity: 0; }
 .glyph.g-playstation[data-g="□"] { color: #f4a3dc; }
 .glyph.g-playstation[data-g="△"] { color: #6fe3b8; }
 .q-foot b, #viewer .v-hint b.glyph { font-weight: 600; }
+.glyph.sym { display: inline-flex !important; align-items: center; justify-content: center; vertical-align: middle;
+  width: 1.55em; height: 1.55em; min-width: 0 !important; padding: 0 !important; border-radius: 50% !important; box-sizing: border-box; }
+.glyph.sym svg { width: 1.2em; height: 1.2em; display: block; }

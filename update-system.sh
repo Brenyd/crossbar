@@ -87,22 +87,25 @@ systemctl is-active --quiet crossbar-inputd && echo "crossbar-inputd: running" |
 if [[ -n "${CROSSBAR_NO_RESTART:-}" ]]; then exit 0; fi
 step "Restarting Crossbar"
 UID_U=$(id -u "$U")
-SOCK=$(ls /run/user/"$UID_U"/sway-ipc.*.sock 2>/dev/null | head -1 || true)
-if [[ -n "$SOCK" ]] && sudo -u "$U" SWAYSOCK="$SOCK" swaymsg -t get_version >/dev/null 2>&1; then
+SOCK=""
+for s_ in /run/user/"$UID_U"/sway-ipc.*.sock; do   # the live one (a crashed sway can leave old sockets)
+  [[ -S "$s_" ]] && sudo -u "$U" SWAYSOCK="$s_" swaymsg -t get_version >/dev/null 2>&1 && SOCK="$s_" && break
+done
+if [[ -n "$SOCK" ]]; then
   # Restart Crossbar's pieces *inside* the running session (sway keeps running, so there's
   # no drop to the TTY). This terminal belongs to the backend being restarted, so the restart
   # runs detached and starts a couple of seconds after this script finishes.
   sudo -u "$U" SWAYSOCK="$SOCK" XDG_RUNTIME_DIR="/run/user/$UID_U" setsid -f bash -c '
+    exec >>"'"$UHOME"'/.cache/crossbar-shell.log" 2>&1
+    echo "$(date "+%F %T") update: restarting Crossbar"
     sleep 2
-    pkill -u "$(id -u)" -f "bash /usr/local/bin/crossbar-[s]hell"    # the old supervisor (and its loops)
-    # [x] patterns: so pkill doesn't match this script's own command line
-    pkill -u "$(id -u)" -f "/usr/lib/crossbar/[s]erver.py"
-    pkill -u "$(id -u)" -f "/usr/lib/crossbar/[o]verlay.py"
-    pkill -u "$(id -u)" -f "crossbar/[s]hell-browser"
-    sleep 1
     swaymsg reload >/dev/null 2>&1                                   # new keybindings / rules
-    swaymsg exec /usr/local/bin/crossbar-shell >/dev/null 2>&1        # the new supervisor starts everything
-    sleep 20
+    # the new supervisor takes over: stops the old one and its pieces, then starts everything
+    swaymsg exec /usr/local/bin/crossbar-shell
+    sleep 10                     # the old backend is still answering for a few seconds
+    for i in $(seq 60); do curl -s -m 2 -o /dev/null http://127.0.0.1:7777/api/jobs && break; sleep 1; done
+    echo "$(date "+%F %T") update: backend $(curl -s -m 2 -o /dev/null -w "%{http_code}" http://127.0.0.1:7777/api/jobs)"
+    sleep 15
     HOME="'"$UHOME"'" /usr/local/bin/crossbar-doctor >"'"$UHOME"'/crossbar-report.txt" 2>&1
   ' </dev/null >/dev/null 2>&1
   echo

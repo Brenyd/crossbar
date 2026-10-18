@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.9.2
+# Crossbar — prototype 0.9.3
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -169,6 +169,22 @@ The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that giv
 console user access to controllers and `/dev/uinput`. On an existing install, copy that rule
 in and reboot. In a VM, pass the controller through as a USB device.
 
+## PS5 hardware (Linux on a PS5)
+
+When the PS5 fan and LED kernel drivers are present, **Settings › PS5 Hardware** shows up:
+
+- **Temperatures** — CPU, GPU and NVMe, read straight from the sensors.
+- **Temperature Overlay** — a small box with the temperatures in a corner of your choice, on top of
+  everything including games (it never takes input).
+- **Fan Target Temperature** — 40–95 °C: the fan speeds up to keep the chip below it (lower = cooler,
+  louder). Remembered and re-applied at every start.
+- **Fan Mode / Boost** — fixed patterns (On / Off / Max) through `ps5_control`, if it's installed.
+- **Front Light** — every colour and animation the LED driver offers.
+
+The Quick Menu has the temperatures (A shows/hides the overlay) and the fan target (◀ ▶).
+Thanks to [syrufex/PS5-Temperature-Control-Panel-Linux](https://github.com/syrufex/PS5-Temperature-Control-Panel-Linux)
+(MIT), whose app showed which driver interfaces to use; Crossbar's version is its own code and UI.
+
 ## Button glyphs
 
 **Settings › Controller & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
@@ -278,6 +294,8 @@ in **Store**, and installed games in **Game**.
 - **Steam** games launch through **Big Picture** (Steam's console mode) by default, so Steam Input
   and Steam's overlay work like on a Steam Deck. When the game ends — or you close it from the
   Quick Menu — Steam is tucked away and you're back in Crossbar. (Toggle in Game Settings.)
+- **If a game won't start**, the error comes from the game itself (for example a missing file or a
+  Wine/Proton message) instead of just "didn't open a window"; full output is in `~/.cache/crossbar-games.log`.
 - **GOG** Windows games install from GOG's own installers (unpacked with innoextract) and run with
   Proton through **umu-launcher**; native Linux builds are used when GOG has one.
 - **Epic** games run through the same Proton setup (legendary + umu).
@@ -296,7 +314,10 @@ When a game closes you're back in the menu.
 - **Users › File Browser** — your home folder, USB drives and network drives: open media,
   copy / cut / paste, rename, new folder, move to Trash (restorable) or delete permanently.
 - **Settings › Network Settings › Network Drives** — add an SMB (Windows/Samba, most NAS boxes) or
-  NFS share: server, share, username, password. It's written to `/etc/fstab` as an on-demand mount
+  NFS share: server, share, username, password (or paste the whole address, like `\\nas\Media` or
+  `//192.168.0.50/Media`). The connection is tested first and nothing is saved if it fails; you get the
+  reason (NAS unreachable, wrong share name with the list of shares it has, wrong password, or an
+  old NAS that only speaks SMB1, which is then used automatically). It's written to `/etc/fstab` as an on-demand mount
   under `/mnt/nas/<name>` (with `nofail`, so an offline NAS never blocks boot); the password lives in
   a root-only file in `/etc/crossbar/nas/`, never in fstab. Use a drive as your Music/Video/Photo
   folder from its options.

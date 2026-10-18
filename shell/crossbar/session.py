@@ -37,7 +37,7 @@ def enter_game_mode(reason=""):
         if game_mode():
             return True
         open(FLAG, "w").write(reason)
-        _pkill("crossbar/shell-browser")  # crossbar-shell won't restart it while the flag exists
+        _pkill("^[^ ]*chrom[^ ]* .*crossbar/shell-browser")  # crossbar-shell won't restart it while the flag exists
     print(f"session: game mode on ({reason})", flush=True)
     return True
 
@@ -66,8 +66,8 @@ def restart():
         pass
     me = os.getpid()
     # [x] patterns so pkill can't match this helper's own command line
-    subprocess.Popen(["sh", "-c", f"sleep 0.4; pkill -u {os.getuid()} -f '/usr/lib/crossbar/[o]verlay.py'; "
-                                  f"pkill -u {os.getuid()} -f 'crossbar/[s]hell-browser'; kill {me}"],
+    subprocess.Popen(["sh", "-c", f"sleep 0.4; pkill -u {os.getuid()} -f '^python3 /usr/lib/crossbar/overlay[.]py'; "
+                                  f"pkill -u {os.getuid()} -f '^[^ ]*chrom[^ ]* .*crossbar/shell-browser'; kill {me}"],
                      start_new_session=True)
 
 

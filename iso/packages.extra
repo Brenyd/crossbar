@@ -39,6 +39,7 @@ bluez
 bluez-utils
 # network drives
 cifs-utils
+smbclient
 nfs-utils
 # audio
 pipewire

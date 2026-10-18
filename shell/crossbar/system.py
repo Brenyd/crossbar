@@ -174,6 +174,41 @@ def hide_steam():
     show_shell()
 
 
+_AFTER = {"until": 0}
+
+
+def visible_steam():
+    return [w for w in all_windows() if is_steam_client(w) and w.get("visible")]
+
+
+def after_game():
+    """A game ended: take Steam out of Big Picture (it reads the controller itself, so a
+    Big Picture left running behind the menu reacts to every press too) and keep Steam's
+    windows tucked away for a few seconds while it settles."""
+    running = time.time() < _AFTER["until"]
+    _AFTER["until"] = time.time() + 15
+    hide_steam()
+    if running:
+        return
+
+    def run():
+        if any("big picture" in (w.get("title") or "").lower() for w in all_windows() if is_steam_client(w)) \
+                and util.which("steam"):
+            subprocess.Popen(["steam", "steam://close/bigpicture"], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        while time.time() < _AFTER["until"]:
+            time.sleep(1)
+            if launching():                     # a new game is starting: leave Steam alone
+                return
+            vis = visible_steam()
+            for w in vis:
+                hide_window(w["con_id"])
+            f = focused()
+            if vis or not f or not f.get("con_id") or is_steam_client(f):
+                show_shell()
+    threading.Thread(target=run, daemon=True).start()
+
+
 def kill_window(con_id):
     """Force close: end the window's process right away."""
     import signal
@@ -221,7 +256,7 @@ def all_windows():
         if n.get("pid") and n.get("type") in ("con", "floating_con"):
             out.append({"con_id": n["id"], "pid": n["pid"], "title": n.get("name") or "",
                         "app": n.get("app_id") or (n.get("window_properties") or {}).get("class") or "",
-                        "fullscreen": bool(n.get("fullscreen_mode"))})
+                        "fullscreen": bool(n.get("fullscreen_mode")), "visible": bool(n.get("visible"))})
         stack += n.get("nodes", []) + n.get("floating_nodes", [])
     return out
 

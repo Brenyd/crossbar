@@ -3,32 +3,83 @@
 #   the backend (server.py), the Quick Menu overlay, and the XMB window.
 # Each is restarted if it stops (that's how Settings › Restart Crossbar works),
 # and everything stops when this sway session ends.
+# The screen is never left black: if the backend won't start, an error screen shows
+# what went wrong (and Crossbar keeps retrying). Steps are logged to ~/.cache/crossbar-shell.log.
 mkdir -p "$HOME/.cache"
 RUN="${XDG_RUNTIME_DIR:-/tmp}"
+LOG="$HOME/.cache/crossbar-shell.log"
 GAMEMODE="$RUN/crossbar-gamemode"     # present while a game runs: the XMB window stays closed to save memory
+PROFILE="$HOME/.config/crossbar/shell-browser"
+ME=$(id -u)
+log() { echo "$(date '+%F %T') [$$] $*" >>"$LOG"; }
+tail -n 400 "$LOG" >"$LOG.tmp" 2>/dev/null && mv "$LOG.tmp" "$LOG"
+log "starting (sway: ${SWAYSOCK:-none})"
 rm -f "$GAMEMODE"
 
+# Another supervisor (an older copy, e.g. before an update) must not fight this one.
+OLD=""
+# (matched by process name, or by an exact command line: never a shell that merely mentions it)
+for pid in $( (pgrep -u "$ME" -x crossbar-shell; pgrep -u "$ME" -f '^(/usr)?(/bin/)?(ba)?sh /usr/local/bin/crossbar-shell$') | sort -u); do
+  [ "$pid" != "$$" ] && [ "$(ps -o ppid= -p "$pid" | tr -d ' ')" != "$$" ] && kill "$pid" 2>/dev/null && OLD="$OLD $pid" && log "stopping older supervisor $pid"
+done
 # A previous session may have left pieces running (for example if sway was quit):
 # they would answer on the backend's port with a dead screen behind them.
-pkill -u "$USER" -f "/usr/lib/crossbar/server.py" 2>/dev/null
-pkill -u "$USER" -f "/usr/lib/crossbar/overlay.py" 2>/dev/null
-pkill -u "$USER" -f "crossbar/shell-browser" 2>/dev/null
-sleep 0.5
+# Patterns are anchored to the program itself, so a terminal or editor that merely mentions
+# these paths is never touched.
+P_SERVER='^python3 /usr/lib/crossbar/server\.py'
+P_OVERLAY='^python3 /usr/lib/crossbar/overlay\.py'
+P_BROWSER='^[^ ]*chrom[^ ]* .*crossbar/shell-browser'
+P_ERROR='^[^ ]*chrom[^ ]* .*crossbar/shell-error'
+stop_pieces() {
+  pkill -u "$ME" -f "$P_SERVER" 2>/dev/null
+  pkill -u "$ME" -f "$P_OVERLAY" 2>/dev/null
+  pkill -u "$ME" -f "$P_BROWSER" 2>/dev/null
+  pkill -u "$ME" -f "$P_ERROR" 2>/dev/null
+}
+stop_pieces
+for _ in $(seq 20); do   # wait (up to 5 s) until they're really gone, then insist
+  pgrep -u "$ME" -f "$P_SERVER|$P_BROWSER" >/dev/null || break
+  sleep 0.25
+done
+pkill -9 -u "$ME" -f "$P_SERVER|$P_BROWSER" 2>/dev/null
+# the older supervisor's own clean-up must have run before we start anything new
+for pid in $OLD; do for _ in $(seq 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.25; done; kill -9 "$pid" 2>/dev/null; done
+rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie"   # stale browser lock
 
 alive() { swaymsg -t get_version >/dev/null 2>&1; }
-cleanup() {
-  pkill -u "$USER" -f "/usr/lib/crossbar/server.py" 2>/dev/null
-  pkill -u "$USER" -f "/usr/lib/crossbar/overlay.py" 2>/dev/null
-  pkill -u "$USER" -f "crossbar/shell-browser" 2>/dev/null
-}
-trap cleanup EXIT
+backend_up() { curl -sf -m 2 -o /dev/null http://127.0.0.1:7777/api/jobs; }   # -f: a foreign server on the port doesn't count
+trap 'log "stopping"; stop_pieces' EXIT
 
 ( while alive; do
     python3 /usr/lib/crossbar/server.py >>"$HOME/.cache/crossbard.log" 2>&1
+    log "backend exited ($?), restarting"
     sleep 1
   done ) &
 
-until curl -s -o /dev/null http://127.0.0.1:7777/api/jobs; do sleep 0.3; done
+# Wait for the backend; if it doesn't come up, show why instead of a black screen.
+ERRPAGE="$RUN/crossbar-error.html"
+waited=0
+until backend_up; do
+  sleep 0.5; waited=$((waited + 1))
+  if [ "$waited" -eq 40 ]; then          # 20 s
+    log "backend not answering after 20 s; showing the error screen"
+    {
+      echo '<!doctype html><meta charset=utf-8><title>Crossbar</title>'
+      echo '<body style="background:#111;color:#ddd;font:20px sans-serif;padding:60px">'
+      echo '<h1 style="font-weight:300">Crossbar is having trouble starting</h1>'
+      echo '<p>The menu backend didn'"'"'t start. Crossbar keeps trying and this screen closes by itself when it works.</p>'
+      echo '<p>Terminal: <b>Ctrl+Alt+Shift+T</b> &nbsp;·&nbsp; Log: <code>~/.cache/crossbard.log</code></p>'
+      echo '<pre style="font-size:15px;color:#aaa;white-space:pre-wrap">'
+      tail -n 30 "$HOME/.cache/crossbard.log" 2>/dev/null | sed 's/&/\&amp;/g; s/</\&lt;/g'
+      echo '</pre>'
+    } >"$ERRPAGE"
+    chromium --ozone-platform=wayland --app="file://$ERRPAGE" --user-data-dir="$HOME/.config/crossbar/shell-error" \
+      --no-first-run --noerrdialogs >/dev/null 2>&1 &
+  fi
+  alive || exit 0
+done
+pkill -u "$ME" -f "$P_ERROR" 2>/dev/null
+log "backend up after $((waited / 2)) s"
 
 # Quick Menu overlay: drawn on the Wayland overlay layer, above games and video.
 if python3 -c "import ctypes; ctypes.CDLL('libgtk4-layer-shell.so')" 2>/dev/null; then
@@ -37,19 +88,32 @@ if python3 -c "import ctypes; ctypes.CDLL('libgtk4-layer-shell.so')" 2>/dev/null
       sleep 2
     done ) &
 else
-  echo "gtk4-layer-shell missing: Quick Menu falls back to the XMB" >>"$HOME/.cache/crossbard.log"
+  log "gtk4-layer-shell missing: Quick Menu falls back to the XMB"
 fi
 
+fails=0
 while alive; do
   if [ -e "$GAMEMODE" ]; then sleep 0.5; continue; fi
+  started=$(date +%s)
   chromium \
     --ozone-platform=wayland \
     --app=http://127.0.0.1:7777 \
-    --user-data-dir="$HOME/.config/crossbar/shell-browser" \
+    --user-data-dir="$PROFILE" \
     --no-first-run --noerrdialogs --disable-infobars \
     --disable-session-crashed-bubble --disable-features=Translate \
     --autoplay-policy=no-user-gesture-required \
     --password-store=basic \
     >>"$HOME/.cache/crossbar-xmb.log" 2>&1
-  sleep 1
+  rc=$?
+  if [ $(( $(date +%s) - started )) -lt 5 ]; then
+    fails=$((fails + 1))
+    log "menu window exited right away (rc $rc, $fails in a row)"
+    # a leftover browser can hold the profile lock: clear it
+    pkill -u "$ME" -f "$P_BROWSER" 2>/dev/null
+    rm -f "$PROFILE/SingletonLock" "$PROFILE/SingletonSocket" "$PROFILE/SingletonCookie"
+    sleep $(( fails > 5 ? 5 : 1 ))
+  else
+    fails=0
+    sleep 1
+  fi
 done

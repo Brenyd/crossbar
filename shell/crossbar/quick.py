@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 
-from . import glyphs, player, system, util
+from . import glyphs, ps5hw, player, system, util
 from .events import HUB
 from .spotify import SPOTIFY
 
@@ -87,7 +87,7 @@ def overlay_go_home():
 def overlay_close_app():
     closed = close()
     close_overlay(resume=False)
-    system.hide_steam()                       # Steam's Big Picture shouldn't pop up after
+    system.after_game()                       # Steam's Big Picture shouldn't pop up after
     return closed
 
 
@@ -208,6 +208,7 @@ def info():
         "spotify": sp,
         "audio": system.audio(),
         "apps_audio": system.app_streams(),
+        "ps5": ps5hw.status() if ps5hw.available() else None,
         "glyphs": glyphs.current(),
         "output": next((d for d in devices["outputs"] if d["default"]), None),
         "outputs": devices["outputs"],

@@ -144,10 +144,78 @@ class Overlay(Gtk.Application):
         win.add_controller(keys)
 
         self.win, self.scale = win, scale
+        self.make_hud(scale)
         self.hold()
         threading.Thread(target=self.listen, daemon=True).start()
         threading.Thread(target=self.poll, daemon=True).start()
         print(f"overlay: ready ({width}x{height}, scale {scale:.2f})", flush=True)
+
+    # ---- PS5 temperature HUD: a small click-through box above everything, games included ----
+    def make_hud(self, scale):
+        hud = Gtk.Window(application=self)
+        LayerShell.init_for_window(hud)
+        LayerShell.set_namespace(hud, "crossbar-hud")
+        LayerShell.set_layer(hud, LayerShell.Layer.OVERLAY)
+        LayerShell.set_keyboard_mode(hud, LayerShell.KeyboardMode.NONE)
+        LayerShell.set_exclusive_zone(hud, -1)
+        css = Gtk.CssProvider()
+        text = (f".hud {{ background: rgba(0,0,0,0.55); border-radius: {int(10 * scale)}px; padding: {int(6 * scale)}px {int(12 * scale)}px; }}"
+                f" .hud label {{ color: #eee; font-size: {int(17 * scale)}px; font-family: 'Noto Sans', sans-serif; }}"
+                " .hud .warm { color: #ffc56b; } .hud .hot { color: #ff7b7b; }")
+        if hasattr(css, "load_from_string"):
+            css.load_from_string(text)
+        else:
+            css.load_from_data(text.encode())
+        Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        box = Gtk.Box(spacing=int(14 * scale))
+        box.add_css_class("hud")
+        hud.set_child(box)
+        self.hud, self.hud_box, self.hud_labels, self.hud_corner = hud, box, {}, None
+        if hasattr(hud, "set_can_target"):
+            box.set_can_target(False)                          # clicks and input go straight through
+        threading.Thread(target=self.hud_loop, daemon=True).start()
+
+    def hud_loop(self):
+        while True:
+            try:
+                p = self.api.get("/api/ps5") or {}
+            except Exception:
+                p = {}
+            GLib.idle_add(self.hud_update, p)
+            time.sleep(2 if p.get("hud") else 6)
+
+    def hud_update(self, p):
+        if not (p.get("available") and p.get("hud")):
+            self.hud.set_visible(False)
+            return False
+        corner = p.get("hud_corner") or "top-right"
+        if corner != self.hud_corner:
+            for edge, on in ((LayerShell.Edge.TOP, "top" in corner), (LayerShell.Edge.BOTTOM, "bottom" in corner),
+                             (LayerShell.Edge.LEFT, "left" in corner), (LayerShell.Edge.RIGHT, "right" in corner)):
+                LayerShell.set_anchor(self.hud, edge, on)
+                LayerShell.set_margin(self.hud, edge, int(18 * self.scale))
+            self.hud_corner = corner
+        t = p.get("temps") or {}
+        for key, name in (("cpu", "CPU"), ("gpu", "GPU"), ("nvme", "NVMe")):
+            v = t.get(key)
+            lab = self.hud_labels.get(key)
+            if v is None:
+                if lab:
+                    lab.set_visible(False)
+                continue
+            if not lab:
+                lab = self.hud_labels[key] = Gtk.Label()
+                self.hud_box.append(lab)
+            lab.set_visible(True)
+            lab.set_text(f"{name} {v}°")
+            for c in ("warm", "hot"):
+                lab.remove_css_class(c)
+            if v >= 85:
+                lab.add_css_class("hot")
+            elif v >= 70:
+                lab.add_css_class("warm")
+        self.hud.set_visible(True)
+        return False
 
     def show(self, on):
         if on == self.visible:

@@ -5,6 +5,9 @@
     pkexec /usr/lib/crossbar/admin.py nas-remove   < {"name"}
     pkexec /usr/lib/crossbar/admin.py nas-remount  < {"name"}
     pkexec /usr/lib/crossbar/admin.py boot-session < {"session": "crossbar" | "desktop"}
+    pkexec /usr/lib/crossbar/admin.py ps5-fan-target < {"value": 40..95}
+    pkexec /usr/lib/crossbar/admin.py ps5-led        < {"name": "<preset>" | "off"}
+    pkexec /usr/lib/crossbar/admin.py ps5-control    < {"args": ["--fan", "on|off|max"] | ["--boost", "on|off"]}
 
 Network drives go in /etc/fstab with a marker comment (# crossbar-nas:<name>),
 always mount under /mnt/nas/<name>, use x-systemd.automount + nofail so a
@@ -92,11 +95,114 @@ def without(lines, s):
     return out
 
 
+SMB_ERRORS = {   # mount.cifs "mount error(N)" -> what to do about it
+    13: "The NAS refused the username or password (check them, and that this user may use the share)",
+    2: "The NAS has no share by that name",
+    6: "The NAS has no share by that name",
+    112: "Couldn't reach the NAS (is it on, and is the address right?)",
+    113: "Couldn't reach the NAS (no route; is the address right?)",
+    115: "The NAS didn't answer in time",
+    111: "The NAS refused the connection (is SMB/Windows file sharing turned on?)",
+    95: "The NAS only speaks the old SMB1 protocol",
+    22: "The NAS rejected the connection settings",
+}
+
+
+def port_open(host, port, timeout=4):
+    import socket
+    try:
+        with socket.create_connection((host.strip("[]"), port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def smb_shares(server, cred):
+    """Share names, if smbclient is installed (for a helpful 'did you mean')."""
+    if not shutil.which("smbclient"):
+        return []
+    r = subprocess.run(["smbclient", "-g", "-L", f"//{server}", "-A", cred, "-m", "SMB3"],
+                       capture_output=True, text=True, timeout=20)
+    return [ln.split("|")[1] for ln in r.stdout.splitlines() if ln.startswith("Disk|")]
+
+
+def test_mount(kind, server, share, cred=None, uid=0, gid=0, guest=False):
+    """Mount once in a temporary folder to find problems before anything is saved.
+    Returns (ok, message, extra_options)."""
+    port = 445 if kind == "smb" else 2049
+    if not port_open(server, port):
+        if kind == "smb" and port_open(server, 139):
+            pass                                   # NetBIOS-only (very old NAS): let mount.cifs try
+        else:
+            return False, (f"Couldn't reach {server} on the {'SMB' if kind == 'smb' else 'NFS'} port ({port}). "
+                           "Check the address, that the NAS is on, and that "
+                           + ("SMB (Windows file sharing)" if kind == "smb" else "NFS") + " is enabled on it."), ""
+    tmp = tempfile.mkdtemp(prefix="crossbar-nas-", dir="/run")
+    try:
+        tries = [""] if kind == "nfs" else ["", "vers=3.0", "vers=2.0", "vers=1.0"]
+        last = ""
+        for extra in tries:
+            if kind == "smb":
+                opts = f"credentials={cred},uid={uid},gid={gid},iocharset=utf8" + (",guest" if guest else "") + (f",{extra}" if extra else "")
+                r = subprocess.run(["mount", "-t", "cifs", f"//{server}/{share}", tmp, "-o", opts],
+                                   capture_output=True, text=True, timeout=30)
+            else:
+                r = subprocess.run(["mount", "-t", "nfs", f"{server}:/{share}", tmp], capture_output=True, text=True, timeout=30)
+            if r.returncode == 0:
+                subprocess.run(["umount", tmp], capture_output=True)
+                return True, "", extra
+            last = (r.stderr or r.stdout).strip()
+            m = re.search(r"mount error\((\d+)\)", last)
+            code = int(m.group(1)) if m else None
+            if kind == "smb" and code not in (95, 22, 112, 115, None):
+                break                                   # a version change won't fix a password or a share name
+        if kind == "smb":
+            m = re.search(r"mount error\((\d+)\)", last)
+            code = int(m.group(1)) if m else None
+            msg = SMB_ERRORS.get(code, f"Mounting failed: {last[-160:]}")
+            if code in (2, 6):
+                shares = smb_shares(server, cred)
+                if shares:
+                    msg += f". Shares on {server}: " + ", ".join(shares[:8])
+            return False, msg, ""
+        low = last.lower()
+        if "access denied" in low or "permission denied" in low:
+            msg = f"The NAS refused this device: allow its IP in the NFS export settings for /{share}"
+        elif "no such file" in low:
+            r = subprocess.run(["showmount", "-e", server], capture_output=True, text=True, timeout=15) if shutil.which("showmount") else None
+            exports = [ln.split()[0] for ln in (r.stdout.splitlines()[1:] if r and r.returncode == 0 else [])]
+            msg = f"The NAS has no export /{share}" + (f". Exports: {', '.join(exports[:8])}" if exports else "")
+        else:
+            msg = f"Mounting failed: {last[-160:]}"
+        return False, msg, ""
+    finally:
+        subprocess.run(["umount", "-l", tmp], capture_output=True)
+        try:
+            os.rmdir(tmp)
+        except OSError:
+            pass
+
+
+def split_address(server, share):
+    """Accept \\\\nas\\share, //nas/share, smb://nas/share or nfs://nas/path typed in either box."""
+    server, share = (server or "").strip(), (share or "").strip()
+    for text in (server, share):
+        t = text.replace("\\", "/")
+        m = re.match(r"^(?:smb:|nfs:|cifs:)?//([^/]+)/?(.*)$", t, re.I)
+        if m:
+            return m.group(1), (m.group(2) or share).strip("/")
+    if ":/" in server and not server.startswith("["):        # nas:/export
+        host, path = server.split(":/", 1)
+        return host, (path or share).strip("/")
+    return server, share.replace("\\", "/").strip("/")
+
+
 def nas_add(req):
     s = slug(req.get("name"))
     kind = req.get("type", "smb")
     if kind not in ("smb", "nfs"):
         fail("Type must be SMB or NFS")
+    req["server"], req["share"] = split_address(req.get("server"), req.get("share"))
     server = clean(req.get("server"), "Server", r"[A-Za-z0-9.\-:\[\]]+", maxlen=255)
     share = clean(req.get("share"), "Share", r"[^\n\r\t\0#]+").strip("/")
     point = os.path.join(MOUNT_ROOT, s)
@@ -108,11 +214,24 @@ def nas_add(req):
         domain = clean(req.get("domain"), "Domain", r"[A-Za-z0-9.\-_]*", required=False)
         cred = os.path.join(CRED_DIR, f"{s}.cred")
         cred_text = f"username={user or 'guest'}\npassword={password}\n" + (f"domain={domain}\n" if domain else "")
+        # test first, with the credentials in a root-only temporary file; nothing is saved if it fails
+        fd, tcred = tempfile.mkstemp(prefix="crossbar-cred-", dir="/run")
+        with os.fdopen(fd, "w") as f:
+            f.write(cred_text)
+        try:
+            ok, msg, extra = test_mount("smb", server, share, tcred, uid, gid, guest=not user)
+        finally:
+            os.remove(tcred)
+        if not ok:
+            fail(msg)
         opts = (f"credentials={cred},uid={uid},gid={gid},iocharset=utf8,file_mode=0664,dir_mode=0775,"
-                + ("guest," if not user else "") +
+                + ("guest," if not user else "") + (f"{extra}," if extra else "") +
                 "nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=600,x-systemd.mount-timeout=20")
         line = f"//{server}/{fstab_escape(share)} {point} cifs {opts} 0 0"
     else:
+        ok, msg, _ = test_mount("nfs", server, share)
+        if not ok:
+            fail(msg)
         opts = "nofail,_netdev,x-systemd.automount,x-systemd.idle-timeout=600,x-systemd.mount-timeout=20"
         line = f"{server}:/{fstab_escape(share)} {point} nfs {opts} 0 0"
     label = clean(req.get("name"), "Name", r"[^\n\r\t\0]+", maxlen=60)
@@ -162,6 +281,60 @@ def nas_remount(req):
     subprocess.run(["systemctl", "restart", unit_name(point, "automount")])
     r = subprocess.run(["timeout", "25", "ls", point], capture_output=True)
     print(json.dumps({"ok": True, "mounted": r.returncode == 0}))
+
+
+# ---- PS5 hardware (fan target, front LED, ps5_control) --------------------------------
+PS5_FAN_TARGET = "/sys/devices/platform/ps5-fan/target_temp"
+PS5_LEDS = "/sys/class/leds"
+
+
+def ps5_fan_target(req):
+    try:
+        v = int(req.get("value"))
+    except (TypeError, ValueError):
+        fail("value must be a number")
+    if not 40 <= v <= 95:
+        fail("The fan target must be between 40 and 95 °C")
+    if not os.path.exists(PS5_FAN_TARGET):
+        fail("The PS5 fan driver isn't loaded")
+    with open(PS5_FAN_TARGET, "w") as f:
+        f.write(str(v))
+    print(json.dumps({"ok": True, "value": v}))
+
+
+def ps5_led(req):
+    import glob
+    name = req.get("name") or ""
+    presets = {os.path.basename(p)[4:-len(":indicator")]: p for p in glob.glob(os.path.join(PS5_LEDS, "ps5:*:indicator"))}
+    if not presets:
+        fail("The PS5 LED driver isn't loaded")
+    if name != "off" and name not in presets:
+        fail("Unknown LED preset")
+    for n, p in presets.items():          # one preset at a time
+        if n != name:
+            try:
+                with open(os.path.join(p, "brightness"), "w") as f:
+                    f.write("0")
+            except OSError:
+                pass
+    if name != "off":
+        with open(os.path.join(presets[name], "brightness"), "w") as f:
+            f.write("1")
+    print(json.dumps({"ok": True}))
+
+
+def ps5_control(req):
+    args = req.get("args")
+    allowed = [["--fan", "on"], ["--fan", "off"], ["--fan", "max"], ["--boost", "on"], ["--boost", "off"]]
+    if args not in allowed:
+        fail("Not an allowed ps5_control command")
+    exe = shutil.which("ps5_control")
+    if not exe:
+        fail("ps5_control isn't installed")
+    r = subprocess.run([exe, *args], capture_output=True, text=True, timeout=20)
+    if r.returncode:
+        fail((r.stderr or r.stdout).strip()[-200:] or "ps5_control failed")
+    print(json.dumps({"ok": True}))
 
 
 # ---- which session the login manager starts (Crossbar or the Plasma desktop) ------------
@@ -228,7 +401,8 @@ def boot_session(req):
 if __name__ == "__main__":
     if os.geteuid() != 0:
         fail("crossbar-admin must run as root (via pkexec)")
-    actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session}
+    actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
+               "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

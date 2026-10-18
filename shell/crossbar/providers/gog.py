@@ -192,11 +192,60 @@ class GOG(Provider):
             return
         from .. import compat
         exe = os.path.join(entry["path"], entry["exe"])
-        if not os.path.isfile(exe):
-            raise RuntimeError(f"Game file missing: {entry['exe']}")
+        if not os.path.isfile(exe) or not _runnable(exe):
+            # e.g. a Windows shortcut (.lnk) that only GOG's own installer creates:
+            # work the launch target out again from the installed files, and remember it
+            entry.update(play_task(entry["path"], gid))
+            data = _read(INSTALLED_PATH, {})
+            data[gid] = entry
+            _write(INSTALLED_PATH, data)
+            exe = os.path.join(entry["path"], entry["exe"])
+            if not os.path.isfile(exe):
+                raise RuntimeError(f"Game file missing: {entry['exe']}")
         argv, env = compat.command(exe, entry.get("args", []), f"gog:{gid}", "gog", gid)
         cwd = os.path.join(entry["path"], entry.get("cwd") or os.path.dirname(entry["exe"]))
-        util.spawn(argv, cwd=cwd if os.path.isdir(cwd) else entry["path"], env=env)
+        util.spawn_checked(argv, cwd=cwd if os.path.isdir(cwd) else entry["path"], env=env, what=entry["title"])
+
+
+RUNNABLE = (".exe", ".bat", ".cmd", ".com")
+
+
+def _runnable(path):
+    return path.lower().endswith(RUNNABLE)
+
+
+def _lnk_target(path):
+    """The target of a Windows shortcut (.lnk): its relative path, else the file name of its target."""
+    try:
+        data = open(path, "rb").read()
+    except OSError:
+        return None
+    if len(data) < 0x4C or data[:4] != b"\x4c\x00\x00\x00":
+        return None
+    import struct
+    flags = struct.unpack_from("<I", data, 0x14)[0]
+    pos = 0x4C
+    if flags & 0x01:                                   # LinkTargetIDList
+        pos += 2 + struct.unpack_from("<H", data, pos)[0]
+    local = None
+    if flags & 0x02:                                   # LinkInfo
+        size = struct.unpack_from("<I", data, pos)[0]
+        off = struct.unpack_from("<I", data, pos + 16)[0]
+        if off:
+            end = data.index(b"\0", pos + off)
+            local = data[pos + off:end].decode("latin-1")
+        pos += size
+    unicode = bool(flags & 0x80)
+    strings = {}
+    for bit, name in ((0x04, "name"), (0x08, "relative"), (0x10, "workdir"), (0x20, "args"), (0x40, "icon")):
+        if flags & bit:
+            n = struct.unpack_from("<H", data, pos)[0]
+            pos += 2
+            raw = data[pos:pos + (n * 2 if unicode else n)]
+            pos += n * 2 if unicode else n
+            strings[name] = raw.decode("utf-16-le" if unicode else "latin-1", errors="replace")
+    target = strings.get("relative") or local
+    return {"target": target, "args": strings.get("args", ""), "workdir": strings.get("workdir")} if target else None
 
 
 def _split(args):
@@ -216,18 +265,38 @@ def play_task(root, gid):
         except (OSError, ValueError):
             continue
         tasks = [t for t in data.get("playTasks", []) if t.get("type") == "FileTask" and t.get("category", "game") == "game"]
-        task = next((t for t in tasks if t.get("isPrimary")), tasks[0] if tasks else None)
-        if task:
-            base = os.path.relpath(os.path.dirname(path), root)
-            norm = lambda p: os.path.normpath(os.path.join(base, (p or "").replace("\\", "/")))  # noqa: E731
-            return {"exe": norm(task["path"]), "cwd": norm(task.get("workingDir") or os.path.dirname(task["path"].replace("\\", "/"))),
+        tasks.sort(key=lambda t: not t.get("isPrimary"))          # primary first, then the others
+        base = os.path.relpath(os.path.dirname(path), root)
+        norm = lambda p: os.path.normpath(os.path.join(base, (p or "").replace("\\", "/")))  # noqa: E731
+        for task in tasks:
+            rel = task.get("path") or ""
+            if rel.lower().endswith(".lnk"):
+                # a shortcut GOG's installer would have made; if it's there, follow it
+                lnk = _lnk_target(os.path.join(root, norm(rel)))
+                if not lnk or not lnk["target"]:
+                    continue
+                rel = lnk["target"].replace("\\", "/")
+                rel = rel.split(":/", 1)[-1] if ":/" in rel else rel     # absolute Windows path: keep the tail
+                cand = os.path.normpath(os.path.join(os.path.dirname(norm(task["path"])), rel))
+                if not os.path.isfile(os.path.join(root, cand)):
+                    hit = glob.glob(os.path.join(root, "**", os.path.basename(rel)), recursive=True)
+                    if not hit:
+                        continue
+                    cand = os.path.relpath(hit[0], root)
+                return {"exe": cand, "cwd": os.path.dirname(cand) or ".", "args": _split(lnk["args"] or task.get("arguments") or "")}
+            if not _runnable(rel) or not os.path.isfile(os.path.join(root, norm(rel))):
+                continue
+            return {"exe": norm(rel), "cwd": norm(task.get("workingDir") or os.path.dirname(rel.replace("\\", "/"))),
                     "args": _split(task.get("arguments") or "")}
     # no info file: the biggest .exe that isn't an installer/uninstaller
     exes = [p for p in glob.glob(os.path.join(root, "**", "*.exe"), recursive=True)
             if not re.search(r"unins|setup|redist|vcredist|directx|dotnet|crash", os.path.basename(p), re.I)]
     if not exes:
         raise RuntimeError("Installed, but couldn't find the game's .exe")
-    exe = max(exes, key=os.path.getsize)
+    # among the big ones (not small tools/launchers), prefer the shallowest folder, then the biggest
+    big = max(os.path.getsize(p) for p in exes)
+    exes = [p for p in exes if os.path.getsize(p) >= big * 0.25]
+    exe = min(exes, key=lambda p: (os.path.relpath(p, root).count(os.sep), -os.path.getsize(p)))
     return {"exe": os.path.relpath(exe, root), "cwd": os.path.relpath(os.path.dirname(exe), root), "args": []}
 
 

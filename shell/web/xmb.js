@@ -65,7 +65,18 @@ function gl(text) {
   return String(text ?? '').replace(/\{(ok|back|menu|home|prev|next|toggle|up|down|left|right)\}/g,
     (m, a) => S.state?.glyphs?.actions?.[a] || DIR_GLYPH[a] || ({ ok: 'A', back: 'B', menu: 'Y', prev: 'LB', next: 'RB' })[a] || a);
 }
-const glb = (a) => { const g = gl(`{${a}}`); return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}" data-g="${esc(g)}">${esc(g)}</b>`; };
+// PlayStation symbols are drawn (font glyphs like △ sit off-centre); everything else is text
+const PS_SVG = {
+  '✕': '<path d="M7 7l10 10M17 7L7 17"/>',
+  '○': '<circle cx="12" cy="12" r="5.6"/>',
+  '□': '<rect x="7" y="7" width="10" height="10" rx="0.6"/>',
+  '△': '<path d="M12 6.4l6 10.4H6z"/>',
+};
+const glb = (a) => {
+  const g = gl(`{${a}}`);
+  const svg = PS_SVG[g] ? `<svg viewBox="0 0 24 24" aria-label="${g}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">${PS_SVG[g]}</svg>` : esc(g);
+  return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}${PS_SVG[g] ? ' sym' : ''}" data-g="${esc(g)}">${svg}</b>`;
+};
 function applyGlyphs() {   // the few hints that live in the page itself
   $('#viewer .v-hint').innerHTML = `<b>◀ ▶</b>Browse ${glb('ok')}Slideshow ${glb('back')}Back ${glb('menu')}Hide info`;
   $('.q-foot').innerHTML = `${glb('ok')}Select <b>◀ ▶</b>Adjust ${glb('back')}Resume`;

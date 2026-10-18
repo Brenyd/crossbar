@@ -137,5 +137,39 @@ def spawn(argv, cwd=None, env=None):
     )
 
 
+GAME_LOG = os.path.join(os.path.expanduser("~/.cache"), "crossbar-games.log")
+
+
+def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5):
+    """Start a game like spawn(), but keep its output in ~/.cache/crossbar-games.log and, if it
+    quits with an error within a few seconds, raise that error instead of failing silently."""
+    import time
+    os.makedirs(os.path.dirname(GAME_LOG), exist_ok=True)
+    log = open(GAME_LOG, "a")
+    log.write(f"\n==== {time.strftime('%F %T')} {what}: {' '.join(argv)}\n")
+    log.flush()
+    start = log.tell()
+    if os.environ.get("CROSSBAR_WRAP") == "gamescope" and shutil.which("gamescope"):
+        argv = ["gamescope", "-f", "--", *argv]
+    p = subprocess.Popen(argv, cwd=cwd, env={**os.environ, **(env or {})}, stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    log.close()
+    end = time.time() + wait
+    while time.time() < end:
+        if p.poll() is not None:
+            break
+        time.sleep(0.2)
+    if p.returncode not in (None, 0):
+        try:
+            with open(GAME_LOG, errors="replace") as f:
+                f.seek(start)
+                tail = [ln.strip() for ln in f.read().splitlines() if ln.strip()][-3:]
+        except OSError:
+            tail = []
+        msg = " / ".join(tail)[-220:] or f"it exited with code {p.returncode}"
+        raise RuntimeError(f"{what} stopped right away: {msg}")
+    return p
+
+
 def slug(s):
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-") or "game"

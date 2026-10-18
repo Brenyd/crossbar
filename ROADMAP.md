@@ -44,6 +44,15 @@
 - [x] Per-app volume in the Quick Menu (and Settings › Sound › App Volume)
 - [x] Button glyphs: Automatic / Xbox / PlayStation / Nintendo, everywhere incl. video playback and remapping
 
+## 0.9.3
+- [x] GOG: launch targets that are Windows shortcuts (.lnk) resolved; fixes itself for installed games
+- [x] GOG/Epic: real error message when a game quits right away (log in ~/.cache/crossbar-games.log)
+- [x] NAS: test the connection before saving, plain-language reasons, SMB1 fallback, any address format
+- [x] Steam: leaves Big Picture after a game; never left showing behind the menu (no double input)
+- [x] Session: one supervisor at a time, never a black screen (error screen + retry), logged restarts
+- [x] PS5 hardware: temperatures, overlay HUD, fan target, fan mode/boost, front light
+- [x] PlayStation glyphs drawn as centred shapes
+
 ## Next
 - **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
   virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.

@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import compat, controls, files, glyphs, iptv, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import compat, controls, files, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -113,6 +113,7 @@ def state():
         "free_memory_in_games": cfg.get("free_memory_in_games", True),
         "glyphs": glyphs.current(),
         "desktop_available": session.desktop_available(),
+        "ps5hw": ps5hw.available(),
         "boot_mode": session.boot_mode(),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
@@ -358,6 +359,8 @@ GET = {
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
+    "/api/ps5": lambda q: ps5hw.status(),
+    "/api/ps5/temps": lambda q: ps5hw.temps(),
     "/api/audio/apps": lambda q: system.app_streams(),
     "/api/audio/devices": lambda q: system.audio_devices(),
     "/api/network": lambda q: system.network_status(),
@@ -526,6 +529,22 @@ def route_post(path, b):
         pause_spotify()
         player.play_video(b["paths"], b.get("index", 0), mpv_gamepad=mpv_should_read_gamepad(PADS))
         return {"ok": True}
+    if head == "ps5":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "fan-target":
+            ps5hw.set_fan_target(b["value"] if "value" in b else (ps5hw.fan_target() or 80) + int(b.get("delta", 0)))
+        elif what == "led":
+            ps5hw.set_led(b["name"])
+        elif what == "fan-mode":
+            ps5hw.set_fan_mode(b["mode"])
+        elif what == "boost":
+            ps5hw.set_boost(bool(b.get("on")))
+        elif what == "hud":
+            ps5hw.set_hud(b.get("on"), b.get("corner"))
+            HUB.publish({"type": "ps5-hud"})
+        else:
+            raise KeyError(what)
+        return ps5hw.status()
     if head == "display":
         if parts[1] == "mode":
             display.set_mode(b["name"], b["width"], b["height"], b.get("refresh") or 0, b.get("save", True), bool(b.get("custom")))
@@ -799,6 +818,7 @@ def main():
     system.bind_home_keys(controls.load()["keyboard"]["home"])
     def background_start():
         display.apply_saved()
+        ps5hw.apply_saved()
         SPOTIFY.ensure_receiver()
         if DISCORD.linked() and not DISCORD.running():
             try:
