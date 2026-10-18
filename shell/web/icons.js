@@ -41,3 +41,7 @@ Object.assign(ICONS, {
   check: '<path d="M14 34l12 12 24-26"/>',
   browser: '<rect x="6" y="10" width="52" height="44" rx="3"/><path d="M6 22h52"/><circle cx="13" cy="16" r="1.5"/><circle cx="19" cy="16" r="1.5"/>',
 });
+Object.assign(ICONS, {
+  bluetooth: '<path d="M20 20l24 22-12 10V12l12 10-24 22"/>',
+  clock: '<circle cx="32" cy="32" r="24"/><path d="M32 18v15l10 6"/>',
+});

@@ -24,10 +24,13 @@ function fit() {
 }
 addEventListener('resize', fit); fit();
 
+function clock24() {          // tick() first runs before S exists
+  try { return !!S.state?.clock24; } catch { return false; }
+}
 function tick() {
   const d = new Date();
   $('#clock-date').textContent = `${d.getMonth() + 1}/${d.getDate()}`;
-  $('#clock-time').textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  $('#clock-time').textContent = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: !clock24() });
 }
 setInterval(tick, 5000); tick();
 
@@ -144,7 +147,7 @@ const Options = {
 const S = {
   state: null, jobs: [], ci: 0, catSel: {}, stack: [], items: {},
 };
-const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'network', 'store', 'party'];
+const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'store', 'party'];
 
 function prov(id) { return S.state.providers.find((p) => p.id === id); }
 
@@ -264,44 +267,8 @@ const CATS = [   // more categories are added by media.js and settings.js
     },
   },
   {
-    id: 'party', label: 'Party', icon: 'party',
-    async load() {
-      const pty = S.state.party;
-      const svc = pty.services.find((s) => s.id === pty.service) || pty.services[0];
-      const running = (S.state.windows || []).filter((w) => new RegExp(svc.name.split(' ')[0], 'i').test(w.title + ' ' + w.app));
-      const audio = await api.get('/api/audio').catch(() => ({ mic: {} }));
-      const items = [
-        { key: 'start', label: 'Start Party', icon: 'voice', sub: `Open ${svc.name}${svc.available ? '' : ' (not installed)'}`,
-          action: () => call(() => api.post('/api/party/start'), `Opening ${svc.name}… press Home to come back`) },
-      ];
-      for (const w of running) {
-        items.push({ key: `pw:${w.con_id}`, label: `Return to ${svc.name}`, icon: 'window', sub: w.title, action: () => api.post('/api/window/focus', { con_id: w.con_id }) });
-      }
-      items.push({
-        key: 'quick', label: 'Quick Join', icon: 'folder', sub: `${pty.channels.length} saved channel${pty.channels.length === 1 ? '' : 's'}`,
-        children: async () => [
-          ...S.state.party.channels.map((c, i) => ({
-            key: `ch:${i}`, label: c.name, icon: 'voice', sub: c.url,
-            action: () => call(() => api.post('/api/party/start', { url: c.url }), `Joining ${c.name}…`),
-            options: [{ label: 'Join', action: () => call(() => api.post('/api/party/start', { url: c.url }), `Joining ${c.name}…`) },
-                      { label: 'Remove', action: async () => { S.state = await api.post('/api/party/remove', { index: i }); reloadFolder(); } }],
-          })),
-          { key: 'add', label: 'Add Channel…', icon: 'add', sub: 'Paste a Discord channel link, mumble:// or Matrix room URL', action: addChannel },
-        ],
-      });
-      items.push({
-        key: 'svc', label: 'Voice Service', icon: 'settings', sub: svc.name,
-        children: async () => S.state.party.services.map((s) => ({
-          key: `svc:${s.id}`, label: s.name, icon: 'voice',
-          sub: (s.id === S.state.party.service ? '✓ Selected · ' : '') + (s.native ? 'App installed' : s.available ? 'Runs in a web window' : 'Not installed'),
-          action: async () => { S.state = await api.post('/api/party/service', { service: s.id }); toast(`Party service: ${s.name}`, 'voice'); reloadFolder(); refresh('party'); },
-        })),
-      });
-      const mic = audio.mic || {};
-      items.push({ key: 'mic', label: 'Microphone', icon: 'mic', sub: mic.volume == null ? 'Unavailable' : `${mic.name || 'Default'} · ${mic.volume}%${mic.muted ? ' (muted)' : ''}`,
-        options: volumeOptions('mic'), action: () => Options.show(volumeOptions('mic')) });
-      return items;
-    },
+    id: 'party', label: 'Social', icon: 'party', live: true,
+    async load() { return socialItems(); },
   },
 ];
 
@@ -500,6 +467,7 @@ function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
 function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
 
 function handle(action) {
+  if (Term.open && !Dialog.open) return Term.handle(action);
   if (QuickMenu.open && !Dialog.open) return QuickMenu.handle(action);
   if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
@@ -542,6 +510,7 @@ function act(action) {
 
 addEventListener('keydown', (e) => {
   if (KeyCapture.active) { e.preventDefault(); KeyCapture.active(keyName(e)); return; }
+  if (Term.open && !Dialog.open) return;
   const typing = e.target.tagName === 'INPUT';
   const name = keyName(e);
   if (typing) {
@@ -561,38 +530,78 @@ addEventListener('keydown', (e) => {
   act(a);
 });
 
-// Controllers are normally read by the backend and arrive over the event stream,
-// only while the XMB is in front. The browser's own Gamepad API is a fallback for
-// when the backend can't see any controller (e.g. dev mode), and only while focused.
-const pad = { held: {}, next: {} };
-function browserPadsWanted() {
-  return !(S.state?.pads?.available && S.state.pads.devices.length) && document.hasFocus();
+// Controllers are normally read by the backend and arrive over the event stream.
+// The browser's own Gamepad API is only a fallback: used when the backend sees no
+// controller AND the backend says the XMB is the window in front (so a controller
+// can never drive the menu from behind a video, game or web app).
+const PAD_INDEX = ['BTN_SOUTH', 'BTN_EAST', 'BTN_WEST', 'BTN_NORTH', 'BTN_TL', 'BTN_TR', 'BTN_TL2', 'BTN_TR2',
+  'BTN_SELECT', 'BTN_START', 'BTN_THUMBL', 'BTN_THUMBR', 'BTN_DPAD_UP', 'BTN_DPAD_DOWN', 'BTN_DPAD_LEFT', 'BTN_DPAD_RIGHT', 'BTN_MODE'];
+const AXIS_INDEX = ['ABS_X', 'ABS_Y', 'ABS_RX', 'ABS_RY'];
+const pad = { prev: new Set(), next: {}, consumed: new Set(), capture: null, lastReport: '' };
+S.xmbFocused = true;
+
+function backendHasPads() { return !!(S.state?.pads?.devices?.length); }
+function browserPadsWanted() { return !backendHasPads() && S.xmbFocused && document.hasFocus(); }
+
+// The tokens currently held on all browser-visible pads (same names as the backend uses).
+function heldTokens() {
+  const held = new Set();
+  for (const p of (navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [])) {
+    p.buttons.forEach((b, i) => { if (b.pressed && PAD_INDEX[i]) held.add(PAD_INDEX[i]); });
+    p.axes.slice(0, 4).forEach((v, i) => { if (Math.abs(v) > 0.6) held.add(`${AXIS_INDEX[i]}${v > 0 ? '+' : '-'}`); });
+  }
+  return held;
 }
+function padMap() {
+  const g = S.state?.controls?.gamepad || {};
+  const single = {}, combos = [];
+  for (const [action, toks] of Object.entries(g)) {
+    for (const t of toks) {
+      if (t.includes('&')) combos.push([t.split('&'), action]);
+      else single[t] = action;
+    }
+  }
+  return { single, combos, comboKeys: new Set(combos.flatMap(([k]) => k)) };
+}
+
 function pollPads(now) {
-  const pads = browserPadsWanted() && navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
-  const want = {};
-  for (const p of pads) {
-    const b = (i) => p.buttons[i]?.pressed;
-    const ax = p.axes[0] || 0, ay = p.axes[1] || 0;
-    if (b(12) || ay < -0.6) want.up = 1;
-    if (b(13) || ay > 0.6) want.down = 1;
-    if (b(14) || ax < -0.6) want.left = 1;
-    if (b(15) || ax > 0.6) want.right = 1;
-    if (b(0)) want.ok = 1;
-    if (b(1)) want.back = 1;
-    if (b(3) || b(2)) want.menu = 1;
-    if (b(4)) want.prev = 1;
-    if (b(5)) want.next = 1;
-    if (b(9)) want.toggle = 1;
-    if (b(16)) want.home = 1;
+  const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  const names = pads.map((p) => p.id).join('|');
+  if (names !== pad.lastReport) {          // let diagnostics know what the browser sees
+    pad.lastReport = names;
+    api.post('/api/controls/browser-pads', { pads: pads.map((p) => p.id) }).catch(() => {});
   }
-  if (pad.justFocused) { Object.keys(want).forEach((a) => { pad.held[a] = true; }); pad.justFocused = false; }
-  for (const a of ['up', 'down', 'left', 'right', 'ok', 'back', 'menu', 'prev', 'next', 'toggle', 'home']) {
-    if (!want[a]) { pad.held[a] = false; continue; }
-    const repeatable = ['up', 'down', 'left', 'right'].includes(a);
-    if (!pad.held[a]) { pad.held[a] = true; pad.next[a] = now + 380; fire(a); }
-    else if (repeatable && now > pad.next[a]) { pad.next[a] = now + 85; fire(a); }
+  const held = browserPadsWanted() || pad.capture ? heldTokens() : new Set();
+  if (pad.justFocused) { pad.prev = held; pad.justFocused = false; }
+  const pressed = [...held].filter((t) => !pad.prev.has(t));
+  const released = [...pad.prev].filter((t) => !held.has(t));
+
+  if (pad.capture) {                      // Settings › remap, when the backend can't see the pad
+    if (pad.capture.combo) {
+      if (held.size >= 2) { const t = [...held].filter((x) => x.startsWith('BTN_')).slice(0, 2); if (t.length === 2) pad.capture.done(t.join('&')); }
+    } else if (pressed.length) pad.capture.done(pressed[0]);
+  } else {
+    const m = padMap();
+    for (const t of pressed) {
+      const combo = m.combos.find(([keys]) => keys.includes(t) && keys.every((k) => held.has(k)));
+      if (combo) { combo[0].forEach((k) => pad.consumed.add(k)); fire(combo[1]); continue; }
+      if (m.comboKeys.has(t)) continue;   // acts on release unless it became a combo
+      const a = m.single[t];
+      if (a) { fire(a); pad.next[t] = now + 380; }
+    }
+    for (const t of released) {
+      delete pad.next[t];
+      if (m.comboKeys.has(t)) {
+        if (pad.consumed.has(t)) pad.consumed.delete(t);
+        else if (m.single[t]) fire(m.single[t]);
+      }
+    }
+    for (const t of held) {               // repeat held directions
+      const a = m.single[t];
+      if (pad.next[t] && now > pad.next[t] && ['up', 'down', 'left', 'right'].includes(a)) { pad.next[t] = now + 85; fire(a); }
+    }
   }
+  pad.prev = held;
   requestAnimationFrame(pollPads);
 }
 function fire(a) {
@@ -601,10 +610,16 @@ function fire(a) {
   }
   act(a);
 }
+function browserCapture(combo, timeout = 10000) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => { pad.capture = null; resolve(null); }, timeout);
+    pad.capture = { combo, done: (tok) => { clearTimeout(t); pad.capture = null; resolve(tok); } };
+  });
+}
 requestAnimationFrame(pollPads);
 // Coming back from a game: buttons still held must not "click" in the XMB.
 addEventListener('focus', async () => {
-  pad.justFocused = true;
+  pad.justFocused = true;   // buttons still held from a game must not "click" here
   // Backup path: if the Quick Menu was requested while the event stream was down.
   const p = await api.get('/api/quick/pending').catch(() => null);
   if (p?.open && !QuickMenu.open) QuickMenu.show(true);
@@ -615,7 +630,14 @@ function connectEvents() {
   const es = new EventSource('/api/events');
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
-    if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); openSettingsFolder(ev.folder); return; }
+    if (ev.type === 'launching') { $('#launch .l-title').textContent = ev.title; $('#launch').hidden = false; clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 95000); return; }
+    if (ev.type === 'launched') { $('#launch').hidden = true; return; }
+    if (ev.type === 'launch-timeout') { $('#launch').hidden = true; toast(`${ev.title} didn't open a window — check Steam`, 'info'); return; }
+    if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
+    if (ev.type === 'term-exit') { if (ev.id === Term.id) { Term.id = null; if (Term.open) Term.hide(); } return; }
+    if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
+    if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
+    if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
     if (ev.type === 'input' && ev.to === 'overlay') return;      // meant for the overlay window
     if (ev.type === 'input') {
       if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (ev.action === 'up' || ev.action === 'down')) {

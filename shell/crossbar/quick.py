@@ -158,7 +158,15 @@ def info():
         _sp_cache[0] = time.time()
     sp = _sp_cache[1]
     devices = system.audio_devices()
+    voice = None
+    try:
+        from .discord import DISCORD
+        if DISCORD.sock:
+            voice = {"channel": DISCORD.state["channel"], "mute": DISCORD.state["mute"], "deaf": DISCORD.state["deaf"]}
+    except Exception:
+        pass
     return {
+        "voice": voice,
         "app": _app(),
         "music": player.music_state(),
         "spotify": sp,

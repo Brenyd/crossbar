@@ -22,9 +22,10 @@ python-pywebview
 python-gobject
 webkit2gtk-4.1
 unzip
-# Quick Menu overlay (layer-shell window hosting a web view)
+# Quick Menu overlay (native GTK4 window on the Wayland overlay layer)
+gtk4
 gtk4-layer-shell
-webkitgtk-6.0
+adwaita-icon-theme
 # media
 grim
 mpv
@@ -32,8 +33,10 @@ ffmpeg
 python-mutagen
 python-pillow
 librespot
-# networking (Wi-Fi from Settings)
+# networking (Wi-Fi from Settings) and Bluetooth
 networkmanager
+bluez
+bluez-utils
 # audio
 pipewire
 pipewire-pulse
@@ -41,6 +44,7 @@ pipewire-alsa
 wireplumber
 # stores / games
 steam
+gamescope
 wine
 mesa
 lib32-mesa

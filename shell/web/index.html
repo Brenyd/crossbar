@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crossbar</title>
 <link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="vendor/xterm/xterm.css">
 </head>
 <body>
 <canvas id="waves"></canvas>
@@ -21,6 +22,8 @@
   <div id="quick" hidden><div class="q-bg"></div><div class="q-shade"></div>
     <div class="q-panel"><div class="q-head"><span class="q-kicker">QUICK MENU</span><div class="q-title"></div></div><div class="q-rows"></div>
     <div class="q-foot"><b>A</b>Select <b>◀ ▶</b>Adjust <b>B</b>Resume</div></div></div>
+  <div id="term" hidden><div class="t-head"><span>TERMINAL</span><span class="t-hint">Esc Esc or B to close · the shell keeps running</span></div><div class="t-screen"></div></div>
+  <div id="launch" hidden><div class="l-spin"></div><div class="l-title"></div><div class="l-sub">Starting…</div></div>
   <div id="toasts"></div>
   <div id="dialog" hidden>
     <div class="dlg-box">
@@ -32,11 +35,15 @@
   </div>
   <div id="boot"><div class="boot-logo"><svg viewBox="0 0 120 120"><path d="M20 60h80M60 20v80" /><circle cx="60" cy="60" r="44"/></svg><span>CROSSBAR</span></div></div>
 </div>
+<script src="vendor/xterm/xterm.js"></script>
+<script src="vendor/xterm/addon-fit.js"></script>
 <script src="icons.js"></script>
 <script src="waves.js"></script>
 <script src="xmb.js"></script>
 <script src="media.js"></script>
 <script src="quick.js"></script>
+<script src="social.js"></script>
+<script src="terminal.js"></script>
 <script src="settings.js"></script>
 </body>
 </html>

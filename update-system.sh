@@ -30,6 +30,9 @@ else
   echo "all packages present"
 fi
 
+step "Fetching bundled web libraries (terminal)"
+"$HERE/fetch-vendor.sh" || echo "warning: terminal falls back to plain text"
+
 step "Copying Crossbar to /usr/lib/crossbar"
 rm -rf /usr/lib/crossbar.new
 cp -r "$HERE/shell" /usr/lib/crossbar.new
@@ -47,11 +50,13 @@ install -Dm644 "$HERE/iso/airootfs/etc/udev/rules.d/70-crossbar-input.rules" /et
 install -Dm644 "$HERE/iso/airootfs/etc/modules-load.d/crossbar-uinput.conf" /etc/modules-load.d/crossbar-uinput.conf
 install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-inputd.service" /etc/systemd/system/crossbar-inputd.service
 install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-setup.service" /etc/systemd/system/crossbar-setup.service
+install -Dm644 "$HERE/iso/airootfs/etc/polkit-1/rules.d/50-crossbar.rules" /etc/polkit-1/rules.d/50-crossbar.rules
 modprobe uinput || true
 udevadm control --reload
 udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change
 systemctl daemon-reload
-systemctl enable crossbar-inputd.service crossbar-setup.service >/dev/null 2>&1 || true
+systemctl enable crossbar-inputd.service crossbar-setup.service bluetooth.service >/dev/null 2>&1 || true
+systemctl start bluetooth.service >/dev/null 2>&1 || true
 systemctl restart crossbar-inputd.service
 sleep 1
 systemctl is-active --quiet crossbar-inputd && echo "crossbar-inputd: running" || { echo "crossbar-inputd FAILED:"; journalctl -u crossbar-inputd -n 15 --no-pager; }

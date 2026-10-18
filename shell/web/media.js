@@ -250,23 +250,14 @@ CATS.push(
         options: [{ label: 'Open', action: () => call(() => api.post('/api/tv/open', { index: i })) },
                   { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${t.name}?`)) { S.state = await api.post('/api/tv/remove', { index: i }); refresh('tv'); } } }],
       }));
+      items.push({ key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Full web browser',
+        action: () => call(() => api.post('/api/browser', {}), 'Opening the browser — Select + Start for the Quick Menu') });
       items.push({ key: 'add', label: 'Add Service…', icon: 'add', sub: 'Jellyfin, Plex, Crunchyroll — any web app', action: async () => {
         const r = await Dialog.ask({ title: 'Add Service', buttons: ['Add', 'Cancel'],
           fields: [{ key: 'name', label: 'Name' }, { key: 'url', label: 'Address (e.g. http://192.168.1.10:8096 for Jellyfin)' }] });
         if (r.button === 0 && r.values.url.trim()) { S.state = await api.post('/api/tv/add', r.values); refresh('tv'); }
       } });
       return items;
-    },
-  },
-  {
-    id: 'network', label: 'Network', icon: 'network',
-    async load() {
-      return [
-        { key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Press Home to come back',
-          action: () => call(() => api.post('/api/browser', {})) },
-        { key: 'status', label: 'Connection Status', icon: 'network', action: showNetworkStatus },
-        { key: 'wifi', label: 'Wi-Fi', icon: 'wifi', sub: 'Settings › Network Settings', action: () => openSettingsFolder('network') },
-      ];
     },
   },
 );

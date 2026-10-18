@@ -61,6 +61,7 @@ cp /etc/pacman.conf /mnt/etc/pacman.conf            # keeps multilib for Steam
 cp -r /usr/lib/crossbar /mnt/usr/lib/
 cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,crossbar-home,crossbar-doctor,legendary} /mnt/usr/local/bin/
 install -Dm644 /etc/udev/rules.d/70-crossbar-input.rules /mnt/etc/udev/rules.d/70-crossbar-input.rules
+install -Dm644 /etc/polkit-1/rules.d/50-crossbar.rules /mnt/etc/polkit-1/rules.d/50-crossbar.rules
 install -Dm644 /etc/modules-load.d/crossbar-uinput.conf /mnt/etc/modules-load.d/crossbar-uinput.conf
 cp -r /etc/crossbar /mnt/etc/
 cp /etc/systemd/system/crossbar-setup.service /etc/systemd/system/crossbar-inputd.service /mnt/etc/systemd/system/
@@ -82,7 +83,7 @@ locale-gen
 echo LANG=en_US.UTF-8 > /etc/locale.conf
 echo crossbar > /etc/hostname
 useradd -m -G wheel -s /bin/bash player
-systemctl enable NetworkManager crossbar-setup.service crossbar-inputd.service
+systemctl enable NetworkManager bluetooth crossbar-setup.service crossbar-inputd.service
 bootctl install
 cat > /boot/loader/loader.conf <<L
 default crossbar.conf

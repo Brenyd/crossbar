@@ -79,19 +79,22 @@ async function savedControls(r, msg) {
   return r;
 }
 
-async function capturePad(a, add, c) {
-  if (!c.pads.available) return message('Remapping controller buttons needs python-evdev (included in the Crossbar ISO).', 'Controller');
-  if (!c.pads.devices.length) return message('No controller found. Connect one and try again.', 'Controller');
-  const cap = api.post('/api/controls/capture', { timeout: 10 });
-  const dlg = Dialog.ask({ title: 'Controller Buttons', body: `Press the button for “${a.name}”`, buttons: ['Cancel'],
-    timeout: 10000, timeoutButton: null });
-  const r = await Promise.race([cap.then((x) => ({ cap: x })), dlg.then((x) => ({ dlg: x }))]);
-  if (r.dlg) { api.post('/api/controls/cancel'); return; }
+async function capturePad(a, add, c, combo = false) {
+  const viaBackend = c.pads.devices.length > 0;
+  const browserSees = (navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : []).length > 0;
+  if (!viaBackend && !browserSees) return message('No controller found. Connect one, press any button on it, and try again.', 'Controller');
+  const what = combo ? `Hold two buttons together for “${a.name}”` : `Press the button for “${a.name}”`;
+  const cap = viaBackend
+    ? api.post('/api/controls/capture', { timeout: 10, combo }).then((x) => x.token)
+    : browserCapture(combo);
+  const dlg = Dialog.ask({ title: 'Controller Buttons', body: what, buttons: ['Cancel'], timeout: 10000, timeoutButton: null });
+  const r = await Promise.race([cap.then((t) => ({ tok: t })), dlg.then((x) => ({ dlg: x }))]);
+  if (r.dlg) { if (viaBackend) api.post('/api/controls/cancel'); else pad.capture = null; return; }
   Dialog.close(0);
-  if (!r.cap?.token) return toast('No button pressed', 'info');
-  const tokens = add ? [...c.gamepad[a.id], r.cap.token] : [r.cap.token];
+  if (!r.tok) return toast('No button pressed', 'info');
+  const tokens = add ? [...c.gamepad[a.id], r.tok] : [r.tok];
   const res = await call(() => api.post('/api/controls', { kind: 'gamepad', action: a.id, tokens }));
-  if (res) savedControls(res, `${a.name}: ${res.labels[r.cap.token] || r.cap.token}`);
+  if (res) savedControls(res, `${a.name}: ${res.labels[r.tok] || r.tok}`);
 }
 
 async function captureKey(a, add, c) {
@@ -113,7 +116,7 @@ function bindingItems(kind) {
     return c.actions.map((a) => {
       const toks = c[kind][a.id];
       const label = (t) => (kind === 'gamepad' ? c.labels[t] || t : keyLabel(t));
-      const capture = (add) => () => (kind === 'gamepad' ? capturePad(a, add, c) : captureKey(a, add, c));
+      const capture = (add, combo) => () => (kind === 'gamepad' ? capturePad(a, add, c, combo) : captureKey(a, add, c));
       return {
         key: `${kind}:${a.id}`, label: a.name, icon: kind === 'gamepad' ? 'game' : 'browser',
         sub: toks.length ? [...new Set(toks.map(label))].join(' · ') : 'Not set',
@@ -121,6 +124,8 @@ function bindingItems(kind) {
         options: [
           { label: 'Change…', action: capture(false) },
           { label: `Add Another ${kind === 'gamepad' ? 'Button' : 'Key'}…`, action: capture(true) },
+          ...(kind === 'gamepad' ? [{ label: 'Use a Button Combo…', action: capture(false, true) },
+                                    { label: 'Add a Button Combo…', action: capture(true, true) }] : []),
           { label: 'Reset to Default', action: async () => savedControls(await api.post('/api/controls', { reset: kind, action: a.id }), `${a.name} reset`) },
         ],
       };
@@ -133,7 +138,10 @@ async function showDiagnostics() {
   const p = d.pads;
   const when = (t) => `${Math.max(0, Math.round(Date.now() / 1000 - t))}s ago`;
   const lines = [
-    `Controllers in use: ${p.devices.length ? p.devices.join(', ') : 'none'}`,
+    `Controller service: ${p.mode === 'inputd' ? 'running' : p.mode === 'direct' ? 'NOT running — reading controllers directly' : p.mode}${p.inputd_error ? ' (' + p.inputd_error + ')' : ''}`,
+    `Controllers Crossbar reads: ${p.devices.length ? p.devices.join(', ') : 'none'}`,
+    p.virtual?.length ? `Steam virtual pads (held, not read): ${p.virtual.join(', ')}` : '',
+    `Controllers the menu's browser sees: ${p.browser_pads?.length ? p.browser_pads.join(', ') : 'none'}`,
     p.unreadable.length ? `Found but NOT readable: ${p.unreadable.join(', ')}` : '',
     !p.available ? 'python-evdev missing — controllers only work in the menu' : '',
     `Web-app controls (/dev/uinput): ${d.uinput ? 'OK' : 'no access'}${p.uinput_error ? ' — ' + p.uinput_error : ''}`,
@@ -156,16 +164,67 @@ const CONTROLS_FOLDER = {
     const pads = c.pads.devices;
     return [
       { key: 'devices', label: 'Connected Controllers', icon: 'game',
-        sub: pads.length ? pads.join(', ') : (c.pads.available ? 'None connected' : 'Read by the browser'),
+        sub: pads.length ? pads.join(', ') : (c.pads.browser_pads?.length ? `${c.pads.browser_pads.join(', ')} (menu only — see Diagnostics)` : 'None connected'),
         action: () => message(pads.length ? pads.join('\n') : 'No controller detected.\nUSB and Bluetooth pads appear here once connected.', 'Controllers') },
       ...(c.pads.error ? [{ key: 'warn', label: 'Controller Not Readable', icon: 'info', sub: c.pads.error, action: showDiagnostics }] : []),
       { key: 'pad', label: 'Controller Buttons', icon: 'game', sub: 'Choose what each button does', children: bindingItems('gamepad') },
       { key: 'diag', label: 'Controller Diagnostics', icon: 'info', sub: 'What Crossbar sees, and the last buttons pressed', action: showDiagnostics },
       { key: 'kbd', label: 'Keyboard Keys', icon: 'browser', sub: 'Choose what each key does', children: bindingItems('keyboard') },
+      { key: 'guide', label: 'Guide / PS Button Opens Quick Menu', icon: 'game',
+        sub: c.guide_home ? 'On — Steam\'s overlay won\'t get that button' : 'Off — left free for Steam (Quick Menu: Select + Start)',
+        action: async () => savedControls(await api.post('/api/controls/guide', { on: !c.guide_home }),
+          c.guide_home ? 'Guide/PS left to Steam' : 'Guide/PS opens the Quick Menu') },
       { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with B / ○ instead of A / ✕ (or back again)',
         action: async () => savedControls(await api.post('/api/controls', { swap: true }), 'Select and Back swapped') },
       { key: 'reset', label: 'Reset All to Defaults', icon: 'refresh', sub: 'Controller and keyboard',
         action: async () => { if (await confirmBox('Reset all buttons and keys to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'all' }), 'Controls reset'); } },
+    ];
+  },
+};
+
+async function wifiConnect(w) {
+  let password = '';
+  if (w.secure && !w.connected) {
+    const r = await Dialog.ask({ title: w.ssid, fields: [{ key: 'pw', label: 'Password', secret: true }], buttons: ['Connect', 'Cancel'] });
+    if (r.button !== 0) return;
+    password = r.values.pw;
+  }
+  await call(() => api.post('/api/wifi', { ssid: w.ssid, password }), `Connecting to ${w.ssid}…`);
+  pollJobs();
+}
+
+async function timezoneFolder() {
+  const zones = await api.get('/api/timezones');
+  const regions = {};
+  for (const z of zones) (regions[z.split('/')[0]] ||= []).push(z);
+  return Object.keys(regions).sort().map((r) => ({
+    key: `tz:${r}`, label: r, icon: 'folder', sub: `${regions[r].length} zones`,
+    children: async () => regions[r].map((z) => ({ key: z, label: z.split('/').slice(1).join(' / ').replace(/_/g, ' ') || z, icon: 'network',
+      action: async () => { await call(() => api.post('/api/time/zone', { zone: z }), `Time zone: ${z}`); S.stack.length -= 1; reloadFolder(); } })),
+  }));
+}
+
+async function runInTerminal(path, label) {
+  const r = await call(() => api.post(path));
+  if (r?.cmd) { toast(label, 'system'); Term.show(r.cmd); }
+}
+
+const GAMES_FOLDER = {
+  key: 'games', label: 'Game Settings', icon: 'game', sub: 'Launching, demo library',
+  children: async () => {
+    const st = S.state;
+    return [
+      { key: 'gs', label: 'Run GOG & Epic Games in Gamescope', icon: 'display',
+        sub: !st.gamescope_available ? 'Gamescope isn\'t installed' : st.gamescope ? 'On — fixed resolution, better frame pacing' : 'Off — games run directly',
+        action: async () => { if (st.gamescope_available) { await setSetting({ gamescope: !st.gamescope }); reloadFolder(); } } },
+      { key: 'steamov', label: 'Steam Overlay', icon: 'info', sub: 'Works in Steam games: Steam button or Shift+Tab. Crossbar\'s Quick Menu: Select + Start',
+        action: () => message('Steam games run through Steam, so Steam\'s overlay works as usual (Steam/Guide button or Shift+Tab).\nCrossbar\'s Quick Menu uses Select + Start so the two never fight over a button.\nChange either in Controller & Keyboard.', 'Steam Overlay') },
+      { key: 'demo', label: 'Demo Library', icon: 'demo', sub: st.demo ? 'On — showing sample games' : 'Off — using your real accounts',
+        action: async () => {
+          if (await confirmBox(st.demo ? 'Switch to your real Steam, GOG and Epic accounts?' : 'Show the demo library instead of your accounts?')) {
+            await setSetting({ demo: !st.demo }); refresh('game'); refresh('store'); reloadFolder();
+          }
+        } },
     ];
   },
 };
@@ -221,6 +280,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   CONTROLS_FOLDER,
+  GAMES_FOLDER,
   {
     key: 'theme', label: 'Theme Settings', icon: 'palette', sub: 'Background colour',
     children: async () => {
@@ -248,27 +308,72 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'network', label: 'Network Settings', icon: 'network', sub: 'Wi-Fi and connection status',
-    children: async () => [
-      { key: 'status', label: 'Connection Status', icon: 'network', action: showNetworkStatus },
-      { key: 'wifi', label: 'Wi-Fi Networks', icon: 'wifi', sub: 'Scan and connect',
-        children: async () => {
-          const nets = await api.get('/api/wifi');
-          if (!nets.length) return [{ key: 'none', label: 'No networks found', icon: 'info', sub: 'Wired connections work automatically' }];
-          return nets.map((n) => ({ key: `w:${n.ssid}`, label: n.ssid, icon: n.connected ? 'check' : 'wifi',
-            sub: `${n.connected ? 'Connected · ' : ''}${n.signal}%${n.secure ? ' · Secured' : ''}`,
-            action: async () => {
-              let password = '';
-              if (n.secure && !n.connected) {
-                const r = await Dialog.ask({ title: n.ssid, fields: [{ key: 'pw', label: 'Password', secret: true }], buttons: ['Connect', 'Cancel'] });
-                if (r.button !== 0) return;
-                password = r.values.pw;
-              }
-              await call(() => api.post('/api/wifi', { ssid: n.ssid, password }), `Connecting to ${n.ssid}…`);
-              pollJobs();
-            } }));
-        } },
-    ],
+    key: 'network', label: 'Network Settings', icon: 'network', sub: 'Wi-Fi, connection status',
+    children: async () => {
+      const n = await api.get('/api/network').catch(() => ({ available: false, devices: [] }));
+      if (!n.available) return [{ key: 'na', label: 'Network settings need NetworkManager', icon: 'info' }];
+      const radio = (await api.get('/api/wifi/radio').catch(() => ({ on: true }))).on;
+      const wifi = n.devices.find((d) => d.type === 'wifi');
+      const wired = n.devices.find((d) => d.type === 'ethernet');
+      const items = [{ key: 'status', label: 'Connection Status', icon: 'network',
+        sub: n.connectivity === 'full' ? `Connected${(wired?.state === 'connected' && wired.ip) ? ' · wired ' + wired.ip : wifi?.ip ? ' · Wi-Fi ' + wifi.ip : ''}` : (n.connectivity || 'Unknown'),
+        action: showNetworkStatus }];
+      if (wifi) {
+        items.push({ key: 'radio', label: 'Wi-Fi', icon: 'wifi', sub: radio ? 'On' : 'Off',
+          action: async () => { await call(() => api.post('/api/wifi-extra/radio', { on: !radio })); reloadFolder(); } });
+        if (radio) {
+          items.push({ key: 'nets', label: 'Wi-Fi Networks', icon: 'wifi', sub: wifi.connection ? `Connected to ${wifi.connection}` : 'Scan and connect',
+            children: async () => {
+              const nets = await api.get('/api/wifi');
+              if (!nets.length) return [{ key: 'none', label: 'No networks found', icon: 'info' }];
+              return nets.map((w) => ({ key: `w:${w.ssid}`, label: w.ssid, icon: w.connected ? 'check' : 'wifi',
+                sub: `${w.connected ? 'Connected · ' : ''}${w.signal}%${w.secure ? ' · Secured' : ''}`,
+                action: () => wifiConnect(w),
+                options: [{ label: w.connected ? 'Disconnect' : 'Connect', action: w.connected
+                  ? async () => { await call(() => api.post('/api/wifi-extra/disconnect')); reloadFolder(); } : () => wifiConnect(w) },
+                          { label: 'Forget Network', action: async () => { if (await confirmBox(`Forget ${w.ssid}?`)) { await call(() => api.post('/api/wifi-extra/forget', { ssid: w.ssid })); reloadFolder(); } } }] }));
+            } });
+        }
+      }
+      return items;
+    },
+  },
+  {
+    key: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth', sub: 'Controllers, headsets, keyboards',
+    children: async () => {
+      const bt = await api.get('/api/bluetooth').catch(() => ({ available: false }));
+      if (!bt.available) return [{ key: 'na', label: bt.note || 'Bluetooth isn\'t available', icon: 'info', sub: 'No adapter found, or bluez isn\'t installed' }];
+      const items = [{ key: 'power', label: 'Bluetooth', icon: 'settings', sub: bt.powered ? 'On' : 'Off',
+        action: async () => { await call(() => api.post('/api/bluetooth/power', { on: !bt.powered })); reloadFolder(); } }];
+      if (!bt.powered) return items;
+      items.push({ key: 'scan', label: 'Find Devices', icon: 'search', sub: 'Put your controller or headset in pairing mode first',
+        action: async () => { toast('Searching for 10 seconds…', 'search'); await call(() => api.post('/api/bluetooth/scan')); setTimeout(reloadFolder, 11000); } });
+      for (const d of bt.devices) {
+        const act = (a, ok) => async () => { await call(() => api.post(`/api/bluetooth/${a}`, { mac: d.mac }), ok); reloadFolder(); };
+        items.push({ key: `bt:${d.mac}`, label: d.name, icon: d.connected ? 'check' : d.kind,
+          sub: d.connected ? 'Connected' : d.paired ? 'Paired — A to connect' : 'Not paired — A to pair',
+          action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? act('connect', `Connected ${d.name}`)
+            : async () => { toast(`Pairing ${d.name}…`, 'game'); await call(() => api.post('/api/bluetooth/pair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 3000); },
+          options: [{ label: d.connected ? 'Disconnect' : 'Connect', action: d.connected ? act('disconnect') : act('connect') },
+                    { label: 'Forget Device', action: async () => { if (await confirmBox(`Forget ${d.name}?`)) act('remove', `Forgot ${d.name}`)(); } }] });
+      }
+      return items;
+    },
+  },
+  {
+    key: 'time', label: 'Date & Time', icon: 'clock', sub: 'Time zone, clock',
+    children: async () => {
+      const t = await api.get('/api/time').catch(() => ({ available: false }));
+      const items = [];
+      if (t.available) {
+        items.push({ key: 'zone', label: 'Time Zone', icon: 'network', sub: t.timezone, children: timezoneFolder });
+        items.push({ key: 'ntp', label: 'Set Time Automatically', icon: 'refresh', sub: t.ntp ? `On${t.synced ? ' · synced' : ''}` : 'Off',
+          action: async () => { await call(() => api.post('/api/time/ntp', { on: !t.ntp })); reloadFolder(); } });
+      }
+      items.push({ key: 'fmt', label: 'Clock Format', icon: 'settings', sub: S.state.clock24 ? '24-hour' : '12-hour',
+        action: async () => { await setSetting({ clock24: !S.state.clock24 }); tick(); reloadFolder(); } });
+      return items;
+    },
   },
   {
     key: 'accounts', label: 'Account Settings', icon: 'account', sub: 'User name, Spotify',
@@ -288,29 +393,35 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'system', label: 'System Settings', icon: 'system', sub: 'Demo library, information, install',
+    key: 'system', label: 'System Settings', icon: 'system', sub: 'Terminal, updates, information, install',
     children: async () => {
       const st = S.state;
       return [
-        { key: 'demo', label: 'Demo Library', icon: 'demo', sub: st.demo ? 'On — showing sample games' : 'Off — using your real accounts',
-          action: async () => {
-            if (await confirmBox(st.demo ? 'Switch to your real Steam, GOG and Epic accounts?' : 'Show the demo library instead of your accounts?')) {
-              await setSetting({ demo: !st.demo }); refresh('game'); refresh('store'); reloadFolder();
-            }
-          } },
         { key: 'sys', label: 'System Information', icon: 'info', action: async () => {
           const i = await api.get('/api/sysinfo');
           message(`Crossbar ${i.version}\n${i.os}\nKernel ${i.kernel}\n${i.cpu}\nMemory ${i.memory}\nGames folder ${i.games_dir}`, 'System Information');
         } },
+        { key: 'term', label: 'Terminal', icon: 'browser', sub: 'A command line, right here (keyboard needed)', action: () => Term.show() },
         ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
-          action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
+          action: async () => { if (await confirmBox('Start the installer?\nYou will pick the disk and confirm before anything is erased.')) runInTerminal('/api/installer', 'Installer started'); } }] : []),
+        { key: 'report', label: 'Share Support Report', icon: 'info', sub: 'Upload a diagnostic report and get a short link to share',
+          action: async () => {
+            if (!(await confirmBox('Upload a support report?\nIt includes controller and window names, Crossbar settings status and recent logs.\nLines mentioning passwords, tokens or keys are removed.'))) return;
+            toast('Uploading report…', 'info');
+            const r = await call(() => api.post('/api/report'));
+            if (r?.url) message(`Your report link:\n\n${r.url}\n\nType or paste this link into your message.`, 'Support Report');
+          } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
-          action: async () => { if (await confirmBox('Update Crossbar now?\nA terminal opens; Crossbar restarts when it finishes.')) call(() => api.post('/api/update')); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.6', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.6', 'About') },
+          action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.7', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.7', 'About') },
       ];
     },
   },
 ];
+
+// Order in the Settings column.
+const SETTINGS_ORDER = ['display', 'sound', 'network', 'bluetooth', 'controls', 'games', 'theme', 'media', 'time', 'accounts', 'system'];
+SETTINGS_FOLDERS.sort((a, b) => SETTINGS_ORDER.indexOf(a.key) - SETTINGS_ORDER.indexOf(b.key));
 
 CATS.push({ id: 'settings', label: 'Settings', icon: 'settings', async load() { return SETTINGS_FOLDERS; } });
 

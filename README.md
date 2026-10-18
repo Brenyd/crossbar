@@ -1,11 +1,11 @@
-# Crossbar — prototype 0.6
+# Crossbar — prototype 0.7
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
 panel, and gamepad control.
 
-Categories, in the original order: **Users · Settings · Photo · Music · Video ·
-TV & Video Services · Game · Network · Store · Party**. One Game list merges Steam, GOG and
+Categories: **Users · Settings · Photo · Music · Video · TV & Video Services · Game · Store ·
+Social**. See [ROADMAP.md](ROADMAP.md) for what's next. One Game list merges Steam, GOG and
 Epic; Store downloads from all three; Music plays your files and Spotify; Video plays
 anything mpv can, with a controller-friendly control panel.
 
@@ -65,9 +65,10 @@ On the live ISO an update lasts until reboot — rebuild the ISO to make it perm
 | Enter | Enter | A / ✕ |
 | Back | Esc | B / ○ |
 | Options | Tab | Y / △ |
-| Quick Menu (from anywhere) | Home, or Super+Esc | Guide / PS button |
+| Quick Menu (from anywhere, over any app) | Home, or Super+Esc | **Select + Start** together |
+| Steam's own overlay (in Steam games) | Shift+Tab | Guide / Steam / PS button |
+| Built-in terminal | Ctrl+Alt+T | |
 | Play/Pause, previous, next track (in the XMB) | P, Page Up, Page Down | Start, L1, R1 |
-| Terminal (debugging) | Ctrl+Alt+T | |
 
 **Web apps** (YouTube, Twitch, Plex, the browser) open full screen at your display's
 resolution, and the controller works in them too: Crossbar types arrow keys, Enter (A),
@@ -87,6 +88,11 @@ what's in front. While the menu, a video, a web app or the Quick Menu is in fron
 *holds* the controller so nothing behind reacts too. When a game is in front it lets go, and
 the game reads the controller itself. Guide/PS always reaches the Quick Menu.
 
+### If something isn't working
+
+**Settings › System Settings › Share Support Report** uploads a diagnostic report and shows a
+short link — paste that link when asking for help.
+
 ### If the controller works in the menu but not in videos, web apps or the Quick Menu
 
 Check `systemctl status crossbar-inputd` (it should be *active*). Without it Crossbar falls
@@ -99,9 +105,11 @@ in and reboot. In a VM, pass the controller through as a USB device.
 
 ## Quick Menu
 
-Press **Guide/PS** (or **Home**) during a game, video or app. The Quick Menu slides in
-**on top of** whatever is running (a real overlay on the Wayland overlay layer, so it works
-over fullscreen games and video), with:
+Press **Select + Start** (or **Home**) during a game, video or app. The Quick Menu slides in
+**on top of** whatever is running — a native window on the Wayland overlay layer, like the
+Steam or Discord overlay — and takes the controller and keyboard while it's open, so the game
+underneath doesn't react. Guide/PS is left to Steam by default (Settings › Controller &
+Keyboard can give it to Crossbar instead). It has:
 
 - **Resume** / **Close** the game or video (closing returns you straight to the XMB)
 - **Go to Home** — the XMB, leaving the game open
@@ -151,18 +159,46 @@ After that it just works, every boot. If playing from Crossbar fails, use **Sett
 Settings › Restart Spotify Speaker**; the speaker's log is `~/.cache/crossbar/librespot.log`. Developer-mode apps allow up to 5 accounts; playlists
 you don't own can be played but their track list can't be shown (a Spotify restriction).
 
+## Social: Discord voice channels
+
+Join and leave Discord voice channels straight from the XMB, like party chat: **Social** lists the
+voice channels you've added, who's in them, and A joins (or leaves). While you're in one, the
+Quick Menu shows it too (A mutes, ◀ leaves). Voice runs in the Discord app, started minimized.
+
+One-time setup (Discord only lets "tester" accounts control voice from other apps):
+
+1. On any device: [discord.com/developers/applications](https://discord.com/developers/applications) › **New Application**.
+2. **OAuth2 › Redirects**: add `http://127.0.0.1:7777/discord/callback`, save.
+3. Copy the **Client ID** and **Client Secret** (OAuth2 page).
+4. Crossbar: **Social › Set Up Discord**, paste both, sign in to Discord if asked, approve Crossbar.
+5. **Social › Add Voice Channel…** › pick a server › pick channels.
+
+## Games
+
+Launching shows a *Starting…* screen until the game's window appears, then hands over. Steam runs
+in the background with its library window tucked away, and **Steam's overlay works normally**
+inside Steam games. GOG and Epic games can optionally run in gamescope (Settings › Game Settings).
+When a game closes you're back in the menu.
+
 ## Settings
 
 | Section | What's in it |
 |---|---|
 | Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep |
 | Sound | Output device, input (mic) device, volumes, menu sounds |
-| Controller & Keyboard | Remap every button and key, swap Select/Back, connected controllers |
+| Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget |
+| Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
+| Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
+| Game Settings | Gamescope for GOG/Epic, Steam overlay info, demo library |
 | Theme | Background colour, or automatic by month |
 | Media | Music / Video / Photo folders, resume videos, subtitles default |
-| Network | Connection status, Wi-Fi scan and connect |
+| Date & Time | Time zone, automatic time, 12/24-hour clock |
 | Accounts | User name, Spotify |
-| System | Demo library, system information, install to disk |
+| System | Terminal, update Crossbar, share support report, system information, install to disk |
+
+Everything is set inside Crossbar — no separate settings apps. Under the hood these are the same
+system services KDE Plasma's settings use (NetworkManager, BlueZ, PipeWire, systemd), driven
+directly.
 
 ## How the stores connect
 

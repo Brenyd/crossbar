@@ -159,3 +159,21 @@ body.infolder #cats { opacity: 0; }
 .dlg-body { max-height: 640px; overflow: hidden; }
 #dialog .dlg-body:has(+ .dlg-fields:empty) { text-align: center; }
 .dlg-body.long { font-size: 25px; text-align: left; max-width: 1100px; line-height: 1.55; }
+
+/* ---- built-in terminal ---- */
+#term { position: absolute; inset: 0; z-index: 7; background: #0b0b0e; display: flex; flex-direction: column; padding: 40px 60px 50px; }
+#term .t-head { display: flex; justify-content: space-between; color: var(--dim); font-size: 18px; letter-spacing: 4px; padding-bottom: 16px;
+                border-bottom: 1px solid rgba(255,255,255,.18); margin-bottom: 16px; }
+#term .t-hint { letter-spacing: 0; }
+#term .t-screen { flex: 1; min-height: 0; overflow: hidden; }
+#term .t-plain { margin: 0; height: 100%; overflow-y: auto; color: #e8e8e8; font: 18px/1.35 "DejaVu Sans Mono", monospace; white-space: pre-wrap; outline: none; cursor: text; }
+#term, #term * { cursor: text; }
+
+/* ---- launching a game ---- */
+#launch { position: absolute; inset: 0; z-index: 7; background: rgba(0,0,0,.82); display: flex; flex-direction: column;
+          align-items: center; justify-content: center; gap: 26px; animation: fade .3s; }
+#launch .l-title { font-size: 44px; }
+#launch .l-sub { font-size: 24px; color: var(--dim); }
+#launch .l-spin { width: 64px; height: 64px; border-radius: 50%; border: 3px solid rgba(255,255,255,.2); border-top-color: #fff;
+                  animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }

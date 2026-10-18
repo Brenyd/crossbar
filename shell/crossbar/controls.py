@@ -30,7 +30,7 @@ DEFAULT_GAMEPAD = {
     "ok": ["BTN_SOUTH"],
     "back": ["BTN_EAST"],
     "menu": ["BTN_NORTH", "BTN_WEST", "BTN_SELECT"],
-    "home": ["BTN_MODE"],
+    "home": ["BTN_SELECT&BTN_START"],   # a combo: Guide/PS is left to Steam
     "prev": ["BTN_TL"],
     "next": ["BTN_TR"],
     "toggle": ["BTN_START"],
@@ -61,6 +61,8 @@ XKB = {"ArrowUp": "Up", "ArrowDown": "Down", "ArrowLeft": "Left", "ArrowRight": 
 
 
 def pad_label(token):
+    if "&" in token:
+        return " + ".join(pad_label(t).split(" / ")[0] for t in token.split("&"))
     if token in PAD_LABELS:
         return PAD_LABELS[token]
     return token.replace("BTN_", "Button ").replace("ABS_", "Axis ").replace("_", " ")
@@ -74,15 +76,23 @@ def key_to_xkb(key):
     return key.lower() if len(key) == 1 else None
 
 
+VERSION = 2
+
+
 def load():
     try:
         with open(PATH) as f:
             data = json.load(f)
     except (OSError, ValueError):
         data = {}
-    out = {"gamepad": {}, "keyboard": {}}
+    if data.get("version", 1) < 2:
+        # v1 used Guide/PS for the Quick Menu, which fights with Steam's overlay.
+        g = data.get("gamepad") or {}
+        if g.get("home") == ["BTN_MODE"]:
+            g["home"] = list(DEFAULT_GAMEPAD["home"])
+    out = {"gamepad": {}, "keyboard": {}, "version": VERSION}
     for kind, defaults in (("gamepad", DEFAULT_GAMEPAD), ("keyboard", DEFAULT_KEYBOARD)):
-        saved = data.get(kind) or {}
+        saved = data.get(kind) if isinstance(data.get(kind), dict) else {}
         for action, _ in ACTIONS:
             v = saved.get(action)
             out[kind][action] = list(v) if isinstance(v, list) else list(defaults[action])
@@ -90,6 +100,7 @@ def load():
 
 
 def save(c):
+    c = {**c, "version": VERSION}
     os.makedirs(util.CONFIG_DIR, exist_ok=True)
     tmp = PATH + ".tmp"
     with open(tmp, "w") as f:
@@ -105,6 +116,7 @@ def set_binding(kind, action, tokens):
     if not tokens:
         raise ValueError("At least one button is needed")
     # A button does one thing: take it away from any other action first.
+    # (Combos like Select+Start are separate tokens and don't steal Select or Start.)
     for a, toks in c[kind].items():
         if a != action:
             c[kind][a] = [t for t in toks if t not in tokens]
@@ -123,6 +135,22 @@ def reset(kind=None, action=None):
     return c
 
 
+def set_guide_home(on):
+    """Guide/PS opens the Quick Menu too (off by default so Steam keeps it)."""
+    c = load()
+    home = [t for t in c["gamepad"]["home"] if t != "BTN_MODE"]
+    if on:
+        home.append("BTN_MODE")
+        for a in c["gamepad"]:
+            if a != "home":
+                c["gamepad"][a] = [t for t in c["gamepad"][a] if t != "BTN_MODE"]
+    if not home:
+        home = list(DEFAULT_GAMEPAD["home"])
+    c["gamepad"]["home"] = home
+    save(c)
+    return c
+
+
 def swap_ok_back():
     c = load()
     g = c["gamepad"]
@@ -134,4 +162,5 @@ def swap_ok_back():
 def describe():
     c = load()
     return {**c, "actions": [{"id": a, "name": n} for a, n in ACTIONS],
+            "guide_home": "BTN_MODE" in c["gamepad"]["home"],
             "labels": {t: pad_label(t) for toks in c["gamepad"].values() for t in toks}}

@@ -11,6 +11,7 @@ import json
 import mimetypes
 import queue
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -24,7 +25,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import controls, display, media, party, player, quick, system, util  # noqa: E402
+from crossbar import controls, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -33,6 +34,7 @@ from crossbar.providers.epic import Epic  # noqa: E402
 from crossbar.providers.gog import GOG  # noqa: E402
 from crossbar.providers.steam import Steam  # noqa: E402
 from crossbar.spotify import SPOTIFY  # noqa: E402
+from crossbar.discord import DISCORD, launch as launch_discord  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 try:
@@ -100,12 +102,71 @@ def state():
         "video": cfg["video"],
         "tv": cfg["tv"],
         "spotify": SPOTIFY.status(),
+        "term_token": terminal.TOKEN,
+        "clock24": cfg.get("clock24", False),
+        "gamescope": cfg.get("gamescope", False),
+        "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),
     }
 
 
 # ---- routes ------------------------------------------------------------
+def discord_state():
+    st = DISCORD.status()
+    saved = util.load_config()["discord"].get("channels", [])
+    out = []
+    for c in saved:
+        item = dict(c)
+        if st.get("connected"):
+            try:
+                item["members"] = DISCORD.channel(c["id"])["members"]
+            except Exception:
+                item["members"] = None
+        out.append(item)
+    st["saved"] = out
+    return st
+
+
+def r_discord(action, b):
+    if action == "config":
+        util.update_config(lambda c: c["discord"].update(client_id=b.get("client_id", "").strip(),
+                                                          client_secret=b.get("client_secret", "").strip()))
+        return discord_state()
+    if action == "link":
+        return JOBS.start("login", "Discord", DISCORD.link, "discord").as_dict()
+    if action == "unlink":
+        DISCORD.unlink()
+        return discord_state()
+    if action == "join":
+        try:
+            return {"channel": DISCORD.join(b["channel_id"], force=bool(b.get("force")))}
+        except RuntimeError as e:
+            if str(e) == "ALREADY_IN_VOICE":
+                return {"already": True}
+            raise
+    if action == "leave":
+        DISCORD.leave()
+        return {"ok": True}
+    if action == "mute":
+        return DISCORD.set_voice(mute=not DISCORD.state["mute"])
+    if action == "deaf":
+        return DISCORD.set_voice(deaf=not DISCORD.state["deaf"])
+    if action == "save":
+        ch = {"id": str(b["id"]), "name": b["name"], "guild": b.get("guild", ""), "guild_id": b.get("guild_id", "")}
+        util.update_config(lambda c: c["discord"]["channels"].append(ch)
+                           if all(x["id"] != ch["id"] for x in c["discord"]["channels"]) else None)
+        return discord_state()
+    if action == "remove":
+        util.update_config(lambda c: c["discord"].__setitem__(
+            "channels", [x for x in c["discord"]["channels"] if x["id"] != str(b["id"])]))
+        return discord_state()
+    if action == "open":
+        launch_discord(minimized=False)
+        return {"ok": True}
+    raise KeyError(action)
+
+
 def diagnostics():
     """What crossbard sees — for Settings › Controller Diagnostics and crossbar-doctor."""
     import grp
@@ -149,7 +210,28 @@ def r_uninstall(b):
 
 def r_launch(b):
     p = provider(b["provider"])
-    p.launch(b["id"])
+    before = {w["con_id"] for w in system.windows()}
+    if b["provider"] in ("gog", "epic") and util.load_config().get("gamescope") and util.which("gamescope"):
+        os.environ["CROSSBAR_WRAP"] = "gamescope"
+    try:
+        p.launch(b["id"])
+    finally:
+        os.environ.pop("CROSSBAR_WRAP", None)
+    if not demo_on() and os.environ.get("SWAYSOCK"):
+        title = b.get("title", "")
+        HUB.publish({"type": "launching", "title": title})
+
+        def watch():
+            # The game's window appears -> sway focuses it; tell the XMB to drop the splash.
+            for _ in range(180):
+                time.sleep(0.5)
+                new = [w for w in system.windows() if w["con_id"] not in before and not system.is_background_window(w)]
+                if new:
+                    system.focus_window(new[-1]["con_id"])
+                    HUB.publish({"type": "launched", "title": title})
+                    return
+            HUB.publish({"type": "launch-timeout", "title": title})
+        threading.Thread(target=watch, daemon=True).start()
     util.update_config(lambda c: c["last_played"].__setitem__(f"{p.id}:{b['id']}", time.time()))
     return {"ok": True, "demo": demo_on()}
 
@@ -161,7 +243,7 @@ def r_login(pid, b):
 
 
 def r_settings(b):
-    allowed = {"demo", "user", "theme", "sounds"}
+    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope"}
 
     def apply(c):
         for k, v in b.items():
@@ -201,6 +283,13 @@ def r_search(q):
 GET = {
     "/api/state": lambda q: state(),
     "/api/quick": lambda q: quick.info(),
+    "/api/bluetooth": lambda q: system.bluetooth_status(),
+    "/api/time": lambda q: system.time_status(),
+    "/api/timezones": lambda q: system.timezones(),
+    "/api/wifi/radio": lambda q: {"on": system.wifi_radio()},
+    "/api/discord/state": lambda q: discord_state(),
+    "/api/discord/guilds": lambda q: DISCORD.guilds(),
+    "/api/discord/channels": lambda q: DISCORD.voice_channels(q["guild_id"]),
     "/api/quick/pending": lambda q: {"open": quick.take_pending()},
     "/api/quick/overlay-state": lambda q: {"open": quick.OVERLAY["open"]},
     "/api/diagnostics": lambda q: diagnostics(),
@@ -327,7 +416,14 @@ def route_post(path, b):
         raise KeyError(path)
     if head == "controls":
         if len(parts) > 1 and parts[1] == "capture":
-            return {"token": PADS.capture(float(b.get("timeout", 10)))}
+            return {"token": PADS.capture(float(b.get("timeout", 10)), bool(b.get("combo")))}
+        if len(parts) > 1 and parts[1] == "browser-pads":
+            PADS.browser_pads = [str(x)[:120] for x in b.get("pads", [])][:8]
+            return {"ok": True}
+        if len(parts) > 1 and parts[1] == "guide":
+            controls.set_guide_home(bool(b.get("on")))
+            PADS.reload()
+            return {**controls.describe(), "pads": PADS.status()}
         if len(parts) > 1 and parts[1] == "cancel":
             PADS.cancel_capture()
             return {"ok": True}
@@ -371,6 +467,54 @@ def route_post(path, b):
         return system.audio_devices()
     if head == "wifi":
         return JOBS.start("wifi", b["ssid"], lambda j: system.wifi_connect(b["ssid"], b.get("password", ""))).as_dict()
+    if head == "bluetooth":
+        if parts[1] == "power":
+            system.bluetooth_power(bool(b.get("on")))
+            return system.bluetooth_status()
+        if parts[1] == "scan":
+            return JOBS.start("scan", "Bluetooth", lambda j: system.bluetooth_scan(10)).as_dict()
+        if parts[1] == "pair":
+            return JOBS.start("pair", b.get("name") or b["mac"], lambda j: system.bluetooth_pair(b["mac"])).as_dict()
+        system.bluetooth_do(parts[1], b["mac"])       # connect / disconnect / remove
+        return system.bluetooth_status()
+    if head == "time":
+        if parts[1] == "zone":
+            system.set_timezone(b["zone"])
+        elif parts[1] == "ntp":
+            system.set_ntp(bool(b.get("on")))
+        return system.time_status()
+    if head == "wifi-extra":
+        if parts[1] == "disconnect":
+            system.wifi_disconnect()
+        elif parts[1] == "forget":
+            system.wifi_forget(b["ssid"])
+        elif parts[1] == "radio":
+            system.wifi_radio(bool(b.get("on")))
+        return system.network_status()
+    if head == "term":
+        terminal.check(b.get("token"))
+        if parts[1] == "open":
+            s_ = terminal.open_session(b.get("cmd"), b.get("cols", 120), b.get("rows", 34))
+            return {"id": s_.id}
+        if parts[1] == "input":
+            terminal.get(b["id"]).write(b["data"])
+            return {"ok": True}
+        if parts[1] == "resize":
+            terminal.get(b["id"]).resize(b["cols"], b["rows"])
+            return {"ok": True}
+        if parts[1] == "replay":
+            import base64 as _b64
+            return {"data": _b64.b64encode(bytes(terminal.get(b["id"]).buffer)).decode()}
+        if parts[1] == "close":
+            terminal.close(b["id"])
+            return {"ok": True}
+        raise KeyError(path)
+    if head == "show-terminal":           # Ctrl+Alt+T from anywhere (sway binding)
+        system.show_shell()
+        HUB.publish({"type": "open-terminal", "cmd": b.get("cmd")})
+        return {"ok": True}
+    if head == "discord":
+        return r_discord(parts[1], b)
     if head == "spotify":
         return r_spotify(parts[1], b)
     if head == "tv":
@@ -378,15 +522,20 @@ def route_post(path, b):
     if head == "browser":
         system.open_web(b.get("url") or "https://duckduckgo.com", "browser", app=False)
         return {"ok": True}
+    if head == "report":
+        if not util.which("crossbar-doctor"):
+            raise RuntimeError("crossbar-doctor isn't installed (it comes with the Crossbar ISO)")
+        r = subprocess.run(["crossbar-doctor", "--share"], capture_output=True, text=True, timeout=90)
+        url = r.stdout.strip().splitlines()[-1] if r.stdout.strip() else ""
+        if not url.startswith("https://"):
+            raise RuntimeError("Couldn't upload the report — is the internet connected?")
+        return {"url": url}
     if head == "update":
-        util.spawn(["foot", "--title", "Update Crossbar", "sh", "-c",
-                    "cd /tmp && rm -rf crossbar-main && "
-                    "curl -fL https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz && "
-                    "cd crossbar-main && ./update-system.sh; echo; echo 'Press Enter to close'; read x"])
-        return {"ok": True}
+        return {"cmd": "cd /tmp && rm -rf crossbar-main && "
+                       "curl -fL https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz && "
+                       "cd crossbar-main && ./update-system.sh"}
     if head == "installer":
-        system.open_installer()
-        return {"ok": True}
+        return system.open_installer()
     if head == "power":
         system.power(parts[1])
         return {"ok": True}
@@ -524,7 +673,15 @@ def main():
             time.sleep(5)
     threading.Thread(target=keep_xmb_marked, daemon=True).start()
     system.bind_home_keys(controls.load()["keyboard"]["home"])
-    threading.Thread(target=lambda: (display.apply_saved(), SPOTIFY.ensure_receiver()), daemon=True).start()
+    def background_start():
+        display.apply_saved()
+        SPOTIFY.ensure_receiver()
+        if DISCORD.linked() and not DISCORD.running():
+            try:
+                launch_discord(minimized=True)     # voice runs in Discord; keep it ready, hidden
+            except Exception as e:
+                print(f"discord: {e}", flush=True)
+    threading.Thread(target=background_start, daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"crossbard listening on http://127.0.0.1:{a.port} (demo={demo_on()})", flush=True)
     srv.serve_forever()

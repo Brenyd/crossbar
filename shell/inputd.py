@@ -38,6 +38,15 @@ def is_pad(d):
     return (E.BTN_SOUTH in keys or E.BTN_MODE in keys or E.BTN_GAMEPAD in keys) and not d.name.startswith("Crossbar ")
 
 
+def is_virtual(d):
+    """Steam Input's virtual controller (no physical path). Grabbed with the rest so a
+    game can't see input while the Quick Menu is open, but never read: it mirrors the real pad."""
+    try:
+        return not d.phys and (d.info.vendor == 0x28DE or "Steam" in d.name or d.name == "Microsoft X-Box 360 pad")
+    except AttributeError:
+        return False
+
+
 class Daemon:
     def __init__(self):
         self.devices = {}      # path -> InputDevice
@@ -79,7 +88,7 @@ class Daemon:
             print(f"inputd: + {d.name} ({path})", flush=True)
 
     def dev_msg(self, path, d, added):
-        msg = {"e": "dev", "path": path, "name": d.name, "added": added}
+        msg = {"e": "dev", "path": path, "name": d.name, "added": added, "virtual": is_virtual(d)}
         if added:
             absinfo = {}
             for code, info in d.capabilities().get(E.EV_ABS, []):

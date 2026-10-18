@@ -1,0 +1,13 @@
+// Crossbar: let the console user change time zone, network, Bluetooth and power
+// from the menu without a password prompt (there's no prompt UI on a console).
+polkit.addRule(function (action, subject) {
+  if (!(subject.isInGroup("wheel") && subject.local && subject.active)) return;
+  if (action.id.indexOf("org.freedesktop.timedate1.") === 0 ||
+      action.id.indexOf("org.freedesktop.NetworkManager.") === 0 ||
+      action.id.indexOf("org.bluez.") === 0 ||
+      action.id === "org.freedesktop.login1.power-off" ||
+      action.id === "org.freedesktop.login1.reboot" ||
+      action.id === "org.freedesktop.login1.suspend") {
+    return polkit.Result.YES;
+  }
+});

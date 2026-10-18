@@ -1,19 +1,22 @@
-"""Controller handling: mapping and routing.
+"""Controller handling: mapping, combos and routing.
 
-Raw events come from crossbar-inputd (root service, /run/crossbar/input.sock),
-or — if that isn't running — straight from /dev/input. Each press is translated
-through the user's mapping (controls.py) into an action and sent only to what's
-in front:
+Raw events come from crossbar-inputd (root service, /run/crossbar/input.sock)
+or — if that isn't available — straight from /dev/input. Each press goes
+through the user's mapping (controls.py) and is sent only to what's in front:
 
-  - Quick Menu overlay -> the overlay page
+  - Quick Menu overlay -> the overlay
   - the XMB            -> the XMB page (server-sent events)
   - video player       -> mpv's control panel
   - web apps           -> keys on a virtual keyboard (YouTube TV, Twitch, browser…)
   - a game / other     -> nothing: the controller is released to the game
 
-While Crossbar is the target it *grabs* the controller, so a browser or game in
-the background can't also react to the same press. Guide/PS (the "home" action)
-always opens the Quick Menu.
+While Crossbar is the target it *grabs* the controller so nothing behind reacts.
+The Quick Menu is a button combo (Select+Start by default) so Guide/PS stays
+free for Steam's own overlay.
+
+Combos: a button that's part of a combo fires its normal action on *release*
+(if the combo didn't happen), so pressing Select+Start doesn't also trigger
+Select's and Start's own actions.
 """
 import collections
 import glob
@@ -42,16 +45,22 @@ class Gamepads:
     def __init__(self, on_home):
         self.on_home = on_home
         self.mode = "starting"          # "inputd" | "direct" | "none"
+        self.inputd_error = ""
         self.devices = {}               # path -> InputDevice (direct mode)
-        self.names = {}                 # path -> name
-        self.absinfo = {}               # path -> {code: (min, max)}
+        self.names = {}                 # path -> name of real controllers
+        self.virtual = {}               # path -> name of virtual pads (e.g. Steam's): grabbed, never read
+        self.absinfo = {}
         self.unreadable = {}
         self.available = False
         self.error = ""
         self.log = collections.deque(maxlen=25)
+        self.browser_pads = []          # what the XMB page's Gamepad API sees (for diagnostics)
         self.overlay_open = False
         self.grabbed = False
-        self._keymap, self._absmap = {}, {}
+        self.xmb_focused = True
+        self._keymap, self._absmap, self._combos, self._combo_keys = {}, {}, [], set()
+        self._down = {}                 # key token -> press time
+        self._consumed = set()
         self._held = {}
         self._abs_dir = {}
         self._capture = None
@@ -69,10 +78,14 @@ class Gamepads:
         except ImportError:
             return
         E = evdev.ecodes.ecodes
-        keymap, absmap = {}, {}
+        keymap, absmap, combos = {}, {}, []
         for action, tokens in controls.load()["gamepad"].items():
             for t in tokens:
-                if t.startswith("ABS_") and t[-1] in "+-":
+                if "&" in t:
+                    parts = frozenset(x for x in t.split("&") if x in E)
+                    if len(parts) >= 2:
+                        combos.append((parts, action))
+                elif t.startswith("ABS_") and t[-1] in "+-":
                     code = E.get(t[:-1])
                     if code is not None:
                         absmap.setdefault((code, 1 if t[-1] == "+" else -1), []).append(action)
@@ -80,7 +93,8 @@ class Gamepads:
                     code = E.get(t)
                     if code is not None:
                         keymap.setdefault(code, []).append(action)
-        self._keymap, self._absmap = keymap, absmap
+        self._keymap, self._absmap, self._combos = keymap, absmap, combos
+        self._combo_keys = {E[n] for parts, _ in combos for n in parts}
 
     @staticmethod
     def _key_token(code):
@@ -108,15 +122,20 @@ class Gamepads:
         elif system.is_web_app(f):
             t = "web"
         elif not f.get("con_id"):
-            t = "xmb"                     # nothing focused: treat as the menu
+            t = "xmb"
         else:
             t = "app"
         self._focus_cache = (now, t)
         return t
 
     def update_grab(self):
-        """Own the controller unless a game/app is in front."""
-        want = self._target(fresh=True) != "app"
+        """Own the controller unless a game/app is in front; tell the XMB if it's in front."""
+        target = self._target(fresh=True)
+        xmb = target == "xmb"
+        if xmb != self.xmb_focused:
+            self.xmb_focused = xmb
+            HUB.publish({"type": "focus", "xmb": xmb})
+        want = target != "app"
         if want != self.grabbed:
             self.grabbed = want
             if self.mode == "inputd":
@@ -175,9 +194,9 @@ class Gamepads:
             self._uinput = None
 
     # ---- capture (Settings › remap) ------------------------------------------
-    def capture(self, timeout=10):
+    def capture(self, timeout=10, combo=False):
         ev = threading.Event()
-        self._capture = {"event": ev, "token": None}
+        self._capture = {"event": ev, "token": None, "combo": combo, "first": None}
         ev.wait(timeout)
         tok = self._capture["token"] if self._capture else None
         self._capture = None
@@ -187,24 +206,58 @@ class Gamepads:
         if self._capture:
             self._capture["event"].set()
 
-    def _captured(self, token):
-        if self._capture and not self._capture["token"]:
-            self._capture["token"] = token
-            self._capture["event"].set()
-            return True
-        return False
+    def _capture_key(self, token):
+        c = self._capture
+        if not c or c["token"]:
+            return
+        if not c["combo"]:
+            c["token"] = token
+            c["event"].set()
+        elif c["first"] is None:
+            c["first"] = token
+        elif token != c["first"] and c["first"] in self._down_tokens():
+            c["token"] = f"{c['first']}&{token}"
+            c["event"].set()
 
-    # ---- raw events (from either source) -------------------------------------
+    def _down_tokens(self):
+        return {self._key_token(code) for code in self._down}
+
+    # ---- raw events ------------------------------------------------------------
     def _on_key(self, code, value):
-        if value == 1 and self._capture:
-            self._captured(self._key_token(code))
+        if value == 1:
+            self._down[code] = time.time()
+        elif value == 0:
+            self._down.pop(code, None)
+        if self._capture:
+            if value == 1:
+                self._capture_key(self._key_token(code))
+            return
+        token = self._key_token(code)
+        if value == 1:
+            fired = False
+            for parts, action in self._combos:
+                if token in parts and parts <= self._down_tokens():
+                    import evdev
+                    for n in parts:
+                        self._consumed.add(evdev.ecodes.ecodes[n])
+                    self._press(action, "+".join(sorted(parts)))
+                    fired = True
+            if fired or code in self._combo_keys:
+                return                    # combo buttons act on release (below)
+        elif value == 0 and code in self._combo_keys:
+            if code in self._consumed:
+                self._consumed.discard(code)
+                return
+            for a in self._keymap.get(code, []):
+                self._press(a, token)
+                self._release(a)
             return
         actions = self._keymap.get(code, [])
         if value == 1 and not actions:
-            self.log.appendleft({"t": time.time(), "token": self._key_token(code), "action": None, "to": "unmapped"})
+            self.log.appendleft({"t": time.time(), "token": token, "action": None, "to": "unmapped"})
         for a in actions:
             if value == 1:
-                self._press(a, self._key_token(code))
+                self._press(a, token)
             elif value == 0:
                 self._release(a)
 
@@ -231,7 +284,8 @@ class Gamepads:
         if direction:
             token = f"{name}{'+' if direction > 0 else '-'}"
             if self._capture:
-                self._captured(token)
+                if not self._capture["combo"]:
+                    self._capture_key(token)
                 return
             for a in self._absmap.get((code, direction), []):
                 self._press(a, token)
@@ -263,9 +317,11 @@ class Gamepads:
 
     def _run_inputd(self):
         s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        s.connect(INPUTD_SOCK)
-        self._sock, self.mode, self.available, self.error = s, "inputd", True, ""
-        self.grabbed = False
+        s.settimeout(3)
+        s.connect(INPUTD_SOCK)            # raises if the service isn't answering (stale socket)
+        s.settimeout(None)
+        self._sock, self.mode, self.available, self.error, self.inputd_error = s, "inputd", True, "", ""
+        self.grabbed = None
         self.update_grab()
         print("gamepad: connected to crossbar-inputd", flush=True)
         buf = b""
@@ -280,23 +336,29 @@ class Gamepads:
                     while b"\n" in buf:
                         line, buf = buf.split(b"\n", 1)
                         m = json.loads(line)
+                        path = m.get("path")
+                        if m["e"] in ("key", "abs") and path in self.virtual:
+                            continue      # Steam's virtual pad mirrors the real one: ignore
                         if m["e"] == "key":
                             self._on_key(m["code"], m["value"])
                         elif m["e"] == "abs":
-                            lo, hi = self.absinfo.get(m["path"], {}).get(str(m["code"]), (-32768, 32767))
-                            self._on_abs(m["path"], m["code"], m["value"], lo, hi)
+                            lo, hi = self.absinfo.get(path, {}).get(str(m["code"]), (-32768, 32767))
+                            self._on_abs(path, m["code"], m["value"], lo, hi)
                         elif m["e"] == "dev":
+                            table = self.virtual if m.get("virtual") else self.names
                             if m["added"]:
-                                self.names[m["path"]] = m["name"]
-                                self.absinfo[m["path"]] = {k: tuple(v) for k, v in m.get("abs", {}).items()}
+                                table[path] = m["name"]
+                                self.absinfo[path] = {k: tuple(v) for k, v in m.get("abs", {}).items()}
                             else:
-                                self.names.pop(m["path"], None)
+                                table.pop(path, None)
                                 self._held.clear()
+                                self._down.clear()
                 self._repeat_tick()
         finally:
             with self._sock_lock:
                 self._sock = None
             self.names.clear()
+            self.virtual.clear()
             s.close()
 
     # ---- source 2: read /dev/input directly (fallback) --------------------------
@@ -317,8 +379,8 @@ class Gamepads:
             except OSError:
                 d.close()
                 continue
-            if (evdev.ecodes.BTN_SOUTH in keys or evdev.ecodes.BTN_MODE in keys or evdev.ecodes.BTN_GAMEPAD in keys) \
-                    and not d.name.startswith("Crossbar "):
+            if (evdev.ecodes.BTN_SOUTH in keys or evdev.ecodes.BTN_MODE in keys) \
+                    and not d.name.startswith("Crossbar ") and not is_virtual_pad(d):
                 self.devices[path] = d
                 self.names[path] = d.name
                 if self.grabbed:
@@ -333,10 +395,13 @@ class Gamepads:
             self.unreadable.pop(path, None)
         blocked = {p: n for p, n in self.unreadable.items() if _is_joystick(p)}
         self.error = ("Controller found but not readable: " + ", ".join(sorted(set(blocked.values()))) +
-                      ". Is crossbar-inputd running? See Controller Diagnostics.") if blocked and not self.devices else ""
+                      ". The controller service (crossbar-inputd) isn't running.") if blocked and not self.devices else ""
 
     def _run_direct(self, evdev):
-        self.mode = "direct"
+        if self.mode != "direct":
+            self.mode = "direct"
+            self.grabbed = None
+            self.update_grab()
         self._scan(evdev)
         if not self.devices:
             time.sleep(1)
@@ -350,7 +415,18 @@ class Gamepads:
                 self.devices.pop(d.path, None)
                 self.names.pop(d.path, None)
                 self._held.clear()
+                self._down.clear()
         self._repeat_tick()
+
+    def _close_direct(self):
+        for d in self.devices.values():
+            try:
+                d.ungrab()
+            except OSError:
+                pass
+            d.close()
+        self.devices.clear()
+        self.names.clear()
 
     def run(self):
         try:
@@ -362,17 +438,22 @@ class Gamepads:
         while True:
             try:
                 if os.path.exists(INPUTD_SOCK):
-                    self._run_inputd()          # returns only when the service goes away
-                else:
-                    deadline = time.time() + 3
-                    while time.time() < deadline and not os.path.exists(INPUTD_SOCK):
-                        self._run_direct(evdev)
+                    self._close_direct()
+                    self._run_inputd()      # returns/raises when the service goes away
             except Exception as e:
-                print(f"gamepad: {e!r}", flush=True)
-                time.sleep(1)
+                self.inputd_error = repr(e)
+                print(f"gamepad: controller service unavailable ({e!r}); reading controllers directly", flush=True)
+            # Fallback for a while, then try the service again.
+            deadline = time.time() + 5
+            while time.time() < deadline:
+                try:
+                    self._run_direct(evdev)
+                except Exception as e:
+                    print(f"gamepad: {e!r}", flush=True)
+                    time.sleep(1)
 
     def _watch_focus(self):
-        """Re-decide grabbing whenever the focused window changes (sway events)."""
+        """Re-decide grabbing (and tell the XMB) whenever the focused window changes."""
         while True:
             if not os.environ.get("SWAYSOCK"):
                 return
@@ -380,7 +461,15 @@ class Gamepads:
                 p = subprocess.Popen(["swaymsg", "-t", "subscribe", "-m", '["window"]'],
                                      stdout=subprocess.PIPE, text=True)
                 for line in p.stdout:
-                    if '"change": "focus"' in line or '"change":"focus"' in line or '"close"' in line or '"new"' in line:
+                    if '"change": "close"' in line or '"change":"close"' in line:
+                        # a game/video/app closed: go back to the menu, like a console
+                        time.sleep(0.15)
+                        if not self.overlay_open:
+                            f = system.focused()
+                            if f is not None and not ("xmb" in f["marks"] or system.is_xmb(f)) \
+                                    and (not f.get("con_id") or system.is_background_window(f)):
+                                system.show_shell()
+                    if any(k in line for k in ('"focus"', '"close"', '"new"', '"fullscreen_mode"')):
                         time.sleep(0.05)
                         self.update_grab()
             except Exception as e:
@@ -398,11 +487,24 @@ class Gamepads:
 
     def status(self):
         return {"available": self.available, "mode": self.mode, "devices": list(self.names.values()),
+                "virtual": list(self.virtual.values()),
                 "unreadable": sorted(set(n for p, n in self.unreadable.items() if _is_joystick(p))),
-                "grabbed": self.grabbed, "error": self.error, "uinput_error": self.uinput_error}
+                "grabbed": bool(self.grabbed), "xmb_focused": self.xmb_focused, "error": self.error,
+                "inputd_error": self.inputd_error, "uinput_error": self.uinput_error,
+                "browser_pads": self.browser_pads}
 
     def recent(self):
         return list(self.log)
+
+
+def is_virtual_pad(d):
+    """Pads made by software (Steam Input's virtual controller): no physical path."""
+    try:
+        vendor = d.info.vendor
+        phys = d.phys or ""
+    except AttributeError:
+        return False
+    return not phys and (vendor == 0x28DE or "Steam" in d.name or d.name == "Microsoft X-Box 360 pad")
 
 
 def _device_name(path):

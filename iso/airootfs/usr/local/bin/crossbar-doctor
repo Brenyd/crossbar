@@ -1,6 +1,20 @@
 #!/usr/bin/env bash
 # Prints what Crossbar can see — paste the output when reporting a problem.
-#   crossbar-doctor            (in the terminal: Ctrl+Alt+T)
+#   crossbar-doctor            print the report
+#   crossbar-doctor --share    upload it and print a short link to share
+if [[ "${1:-}" == "--share" ]]; then
+  out=$(mktemp)
+  "$0" >"$out" 2>&1
+  # drop anything that looks like a secret before it leaves the machine
+  grep -viE 'token|password|passwd|secret|api_key|apikey|cookie' "$out" >"$out.clean"
+  url=$(curl -s --max-time 30 --data-binary @"$out.clean" https://paste.rs 2>/dev/null)
+  if [[ "$url" != https://* ]]; then
+    url=$(curl -s --max-time 30 -F "file=@$out.clean" https://0x0.st 2>/dev/null)
+  fi
+  rm -f "$out" "$out.clean"
+  if [[ "$url" == https://* ]]; then echo "$url"; else echo "upload failed"; exit 1; fi
+  exit 0
+fi
 echo "== Crossbar doctor  $(date)"
 echo "user: $(id)"
 echo

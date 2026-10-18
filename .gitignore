@@ -1,3 +1,4 @@
 out/
 games.qcow2
 __pycache__/
+shell/web/vendor/

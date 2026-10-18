@@ -25,6 +25,7 @@ DEFAULT_CONFIG = {
     "video": {"resume": True, "subtitles": "auto"},
     "display": {},             # {"OUTPUT-NAME": {"mode": "1920x1080@60.000Hz", "scale": 1.0}}
     "spotify": {"client_id": ""},
+    "discord": {"client_id": "", "client_secret": "", "channels": []},
     "tv": [
         {"name": "YouTube", "url": "https://www.youtube.com/tv", "tv_ui": True},
         {"name": "Twitch", "url": "https://www.twitch.tv"},
@@ -125,7 +126,10 @@ def which(cmd):
 
 
 def spawn(argv, cwd=None, env=None):
-    """Start a detached process (games, voice apps) that outlives requests."""
+    """Start a detached process (games, voice apps) that outlives requests.
+    If CROSSBAR_WRAP=gamescope is set by the launcher, run it inside gamescope."""
+    if os.environ.get("CROSSBAR_WRAP") == "gamescope" and shutil.which("gamescope"):
+        argv = ["gamescope", "-f", "--", *argv]
     return subprocess.Popen(
         argv, cwd=cwd, env={**os.environ, **(env or {})},
         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import select
 import subprocess
 import threading
 import time
@@ -27,6 +28,13 @@ def is_xmb(f):
 def is_web_app(f):
     """Chromium windows other than the XMB: TV services, the browser, sign-in pages."""
     return bool(f) and "chrom" in (f.get("app") or "").lower() and not is_xmb(f) and "xmb" not in f.get("marks", [])
+
+
+def is_background_window(w):
+    """Windows that aren't something you'd want in front after a game closes:
+    Steam's own client window and Discord running in the background."""
+    app, title = (w.get("app") or "").lower(), w.get("title") or ""
+    return (app == "steam" and title in ("Steam", "Friends List", "Special Offers")) or "discord" in app
 
 
 def ensure_xmb_mark():
@@ -179,7 +187,7 @@ def is_live():
 def open_installer():
     if not is_live():
         raise RuntimeError("Already installed")
-    util.spawn(["foot", "--title", "Install Crossbar", "sudo", "/usr/local/bin/crossbar-install"])
+    return {"cmd": "sudo /usr/local/bin/crossbar-install"}
 
 
 # ---- audio devices (PipeWire) ---------------------------------------------
@@ -296,3 +304,144 @@ def open_web(url, profile, tv_ui=False, app=True):
     # Guide/PS (or Home) opens the Quick Menu to leave or close them.
     args += ["--kiosk", url] if app else ["--start-maximized", url]
     util.spawn(args)
+
+
+# ---- Bluetooth (BlueZ via bluetoothctl) -------------------------------------
+_BT_ICON = {"input-gaming": "game", "audio-headset": "sound", "audio-headphones": "sound", "audio-card": "sound",
+            "input-keyboard": "browser", "input-mouse": "browser", "phone": "voice"}
+
+
+def _btctl(*args, timeout=15):
+    if not util.which("bluetoothctl"):
+        raise RuntimeError("Bluetooth needs bluez-utils")
+    r = subprocess.run(["bluetoothctl", *args], capture_output=True, text=True, timeout=timeout)
+    return r.stdout
+
+
+def _bt_devices(flt=None):
+    out = _btctl("devices", *([flt] if flt else []))
+    devs = {}
+    for line in out.splitlines():
+        parts = line.split(" ", 2)
+        if len(parts) == 3 and parts[0] == "Device":
+            devs[parts[1]] = parts[2]
+    return devs
+
+
+def bluetooth_status():
+    if not util.which("bluetoothctl"):
+        return {"available": False, "powered": False, "devices": []}
+    show = _btctl("show")
+    if "No default controller" in show or not show.strip():
+        return {"available": False, "powered": False, "devices": [], "note": "No Bluetooth adapter found"}
+    powered = "Powered: yes" in show
+    allk = _bt_devices()
+    paired = _bt_devices("Paired")
+    connected = _bt_devices("Connected")
+    devices = []
+    for mac, name in allk.items():
+        info = _btctl("info", mac, timeout=5)
+        m = re.search(r"Icon: (\S+)", info)
+        devices.append({"mac": mac, "name": name, "paired": mac in paired, "connected": mac in connected,
+                        "kind": _BT_ICON.get(m.group(1) if m else "", "settings")})
+    devices.sort(key=lambda d: (not d["connected"], not d["paired"], d["name"].lower()))
+    return {"available": True, "powered": powered, "devices": devices}
+
+
+def bluetooth_power(on):
+    _btctl("power", "on" if on else "off")
+
+
+def bluetooth_scan(seconds=10):
+    _btctl("--timeout", str(seconds), "scan", "on", timeout=seconds + 5)
+
+
+def bluetooth_pair(mac):
+    """Pair (no PIN, like controllers and headsets), trust, connect — one bluetoothctl session."""
+    p = subprocess.Popen(["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                         stderr=subprocess.STDOUT, text=True, bufsize=1)
+    out = []
+
+    def say(cmd, until, timeout):
+        p.stdin.write(cmd + "\n")
+        p.stdin.flush()
+        end = time.time() + timeout
+        while time.time() < end:
+            r, _, _ = select.select([p.stdout], [], [], 0.5)
+            if r:
+                line = p.stdout.readline()
+                out.append(line)
+                for word in until:
+                    if word in line:
+                        return word
+        return None
+
+    try:
+        say("agent NoInputNoOutput", ["Agent registered", "already registered"], 5)
+        say("default-agent", ["Default agent request successful"], 5)
+        res = say(f"pair {mac}", ["Pairing successful", "AlreadyExists", "Failed to pair", "not available"], 30)
+        if res in ("Failed to pair", "not available", None):
+            raise RuntimeError("Pairing failed — put the device in pairing mode and try again")
+        say(f"trust {mac}", ["trust succeeded"], 5)
+        res = say(f"connect {mac}", ["Connection successful", "Failed to connect"], 20)
+        if res != "Connection successful":
+            raise RuntimeError("Paired, but couldn't connect")
+    finally:
+        try:
+            p.stdin.write("quit\n")
+            p.stdin.flush()
+        except OSError:
+            pass
+        p.wait(timeout=5)
+
+
+def bluetooth_do(action, mac):
+    word = {"connect": "Connection successful", "disconnect": "Successful disconnected", "remove": "Device has been removed"}[action]
+    out = _btctl(action, mac, timeout=25)
+    if word.split()[0] not in out:
+        raise RuntimeError(out.strip().splitlines()[-1] if out.strip() else f"{action} failed")
+
+
+# ---- date & time (systemd timedated) -------------------------------------------
+def time_status():
+    out = subprocess.run(["timedatectl", "show"], capture_output=True, text=True).stdout if util.which("timedatectl") else ""
+    vals = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
+    return {"timezone": vals.get("Timezone", time.tzname[0]), "ntp": vals.get("NTP") == "yes",
+            "synced": vals.get("NTPSynchronized") == "yes", "available": bool(out)}
+
+
+def timezones():
+    out = subprocess.run(["timedatectl", "list-timezones"], capture_output=True, text=True).stdout
+    return [z for z in out.split() if z]
+
+
+def set_timezone(tz):
+    if tz not in timezones():
+        raise ValueError("unknown time zone")
+    r = subprocess.run(["timedatectl", "set-timezone", tz], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or "couldn't set the time zone")
+
+
+def set_ntp(on):
+    r = subprocess.run(["timedatectl", "set-ntp", "true" if on else "false"], capture_output=True, text=True)
+    if r.returncode:
+        raise RuntimeError(r.stderr.strip() or "couldn't change automatic time")
+
+
+# ---- Wi-Fi extras -----------------------------------------------------------------
+def wifi_disconnect():
+    devs = [d for d in network_status().get("devices", []) if d["type"] == "wifi" and d["connection"]]
+    for d in devs:
+        subprocess.run(["nmcli", "device", "disconnect", d["device"]], capture_output=True)
+
+
+def wifi_forget(ssid):
+    subprocess.run(["nmcli", "connection", "delete", "id", ssid], capture_output=True)
+
+
+def wifi_radio(on=None):
+    if on is None:
+        return subprocess.run(["nmcli", "radio", "wifi"], capture_output=True, text=True).stdout.strip() == "enabled"
+    subprocess.run(["nmcli", "radio", "wifi", "on" if on else "off"], capture_output=True)
+    return on

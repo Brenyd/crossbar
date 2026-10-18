@@ -19,6 +19,9 @@ echo ":: Starting from archiso's releng profile"
 cp -r /usr/share/archiso/configs/releng "$PROFILE"
 rm -f "$PROFILE/airootfs/etc/systemd/system/getty@tty1.service.d/autologin.conf"   # releng autologins root
 
+echo ":: Fetching bundled web libraries (terminal)"
+sudo -u "${SUDO_USER:-root}" "$HERE/fetch-vendor.sh" || "$HERE/fetch-vendor.sh" || echo "warning: terminal falls back to plain text"
+
 echo ":: Overlaying Crossbar files"
 cp -rT "$HERE/iso/airootfs" "$PROFILE/airootfs"
 mkdir -p "$PROFILE/airootfs/usr/lib/crossbar"
@@ -27,6 +30,8 @@ find "$PROFILE/airootfs/usr/lib/crossbar" -name __pycache__ -prune -exec rm -rf 
 mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/crossbar-setup.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/crossbar-setup.service"
+ln -sf /usr/lib/systemd/system/bluetooth.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/bluetooth.service"
 ln -sf /etc/systemd/system/crossbar-inputd.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/crossbar-inputd.service"
 
