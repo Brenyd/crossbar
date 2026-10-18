@@ -32,6 +32,11 @@ CACHE = os.path.join(util.CONFIG_DIR, "librespot")
 TOKEN_PATH = os.path.join(util.CONFIG_DIR, "spotify_token.json")
 BROWSER_PROFILE = os.path.join(util.CONFIG_DIR, "spotify-login")
 API = "https://api.spotify.com/v1"
+LOG = os.path.join(util.HOME, ".cache", "crossbar", "librespot.log")
+
+
+class SpotifyError(RuntimeError):
+    code = 0
 
 
 class Spotify:
@@ -48,7 +53,10 @@ class Spotify:
                 "--enable-volume-normalisation"]
 
     def receiver_signed_in(self):
-        return os.path.exists(os.path.join(CACHE, "credentials.json"))
+        try:
+            return any(n.startswith("credentials") for n in os.listdir(CACHE))
+        except OSError:
+            return False
 
     def receiver_running(self):
         return self.receiver is not None and self.receiver.poll() is None
@@ -57,9 +65,10 @@ class Spotify:
         with self._lock:
             if self.receiver_running() or not self.receiver_signed_in() or not util.which("librespot"):
                 return
+            os.makedirs(os.path.dirname(LOG), exist_ok=True)
+            log = open(LOG, "a")
             self.receiver = subprocess.Popen(self._librespot_args(), stdin=subprocess.DEVNULL,
-                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                             start_new_session=True)
+                                             stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 
     def _login_window(self, url):
         return subprocess.Popen(["chromium", "--ozone-platform-hint=auto", f"--user-data-dir={BROWSER_PROFILE}",
@@ -92,7 +101,12 @@ class Spotify:
                 break
         # keep draining librespot's output so it never blocks on a full pipe
         watchdog.cancel()
-        threading.Thread(target=lambda: [None for _ in p.stdout], daemon=True).start()
+        def drain():
+            with open(LOG, "a") as log:
+                for ln in p.stdout:
+                    log.write(ln)
+                    log.flush()
+        threading.Thread(target=drain, daemon=True).start()
         if win:
             win.terminate()
         if not self.receiver_signed_in():
@@ -173,7 +187,9 @@ class Spotify:
                 msg = ""
             if e.code == 403 and "premium" in msg.lower():
                 msg = "Spotify Premium is required for playback control"
-            raise RuntimeError(f"Spotify: {msg or e.reason}") from None
+            err = SpotifyError(f"Spotify: {msg or e.reason} ({e.code})")
+            err.code = e.code
+            raise err from None
 
     # ---- combined sign-in --------------------------------------------------
     def login(self, job):
@@ -249,13 +265,17 @@ class Spotify:
 
     # ---- playback ----------------------------------------------------------
     def device_id(self):
+        if not self.receiver_signed_in():
+            raise RuntimeError("The Crossbar speaker isn't signed in — use Set Up Spotify again")
         self.ensure_receiver()
-        for _ in range(10):
+        for _ in range(12):
             for d in self.api("GET", "/me/player/devices").get("devices", []):
                 if d.get("name") == DEVICE_NAME:
                     return d["id"]
+            if not self.receiver_running():   # librespot exited: start it again
+                self.ensure_receiver()
             time.sleep(0.7)
-        raise RuntimeError("The Crossbar speaker isn't online yet — try again in a moment")
+        raise RuntimeError("The Crossbar speaker isn't showing up in Spotify — see ~/.cache/crossbar/librespot.log")
 
     def play(self, context_uri=None, uris=None, offset=None, shuffle=False):
         dev = self.device_id()
@@ -266,11 +286,37 @@ class Spotify:
             body["uris"] = uris
         if offset is not None:
             body["offset"] = {"position": int(offset)}
-        self.api("PUT", "/me/player/shuffle", state="true" if shuffle else "false", device_id=dev)
-        self.api("PUT", "/me/player/play", body, device_id=dev)
+        # Spotify rejects player commands sent to a device that isn't active yet,
+        # so make Crossbar the active device first, then start playback, then shuffle.
+        now = self.now() or {}
+        if not now.get("here"):
+            self.api("PUT", "/me/player", {"device_ids": [dev], "play": False})
+            time.sleep(0.8)
+        for attempt in range(3):
+            try:
+                self.api("PUT", "/me/player/play", body, device_id=dev)
+                break
+            except SpotifyError as e:
+                if e.code not in (404, 502, 503) or attempt == 2:
+                    raise
+                time.sleep(1.0)
+        try:
+            self.api("PUT", "/me/player/shuffle", state="true" if shuffle else "false", device_id=dev)
+        except SpotifyError:
+            pass  # shuffle is a nicety; never fail playback over it
 
     def transfer(self):
         self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
+
+    def restart_speaker(self):
+        if self.receiver_running():
+            self.receiver.terminate()
+            try:
+                self.receiver.wait(3)
+            except subprocess.TimeoutExpired:
+                self.receiver.kill()
+        self.receiver = None
+        self.ensure_receiver()
 
     def now(self):
         if not self._load():

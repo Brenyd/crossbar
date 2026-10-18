@@ -66,6 +66,7 @@ sed -i '/^file_permissions=(/a\
   ["/usr/local/bin/crossbar-shell"]="0:0:755"\
   ["/usr/local/bin/crossbar-setup"]="0:0:755"\
   ["/usr/local/bin/crossbar-install"]="0:0:755"\
+  ["/usr/local/bin/crossbar-home"]="0:0:755"\
   ["/usr/local/bin/legendary"]="0:0:755"' "$PROFILE/profiledef.sh"
 
 # Bigger RAM overlay (Steam's first-run bootstrap is ~1 GB) and a quiet boot.

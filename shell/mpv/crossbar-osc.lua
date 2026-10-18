@@ -93,13 +93,13 @@ local function draw()
   ev[#ev + 1] = string.format("{\\an9\\pos(1800,866)\\fnNoto Sans\\fs30\\bord0\\shad1\\1c&HCCCCCC&}-%s", fmt(dur - pos))
 
   -- buttons
-  local n, gap, cy = #BUTTONS, 140, 960
+  local n, gap, cy = #BUTTONS, 160, 950
   local x0 = 960 - (n - 1) * gap / 2
   for i, b in ipairs(BUTTONS) do
     local cx = x0 + (i - 1) * gap
     if i == focus then
-      ev[#ev + 1] = rect(cx - 56, cy - 42, 112, 84, "FFFFFF", "C8")
-      ev[#ev + 1] = rect(cx - 56, cy + 40, 112, 3, "FFFFFF", "00")
+      ev[#ev + 1] = rect(cx - 66, cy - 50, 132, 100, "FFFFFF", "B8")
+      ev[#ev + 1] = rect(cx - 66, cy + 48, 132, 4, "FFFFFF", "00")
     end
     local alpha = (i == focus) and "00" or "50"
     local id = b.id
@@ -110,8 +110,8 @@ local function draw()
       ev[#ev + 1] = string.format("{\\an5\\pos(%d,%d)\\fnNoto Sans\\b1\\fs34\\bord0\\shad0\\1c&HFFFFFF&\\1a&H%s&}CC",
         cx, cy, alpha)
     else
-      ev[#ev + 1] = string.format("{\\an7\\pos(%d,%d)\\bord0\\shad0\\1c&HFFFFFF&\\1a&H%s&\\p1}%s{\\p0}",
-        cx - 20, cy - 20, alpha, ICON[id])
+      ev[#ev + 1] = string.format("{\\an7\\pos(%d,%d)\\fscx140\\fscy140\\bord0\\shad0\\1c&HFFFFFF&\\1a&H%s&\\p1}%s{\\p0}",
+        cx - 28, cy - 28, alpha, ICON[id])
     end
   end
 
@@ -119,8 +119,10 @@ local function draw()
   local extra = ""
   if b.id == "subs" then extra = ": " .. track_label("sub") end
   if b.id == "audio" then extra = ": " .. track_label("audio") end
-  ev[#ev + 1] = string.format("{\\an8\\pos(960,1020)\\fnNoto Sans\\fs28\\bord0\\shad1\\1c&HFFFFFF&}%s%s",
+  ev[#ev + 1] = string.format("{\\an8\\pos(960,1008)\\fnNoto Sans\\fs32\\bord0\\shad1\\1c&HFFFFFF&}%s%s",
     esc(b.label), esc(extra))
+  ev[#ev + 1] = "{\\an2\\pos(960,1072)\\fnNoto Sans\\fs22\\bord0\\shad0\\1c&HBBBBBB&}" ..
+    "Left/Right  choose     A  select     B  hide     Up/Down  volume     L1/R1  skip     Guide  Quick Menu"
 
   if mp.get_time() < vol_until then
     local vol = mp.get_property_native("volume") or 0
@@ -201,14 +203,50 @@ end
 
 mp.register_script_message("crossbar-input", act)
 
-local keys = {
-  LEFT = "left", RIGHT = "right", UP = "up", DOWN = "down",
-  ENTER = "ok", KP_ENTER = "ok", SPACE = "toggle", ESC = "back", BS = "back",
-  TAB = "menu", PGUP = "prev", PGDWN = "next",
-}
-for key, a in pairs(keys) do
-  mp.add_forced_key_binding(key, "crossbar-" .. key, function() act(a) end, { repeatable = (a == "left" or a == "right" or a == "up" or a == "down") })
+-- Keyboard: the same mapping as the XMB (Settings > Controller & Keyboard).
+local MPV_KEYS = { ArrowUp = "UP", ArrowDown = "DOWN", ArrowLeft = "LEFT", ArrowRight = "RIGHT",
+  Enter = "ENTER", Escape = "ESC", Tab = "TAB", Space = "SPACE", Backspace = "BS", Home = "HOME",
+  End = "END", PageUp = "PGUP", PageDown = "PGDWN", Insert = "INS", Delete = "DEL" }
+local DEFAULT_KEYS = { up = { "ArrowUp" }, down = { "ArrowDown" }, left = { "ArrowLeft" }, right = { "ArrowRight" },
+  ok = { "Enter", "Space" }, back = { "Escape", "Backspace" }, menu = { "Tab", "t" },
+  prev = { "PageUp" }, next = { "PageDown" }, toggle = { "p" } }
+
+local function load_keys()
+  local path = mp.get_opt("crossbar-controls")
+  if path then
+    local f = io.open(path, "r")
+    if f then
+      local ok, utils = pcall(require, "mp.utils")
+      local data = ok and utils.parse_json(f:read("*a")) or nil
+      f:close()
+      if data and data.keyboard then return data.keyboard end
+    end
+  end
+  return DEFAULT_KEYS
 end
+
+local function mpv_key(k)
+  if MPV_KEYS[k] then return MPV_KEYS[k] end
+  if #k > 1 and k:sub(1, 1) == "F" and tonumber(k:sub(2)) then return k end
+  if #k == 1 then return k:lower() end
+  return nil
+end
+
+local bound = 0
+for action, list in pairs(load_keys()) do
+  if action ~= "home" then           -- home is handled by sway for every app
+    for _, k in ipairs(list) do
+      local key = mpv_key(k)
+      if key then
+        bound = bound + 1
+        local a = action
+        mp.add_forced_key_binding(key, "crossbar-key-" .. bound, function() act(a) end,
+          { repeatable = (a == "up" or a == "down" or a == "left" or a == "right") })
+      end
+    end
+  end
+end
+mp.add_forced_key_binding("KP_ENTER", "crossbar-kpenter", function() act("ok") end)
 mp.add_forced_key_binding("MOUSE_MOVE", "crossbar-mouse", function() show() end)
 mp.add_forced_key_binding("MBTN_LEFT", "crossbar-click", function() act(visible and "toggle" or "menu") end)
 

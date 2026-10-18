@@ -1,0 +1,3 @@
+#!/bin/sh
+# Quick Menu from anywhere (bound to Super+Esc and the configurable Home key in sway).
+exec curl -s -o /dev/null -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:7777/api/home

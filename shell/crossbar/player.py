@@ -191,9 +191,26 @@ def play_video(paths, index=0):
         "--save-position-on-quit" if cfg.get("resume", True) else "--no-save-position-on-quit",
         "--sub-auto=fuzzy", f"--sid={'no' if cfg.get('subtitles') == 'off' else 'auto'}",
         "--hwdec=auto-safe", "--cursor-autohide=1000",
+        f"--script-opts=crossbar-controls={os.path.join(util.CONFIG_DIR, 'controls.json')}",
         f"--playlist={m3u}", f"--playlist-start={int(index)}",
     ]
     VIDEO.start(args)
+    threading.Thread(target=_focus_player, daemon=True).start()
+
+
+def _focus_player():
+    """Make sure the player window — not the XMB — gets the keyboard and controller."""
+    from . import system
+    for _ in range(40):
+        time.sleep(0.15)
+        f = system.focused()
+        if f is None:
+            return
+        if f["app"] == VIDEO_APP_ID:
+            return
+        if any(w["app"] == VIDEO_APP_ID for w in system.windows()):
+            system._swaymsg(f"[app_id={VIDEO_APP_ID}] focus")
+            return
 
 
 def video_state():

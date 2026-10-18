@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.2
+# Crossbar — prototype 0.3
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -51,9 +51,26 @@ To install permanently, open **Settings › Install to Disk** from the live syst
 | Enter | Enter | A / ✕ |
 | Back | Esc | B / ○ |
 | Options | Tab | Y / △ |
-| Back to the XMB from a game, video or Discord | Super+Esc | Guide / PS button |
+| Quick Menu (from anywhere) | Home, or Super+Esc | Guide / PS button |
+| Play/Pause, previous, next track (in the XMB) | P, Page Up, Page Down | Start, L1, R1 |
 | Terminal (debugging) | Ctrl+Alt+T | |
 
+Every button and key above can be changed in **Settings › Controller & Keyboard**: pick an
+action, press the new button (or key), done. There's also *Swap Select and Back* and
+*Reset All to Defaults*. Controllers are read by Crossbar itself and input only goes to
+whatever is on screen — the menu, the video player, or nothing (games read the pad directly).
+
+## Quick Menu
+
+Press **Guide/PS** (or **Home**) during a game, video or app. The screen dims behind a menu with:
+
+- **Resume** / **Close** the game or video (closing returns you straight to the XMB)
+- **Go to Home** — the XMB, leaving the game open
+- **Now Playing** — your music or Spotify: ◀ ▶ skip, A play/pause
+- **Volume** (◀ ▶, A mutes), **Sound Output** switch, **Microphone** mute
+- **Controller & Keyboard**, **Network**, **Power**
+
+B resumes what you were doing.
 **While a video plays** (panel hidden): A pause · ◀/▶ seek −10 s/+30 s · ▲/▼ volume ·
 L1/R1 previous/next · Y show panel · B jump to Stop. With the panel open, ◀/▶ pick a
 button (previous, rewind, play/pause, forward, next, subtitles, audio track, stop), A presses
@@ -91,7 +108,8 @@ Spotify's rules (since February 2026) mean a one-time setup:
 3. On Crossbar: **Music › Spotify › Set Up Spotify**, paste the **Client ID**, sign in once in
    the window that opens (and allow access). Press Home if the window doesn't close itself.
 
-After that it just works, every boot. Developer-mode apps allow up to 5 accounts; playlists
+After that it just works, every boot. If playing from Crossbar fails, use **Settings › Account
+Settings › Restart Spotify Speaker**; the speaker's log is `~/.cache/crossbar/librespot.log`. Developer-mode apps allow up to 5 accounts; playlists
 you don't own can be played but their track list can't be shown (a Spotify restriction).
 
 ## Settings
@@ -100,6 +118,7 @@ you don't own can be played but their track list can't be shown (a Spotify restr
 |---|---|
 | Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep |
 | Sound | Output device, input (mic) device, volumes, menu sounds |
+| Controller & Keyboard | Remap every button and key, swap Select/Back, connected controllers |
 | Theme | Background colour, or automatic by month |
 | Media | Music / Video / Photo folders, resume videos, subtitles default |
 | Network | Connection status, Wi-Fi scan and connect |
@@ -131,7 +150,10 @@ links (paste a `discord.com/channels/…` link and it opens in the Discord app).
 ```
 shell/server.py               backend: JSON API + serves the UI (stdlib only)
 shell/crossbar/providers/     steam.py, gog.py, epic.py, demo.py
-shell/crossbar/system.py      sway windows, gamepad daemon, audio devices, Wi-Fi, power
+shell/crossbar/system.py      sway windows, audio devices, Wi-Fi, power
+shell/crossbar/gamepad.py     reads every controller, applies the mapping, routes to what's in front
+shell/crossbar/controls.py    button/key mapping (~/.config/crossbar/controls.json)
+shell/crossbar/quick.py       Quick Menu: screenshot, resume/close the app in front
 shell/crossbar/media.py       library folders, tags, thumbnails, folder picker
 shell/crossbar/player.py      mpv music (hidden) and video (full screen) over IPC
 shell/crossbar/spotify.py     librespot Connect speaker + Spotify Web API
@@ -139,7 +161,7 @@ shell/crossbar/display.py     resolution / refresh / scale via sway
 shell/crossbar/party.py       voice services + channels
 shell/mpv/crossbar-osc.lua    the controller-friendly video control panel
 shell/crossbar/login_helper.py  web-view window for GOG/Epic sign-in
-shell/web/                    the XMB: xmb.js (core), media.js (Photo/Music/Video/TV/Network), settings.js
+shell/web/                    the XMB: xmb.js (core), media.js (Photo/Music/Video/TV/Network), quick.js, settings.js
 iso/                          archiso overlay: packages, autologin, sway session, boot setup
 ```
 

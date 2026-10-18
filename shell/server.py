@@ -9,6 +9,7 @@ Serves the web UI and a small JSON API on 127.0.0.1. Standard library only
 import argparse
 import json
 import mimetypes
+import queue
 import os
 import sys
 import threading
@@ -23,7 +24,9 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import display, media, party, player, system, util  # noqa: E402
+from crossbar import controls, display, media, party, player, quick, system, util  # noqa: E402
+from crossbar.events import HUB  # noqa: E402
+from crossbar.gamepad import Gamepads  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
 from crossbar.providers.demo import Demo  # noqa: E402
 from crossbar.providers.epic import Epic  # noqa: E402
@@ -35,6 +38,7 @@ WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 REAL = {p.id: p for p in (Steam(), GOG(), Epic())}
 DEMO = {pid: Demo(pid) for pid in REAL}
 JOBS = JobManager()
+PADS = Gamepads(on_home=quick.home_pressed)
 FORCE_DEMO = False
 
 
@@ -91,6 +95,8 @@ def state():
         "video": cfg["video"],
         "tv": cfg["tv"],
         "spotify": SPOTIFY.status(),
+        "controls": controls.load(),
+        "pads": PADS.status(),
     }
 
 
@@ -158,6 +164,8 @@ def r_search(q):
 
 GET = {
     "/api/state": lambda q: state(),
+    "/api/quick": lambda q: quick.info(),
+    "/api/controls": lambda q: {**controls.describe(), "pads": PADS.status()},
     "/api/installed": lambda q: installed_games(),
     "/api/jobs": lambda q: JOBS.list(),
     "/api/audio": lambda q: system.audio(),
@@ -212,6 +220,9 @@ def r_spotify(action, b):
         player.pause_music()
         SPOTIFY.transfer()
         return {"ok": True}
+    if action == "restart":
+        SPOTIFY.restart_speaker()
+        return {"ok": True}
     if action == "control":
         SPOTIFY.control(b["action"])
         return {"ok": True}
@@ -257,8 +268,34 @@ def route_post(path, b):
     if head == "window":
         {"focus": system.focus_window, "close": system.close_window}[parts[1]](b["con_id"])
         return {"ok": True}
+    if head == "quick":
+        if parts[1] == "resume":
+            return {"ok": quick.resume()}
+        if parts[1] == "close":
+            return {"ok": quick.close()}
+        if parts[1] == "output":
+            return {"name": quick.next_output()}
+        raise KeyError(path)
+    if head == "controls":
+        if len(parts) > 1 and parts[1] == "capture":
+            return {"token": PADS.capture(float(b.get("timeout", 10)))}
+        if len(parts) > 1 and parts[1] == "cancel":
+            PADS.cancel_capture()
+            return {"ok": True}
+        if b.get("swap"):
+            controls.swap_ok_back()
+        elif "reset" in b:
+            controls.reset(None if b["reset"] == "all" else b["reset"], b.get("action"))
+        else:
+            controls.set_binding(b["kind"], b["action"], b["tokens"])
+        PADS.reload()
+        system.bind_home_keys(controls.load()["keyboard"]["home"])
+        return {**controls.describe(), "pads": PADS.status()}
+    if head == "debug" and os.environ.get("CROSSBAR_DEBUG"):
+        HUB.publish({"type": "input", "action": b["action"]})   # simulate a controller press
+        return {"ok": True}
     if head == "home":
-        system.focus_shell()
+        quick.home_pressed()
         return {"ok": True}
     if head == "media" and parts[1] == "folder":
         if b["kind"] not in media.KINDS or not media.allowed(b["path"]):
@@ -317,6 +354,26 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _events(self):
+        """Server-sent events stream for the XMB page (controller input, quick menu)."""
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        q = HUB.subscribe()
+        try:
+            while True:
+                try:
+                    ev = q.get(timeout=15)
+                    self.wfile.write(f"data: {json.dumps(ev)}\n\n".encode())
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            HUB.unsubscribe(q)
+
     def _send_file(self, path, ctype, cache=False):
         with open(path, "rb") as f:
             data = f.read()
@@ -349,6 +406,12 @@ class Handler(BaseHTTPRequestHandler):
             page = (f"<!doctype html><title>Spotify</title><body style='background:#000;color:#fff;font:28px sans-serif;"
                     f"display:grid;place-items:center;height:100vh;margin:0'>{msg}</body>")
             return self._send(200, page.encode(), "text/html; charset=utf-8")
+        if path == "/api/events":
+            return self._events()
+        if path == "/api/overlay.jpg":
+            if not os.path.exists(quick.SHOT):
+                return self._send(404, b"none", "text/plain")
+            return self._send_file(quick.SHOT, "image/jpeg")
         if path in ("/api/thumb", "/api/file"):
             p = q.get("path", "")
             if path == "/api/thumb":
@@ -398,7 +461,8 @@ def main():
     a = ap.parse_args()
     FORCE_DEMO = a.demo
     os.makedirs(util.GAMES_DIR, exist_ok=True)
-    system.start_gamepad_daemon()
+    PADS.start()
+    system.bind_home_keys(controls.load()["keyboard"]["home"])
     threading.Thread(target=lambda: (display.apply_saved(), SPOTIFY.ensure_receiver()), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)
     print(f"crossbard listening on http://127.0.0.1:{a.port} (demo={demo_on()})", flush=True)

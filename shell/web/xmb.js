@@ -499,6 +499,7 @@ function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
 function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
 
 function handle(action) {
+  if (QuickMenu.open && !Dialog.open) return QuickMenu.handle(action);
   if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
     if (action === 'left') Dialog.move(-1);
@@ -518,26 +519,56 @@ function handle(action) {
      ok: confirm, back, opt: options })[action]?.();
 }
 
+// ---------------------------------------------------------------- input
+// Keyboard: mapping from Settings › Controller & Keyboard (backend-stored).
+const KEY_DEFAULTS = { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], ok: ['Enter', 'Space'],
+  back: ['Escape', 'Backspace'], menu: ['Tab', 't'], home: ['Home'], prev: ['PageUp'], next: ['PageDown'], toggle: ['p'] };
+const keyName = (e) => (e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toLowerCase() : e.key);
+function keyAction(name) {
+  const map = S.state?.controls?.keyboard || KEY_DEFAULTS;
+  for (const [a, keys] of Object.entries(map)) if (keys.includes(name)) return a;
+  return null;
+}
+const KeyCapture = { active: null };   // set by Settings while waiting for "press a key"
+
+// Actions from the controller/keyboard -> what the XMB does with them.
+const ACTION = { menu: 'opt' };
+function act(action) {
+  if (action === 'home') return QuickMenu.toggle();
+  if ((action === 'prev' || action === 'next' || action === 'toggle') && !Dialog.open) return mediaKey(action);
+  handle(ACTION[action] || action);
+}
+
 addEventListener('keydown', (e) => {
+  if (KeyCapture.active) { e.preventDefault(); KeyCapture.active(keyName(e)); return; }
   const typing = e.target.tagName === 'INPUT';
-  const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', Enter: 'ok', Escape: 'back', Tab: 'opt' };
-  if (!typing) Object.assign(map, { ' ': 'ok', Backspace: 'back', t: 'opt' });
-  let a = map[e.key];
-  if (typing && (a === 'left' || a === 'right' || a === 'opt')) return;  // let text fields work
-  if (typing && (a === 'up' || a === 'down')) {                            // hop between fields
-    const ins = [...document.querySelectorAll('.dlg-fields input')];
-    ins[Math.max(0, Math.min(ins.length - 1, ins.indexOf(e.target) + (a === 'up' ? -1 : 1)))].focus();
-    e.preventDefault(); return;
+  const name = keyName(e);
+  if (typing) {
+    // text fields keep their keys; Enter/Escape/arrows-up-down still drive the dialog
+    if (name === 'Enter') { e.preventDefault(); return handle('ok'); }
+    if (name === 'Escape') { e.preventDefault(); return handle('back'); }
+    if (name === 'ArrowUp' || name === 'ArrowDown') {
+      const ins = [...document.querySelectorAll('.dlg-fields input')];
+      ins[Math.max(0, Math.min(ins.length - 1, ins.indexOf(e.target) + (name === 'ArrowUp' ? -1 : 1)))].focus();
+      e.preventDefault();
+    }
+    return;
   }
+  const a = keyAction(name);
   if (!a) return;
   e.preventDefault();
-  handle(a);
+  act(a);
 });
 
-// Gamepad (standard mapping): A=0 B=1 Y=3, d-pad 12-15, left stick.
+// Controllers are normally read by the backend and arrive over the event stream,
+// only while the XMB is in front. The browser's own Gamepad API is a fallback for
+// when the backend can't see any controller (e.g. dev mode), and only while focused.
 const pad = { held: {}, next: {} };
+function browserPadsWanted() {
+  return !(S.state?.pads?.available && S.state.pads.devices.length) && document.hasFocus();
+}
 function pollPads(now) {
-  const pads = navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
+  const pads = browserPadsWanted() && navigator.getGamepads ? [...navigator.getGamepads()].filter(Boolean) : [];
   const want = {};
   for (const p of pads) {
     const b = (i) => p.buttons[i]?.pressed;
@@ -548,9 +579,14 @@ function pollPads(now) {
     if (b(15) || ax > 0.6) want.right = 1;
     if (b(0)) want.ok = 1;
     if (b(1)) want.back = 1;
-    if (b(3)) want.opt = 1;
+    if (b(3) || b(2)) want.menu = 1;
+    if (b(4)) want.prev = 1;
+    if (b(5)) want.next = 1;
+    if (b(9)) want.toggle = 1;
+    if (b(16)) want.home = 1;
   }
-  for (const a of ['up', 'down', 'left', 'right', 'ok', 'back', 'opt']) {
+  if (pad.justFocused) { Object.keys(want).forEach((a) => { pad.held[a] = true; }); pad.justFocused = false; }
+  for (const a of ['up', 'down', 'left', 'right', 'ok', 'back', 'menu', 'prev', 'next', 'toggle', 'home']) {
     if (!want[a]) { pad.held[a] = false; continue; }
     const repeatable = ['up', 'down', 'left', 'right'].includes(a);
     if (!pad.held[a]) { pad.held[a] = true; pad.next[a] = now + 380; fire(a); }
@@ -562,10 +598,40 @@ function fire(a) {
   if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (a === 'up' || a === 'down')) {
     document.activeElement.blur(); return;
   }
-  handle(a);
+  act(a);
 }
 requestAnimationFrame(pollPads);
-addEventListener('gamepadconnected', (e) => toast(`Controller connected`, 'game'));
+// Coming back from a game: buttons still held must not "click" in the XMB.
+addEventListener('focus', () => { pad.justFocused = true; });
+
+// Event stream from the backend: controller input and Quick Menu requests.
+function connectEvents() {
+  const es = new EventSource('/api/events');
+  es.onmessage = (m) => {
+    const ev = JSON.parse(m.data);
+    if (ev.type === 'input') {
+      if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (ev.action === 'up' || ev.action === 'down')) {
+        document.activeElement.blur(); return;
+      }
+      act(ev.action);
+    } else if (ev.type === 'quick') {
+      if (ev.open) QuickMenu.show(ev.shot); else QuickMenu.toggle();
+    }
+  };
+  es.onerror = () => { es.close(); setTimeout(connectEvents, 1500); };
+}
+
+// Play/Pause and skip work anywhere in the XMB, for local music or Spotify.
+async function mediaKey(action) {
+  const m = await api.get('/api/music/state').catch(() => null);
+  if (m) {
+    await api.post('/api/music/control', { action: action === 'toggle' ? 'toggle' : action });
+  } else if (S.state?.spotify?.linked) {
+    await call(() => api.post('/api/spotify/control', { action }));
+  } else return;
+  Sfx.ok();
+  toast(action === 'toggle' ? 'Play / Pause' : action === 'next' ? 'Next track' : 'Previous track', 'music');
+}
 
 // ---------------------------------------------------------------- polling
 function applyState() {
@@ -608,7 +674,7 @@ async function pollJobs() {
 setInterval(pollJobs, 1200);
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
 setInterval(() => {
-  if (Dialog.open || Options.open || Viewer.open || !S.state) return;
+  if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state) return;
   const f = S.stack.at(-1);
   if (f) { if (f.source.live) reloadFolder(); }
   else if (CATS[S.ci].live) refresh(CATS[S.ci].id);
@@ -621,6 +687,7 @@ setInterval(async () => {   // pick up windows opening/closing (games, Discord)
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  connectEvents();
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');
   render();

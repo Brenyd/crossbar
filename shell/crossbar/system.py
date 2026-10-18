@@ -2,7 +2,6 @@
 import json
 import os
 import re
-import select
 import subprocess
 import threading
 import time
@@ -18,24 +17,48 @@ def _swaymsg(*args):
     return r.stdout if r.returncode == 0 else None
 
 
-def focus_shell():
-    """Bring the XMB to the front (what the PS/Home button does). Video pauses."""
-    from . import player
-    player.pause_video()
+def show_shell():
+    """Bring the XMB to the front."""
     _swaymsg("[all] fullscreen disable; [con_mark=xmb] focus")
 
 
-def focused_app():
+def focus_shell():
+    """Back to the XMB from anything; video pauses."""
+    from . import player
+    player.pause_video()
+    show_shell()
+
+
+def focused():
+    """The window in front: {"con_id","app","title","marks"}; None without sway."""
     raw = _swaymsg("-t", "get_tree", "-r")
     if not raw:
         return None
     stack = [json.loads(raw)]
     while stack:
         n = stack.pop()
-        if n.get("focused"):
-            return n.get("app_id") or (n.get("window_properties") or {}).get("class")
+        if n.get("focused") and n.get("type") in ("con", "floating_con"):
+            return {"con_id": n["id"], "title": n.get("name") or "",
+                    "app": n.get("app_id") or (n.get("window_properties") or {}).get("class") or "",
+                    "marks": n.get("marks", [])}
         stack += n.get("nodes", []) + n.get("floating_nodes", [])
-    return None
+    return {"con_id": None, "title": "", "app": "", "marks": []}
+
+
+_bound_home = []
+
+
+def bind_home_keys(keys):
+    """Make the keyboard Quick Menu key(s) work over every app, via sway."""
+    from . import controls
+    global _bound_home
+    for k in _bound_home:
+        _swaymsg(f"unbindsym {k}")
+    _bound_home = []
+    for key in keys:
+        x = controls.key_to_xkb(key)
+        if x and _swaymsg(f"bindsym --no-repeat {x} exec /usr/local/bin/crossbar-home") is not None:
+            _bound_home.append(x)
 
 
 def windows():
@@ -62,81 +85,6 @@ def focus_window(con_id):
 
 def close_window(con_id):
     _swaymsg(f"[con_id={int(con_id)}] kill")
-
-
-# ---- gamepad daemon ------------------------------------------------------
-def start_gamepad_daemon():
-    """Reads every gamepad directly (works whatever window is in front):
-    - Guide/PS button: back to the XMB, from anything.
-    - While the video player is in front: drive its control panel.
-    The XMB itself reads gamepads through the browser, so it isn't handled here.
-    """
-    try:
-        import evdev
-    except ImportError:
-        print("python-evdev missing: Home button disabled")
-        return
-    from . import player
-    E = evdev.ecodes
-    BUTTONS = {E.BTN_SOUTH: "ok", E.BTN_EAST: "back", E.BTN_NORTH: "menu", E.BTN_WEST: "menu",
-               E.BTN_TL: "prev", E.BTN_TR: "next", E.BTN_START: "toggle", E.BTN_SELECT: "menu",
-               E.BTN_DPAD_UP: "up", E.BTN_DPAD_DOWN: "down", E.BTN_DPAD_LEFT: "left", E.BTN_DPAD_RIGHT: "right"}
-    stick = {}  # (path, axis) -> last direction, so a held stick fires once
-
-    def send(action):
-        if player.VIDEO.running() and focused_app() == player.VIDEO_APP_ID:
-            player.video_input(action)
-
-    def handle(d, ev):
-        if ev.type == E.EV_KEY and ev.value == 1:
-            if ev.code == E.BTN_MODE:
-                focus_shell()
-            elif ev.code in BUTTONS:
-                send(BUTTONS[ev.code])
-        elif ev.type == E.EV_ABS and ev.code in (E.ABS_HAT0X, E.ABS_HAT0Y):
-            if ev.value:
-                send({(E.ABS_HAT0X, -1): "left", (E.ABS_HAT0X, 1): "right",
-                      (E.ABS_HAT0Y, -1): "up", (E.ABS_HAT0Y, 1): "down"}[(ev.code, 1 if ev.value > 0 else -1)])
-        elif ev.type == E.EV_ABS and ev.code in (E.ABS_X, E.ABS_Y):
-            info = d.absinfo(ev.code)
-            mid = (info.max + info.min) / 2
-            span = (info.max - info.min) / 2 or 1
-            v = (ev.value - mid) / span
-            direction = 0 if abs(v) < 0.6 else (1 if v > 0 else -1)
-            key = (d.path, ev.code)
-            if direction and stick.get(key) != direction:
-                send({(E.ABS_X, -1): "left", (E.ABS_X, 1): "right", (E.ABS_Y, -1): "up", (E.ABS_Y, 1): "down"}[(ev.code, direction)])
-            stick[key] = direction
-
-    def loop():
-        devices, last_scan = {}, 0
-        while True:
-            if time.time() - last_scan > 5:  # hot-plug
-                last_scan = time.time()
-                for path in evdev.list_devices():
-                    if path in devices:
-                        continue
-                    try:
-                        d = evdev.InputDevice(path)
-                        keys = d.capabilities().get(E.EV_KEY, [])
-                        if E.BTN_MODE in keys or E.BTN_SOUTH in keys:
-                            devices[path] = d
-                        else:
-                            d.close()
-                    except OSError:
-                        pass
-            if not devices:
-                time.sleep(2)
-                continue
-            r, _, _ = select.select(list(devices.values()), [], [], 2)
-            for d in r:
-                try:
-                    for ev in d.read():
-                        handle(d, ev)
-                except OSError:
-                    devices.pop(d.path, None)
-
-    threading.Thread(target=loop, daemon=True).start()
 
 
 # ---- audio (PipeWire via wpctl) ---------------------------------------

@@ -23,6 +23,7 @@ python-gobject
 webkit2gtk-4.1
 unzip
 # media
+grim
 mpv
 ffmpeg
 python-mutagen

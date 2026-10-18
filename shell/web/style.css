@@ -128,3 +128,30 @@ body.infolder #cats { opacity: 0; }
 #viewer.bare .v-bar, #viewer.bare .v-hint { opacity: 0; }
 .item .label { max-width: 1150px; overflow: hidden; text-overflow: ellipsis; }
 .item .sub { max-width: 1150px; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---- Quick Menu ---- */
+#quick { position: absolute; inset: 0; z-index: 6; animation: fade .2s; }
+#quick .q-bg { position: absolute; inset: -30px; background-size: cover; background-position: center; filter: blur(14px) brightness(.55); }
+#quick .q-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(0,0,0,.88) 0, rgba(0,0,0,.7) 760px, rgba(0,0,0,.25)); }
+#quick:not(.has-shot) .q-shade { background: linear-gradient(90deg, rgba(0,0,0,.9) 0, rgba(0,0,0,.75) 760px, rgba(0,0,0,.45)); }
+.q-panel { position: absolute; left: 120px; top: 90px; bottom: 60px; width: 780px; display: flex; flex-direction: column; animation: slide .25s var(--ease); }
+.q-head { padding: 0 0 26px 24px; border-bottom: 1px solid rgba(255,255,255,.25); margin-bottom: 14px; }
+.q-kicker { font-size: 18px; letter-spacing: 6px; color: var(--dim); }
+.q-title { font-size: 40px; margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-rows { flex: 1; overflow: hidden; }
+.q-row { display: flex; align-items: center; gap: 24px; padding: 14px 24px; border-radius: 8px; position: relative; color: var(--dim); }
+.q-row.on { color: #fff; background: linear-gradient(90deg, rgba(255,255,255,.17), rgba(255,255,255,.04)); box-shadow: inset 3px 0 0 #fff; }
+.q-ico { width: 56px; height: 56px; flex: none; display: grid; place-items: center; }
+.q-art { width: 56px; height: 56px; border-radius: 4px; background-size: cover; background-position: center; box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+.q-txt { flex: 1; min-width: 0; }
+.q-label { font-size: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-sub { font-size: 19px; color: var(--dim); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-bar { height: 5px; margin-top: 10px; background: rgba(255,255,255,.18); border-radius: 3px; overflow: hidden; }
+.q-bar i { display: block; height: 100%; background: #fff; transition: width .4s; }
+.q-hint { font-size: 17px; color: var(--dim); white-space: nowrap; }
+.q-foot { padding: 18px 24px 0; font-size: 19px; color: var(--dim); border-top: 1px solid rgba(255,255,255,.2); }
+.q-foot b { display: inline-block; padding: 1px 9px; border: 1px solid rgba(255,255,255,.45); border-radius: 14px; margin: 0 8px 0 22px; font-weight: 400; font-size: 16px; }
+.q-foot b:first-child { margin-left: 0; }
+#options { z-index: 7; }
+#dialog { z-index: 8; }
+#toasts { z-index: 9; }

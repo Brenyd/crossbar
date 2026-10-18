@@ -68,6 +68,85 @@ function deviceFolder(kind) {
     } };
 }
 
+// ---- Controller & Keyboard -------------------------------------------------
+const KEY_LABELS = { ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Escape: 'Esc', Backspace: 'Backspace',
+  PageUp: 'Page Up', PageDown: 'Page Down', Space: 'Space', Enter: 'Enter', Tab: 'Tab', Home: 'Home' };
+const keyLabel = (k) => KEY_LABELS[k] || (k.length === 1 ? k.toUpperCase() : k);
+async function savedControls(r, msg) {
+  await loadState();           // the XMB's keyboard map comes from state
+  if (msg) toast(msg, 'game');
+  reloadFolder();
+  return r;
+}
+
+async function capturePad(a, add, c) {
+  if (!c.pads.available) return message('Remapping controller buttons needs python-evdev (included in the Crossbar ISO).', 'Controller');
+  if (!c.pads.devices.length) return message('No controller found. Connect one and try again.', 'Controller');
+  const cap = api.post('/api/controls/capture', { timeout: 10 });
+  const dlg = Dialog.ask({ title: 'Controller Buttons', body: `Press the button for “${a.name}”`, buttons: ['Cancel'],
+    timeout: 10000, timeoutButton: null });
+  const r = await Promise.race([cap.then((x) => ({ cap: x })), dlg.then((x) => ({ dlg: x }))]);
+  if (r.dlg) { api.post('/api/controls/cancel'); return; }
+  Dialog.close(0);
+  if (!r.cap?.token) return toast('No button pressed', 'info');
+  const tokens = add ? [...c.gamepad[a.id], r.cap.token] : [r.cap.token];
+  const res = await call(() => api.post('/api/controls', { kind: 'gamepad', action: a.id, tokens }));
+  if (res) savedControls(res, `${a.name}: ${res.labels[r.cap.token] || r.cap.token}`);
+}
+
+async function captureKey(a, add, c) {
+  const got = new Promise((res) => { KeyCapture.active = (k) => { KeyCapture.active = null; res(k); }; });
+  const dlg = Dialog.ask({ title: 'Keyboard Keys', body: `Press the key for “${a.name}”\n(wait to cancel)`, buttons: ['Cancel'],
+    timeout: 8000, timeoutButton: null });
+  const r = await Promise.race([got.then((k) => ({ key: k })), dlg.then((x) => ({ dlg: x }))]);
+  KeyCapture.active = null;
+  if (r.dlg) return;
+  Dialog.close(0);
+  const keys = add ? [...c.keyboard[a.id], r.key] : [r.key];
+  const res = await call(() => api.post('/api/controls', { kind: 'keyboard', action: a.id, tokens: keys }));
+  if (res) savedControls(res, `${a.name}: ${keyLabel(r.key)}`);
+}
+
+function bindingItems(kind) {
+  return async () => {
+    const c = await api.get('/api/controls');
+    return c.actions.map((a) => {
+      const toks = c[kind][a.id];
+      const label = (t) => (kind === 'gamepad' ? c.labels[t] || t : keyLabel(t));
+      const capture = (add) => () => (kind === 'gamepad' ? capturePad(a, add, c) : captureKey(a, add, c));
+      return {
+        key: `${kind}:${a.id}`, label: a.name, icon: kind === 'gamepad' ? 'game' : 'browser',
+        sub: toks.length ? [...new Set(toks.map(label))].join(' · ') : 'Not set',
+        action: capture(false),
+        options: [
+          { label: 'Change…', action: capture(false) },
+          { label: `Add Another ${kind === 'gamepad' ? 'Button' : 'Key'}…`, action: capture(true) },
+          { label: 'Reset to Default', action: async () => savedControls(await api.post('/api/controls', { reset: kind, action: a.id }), `${a.name} reset`) },
+        ],
+      };
+    });
+  };
+}
+
+const CONTROLS_FOLDER = {
+  key: 'controls', label: 'Controller & Keyboard', icon: 'game', sub: 'Button and key mapping',
+  children: async () => {
+    const c = await api.get('/api/controls');
+    const pads = c.pads.devices;
+    return [
+      { key: 'devices', label: 'Connected Controllers', icon: 'game',
+        sub: pads.length ? pads.join(', ') : (c.pads.available ? 'None connected' : 'Read by the browser'),
+        action: () => message(pads.length ? pads.join('\n') : 'No controller detected.\nUSB and Bluetooth pads appear here once connected.', 'Controllers') },
+      { key: 'pad', label: 'Controller Buttons', icon: 'game', sub: 'Choose what each button does', children: bindingItems('gamepad') },
+      { key: 'kbd', label: 'Keyboard Keys', icon: 'browser', sub: 'Choose what each key does', children: bindingItems('keyboard') },
+      { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with B / ○ instead of A / ✕ (or back again)',
+        action: async () => savedControls(await api.post('/api/controls', { swap: true }), 'Select and Back swapped') },
+      { key: 'reset', label: 'Reset All to Defaults', icon: 'refresh', sub: 'Controller and keyboard',
+        action: async () => { if (await confirmBox('Reset all buttons and keys to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'all' }), 'Controls reset'); } },
+    ];
+  },
+};
+
 const SETTINGS_FOLDERS = [
   {
     key: 'display', label: 'Display Settings', icon: 'display', sub: 'Resolution, refresh rate, scale',
@@ -118,6 +197,7 @@ const SETTINGS_FOLDERS = [
       ];
     },
   },
+  CONTROLS_FOLDER,
   {
     key: 'theme', label: 'Theme Settings', icon: 'palette', sub: 'Background colour',
     children: async () => {
@@ -173,6 +253,9 @@ const SETTINGS_FOLDERS = [
       const sp = S.state.spotify;
       return [
         { key: 'name', label: 'User Name', icon: 'user', sub: S.state.user, action: async () => { await renameUser(); reloadFolder(); } },
+        ...(sp.linked ? [{ key: 'sp-restart', label: 'Restart Spotify Speaker', icon: 'refresh',
+          sub: sp.speaker_running ? 'Speaker running' : 'Speaker not running',
+          action: async () => { await call(() => api.post('/api/spotify/restart'), 'Spotify speaker restarted'); setTimeout(async () => { await loadState(); reloadFolder(); }, 1500); } }] : []),
         { key: 'spotify', label: 'Spotify', icon: 'spotify', sub: sp.linked ? `Signed in${sp.speaker ? ' · speaker ready' : ''}` : 'Not set up',
           action: async () => {
             if (!sp.linked) return spotifySetup();
@@ -198,7 +281,7 @@ const SETTINGS_FOLDERS = [
         } },
         ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
           action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.2', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.2', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.3', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.3', 'About') },
       ];
     },
   },
