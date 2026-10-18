@@ -25,7 +25,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import controls, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import compat, controls, files, iptv, nas, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -103,8 +103,11 @@ def state():
         "tv": cfg["tv"],
         "spotify": SPOTIFY.status(),
         "term_token": terminal.TOKEN,
+        "home": util.HOME,
+        "iptv": iptv.status(),
         "clock24": cfg.get("clock24", False),
         "gamescope": cfg.get("gamescope", False),
+        "steam_bigpicture": cfg.get("steam_bigpicture", True),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),
@@ -225,7 +228,7 @@ def r_launch(b):
             # The game's window appears -> sway focuses it; tell the XMB to drop the splash.
             for _ in range(180):
                 time.sleep(0.5)
-                new = [w for w in system.windows() if w["con_id"] not in before and not system.is_background_window(w)]
+                new = [w for w in system.windows() if w["con_id"] not in before and not system.is_background_window(w) and "discord" not in (w.get("app") or "").lower()]
                 if new:
                     system.focus_window(new[-1]["con_id"])
                     HUB.publish({"type": "launched", "title": title})
@@ -243,7 +246,7 @@ def r_login(pid, b):
 
 
 def r_settings(b):
-    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope"}
+    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture"}
 
     def apply(c):
         for k, v in b.items():
@@ -284,6 +287,15 @@ GET = {
     "/api/state": lambda q: state(),
     "/api/quick": lambda q: quick.info(),
     "/api/bluetooth": lambda q: system.bluetooth_status(),
+    "/api/compat": lambda q: {**compat.summary(), "game": compat.tool_for(q["game"]) if q.get("game") else None},
+    "/api/compat/ge": lambda q: compat.ge_releases(),
+    "/api/files": lambda q: files.listdir(q.get("path") or None, q.get("hidden") == "1"),
+    "/api/files/places": lambda q: files.places(),
+    "/api/nas": lambda q: nas.drives(),
+    "/api/iptv/status": lambda q: iptv.status(),
+    "/api/iptv/categories": lambda q: iptv.categories(q["kind"], q.get("shown") == "1"),
+    "/api/iptv/items": lambda q: iptv.items(q["kind"], q["cat"], q.get("all") == "1"),
+    "/api/iptv/series": lambda q: iptv.series_info(q["id"]),
     "/api/time": lambda q: system.time_status(),
     "/api/timezones": lambda q: system.timezones(),
     "/api/wifi/radio": lambda q: {"on": system.wifi_radio()},
@@ -467,6 +479,58 @@ def route_post(path, b):
         return system.audio_devices()
     if head == "wifi":
         return JOBS.start("wifi", b["ssid"], lambda j: system.wifi_connect(b["ssid"], b.get("password", ""))).as_dict()
+    if head == "iptv":
+        act = parts[1]
+        if act == "login":
+            return JOBS.start("login", "IPTV", lambda j: iptv.login(j, b.get("server"), b.get("username"), b.get("password")), "iptv").as_dict()
+        if act == "logout":
+            iptv.logout()
+        elif act == "refresh":
+            iptv.refresh()
+        elif act == "show":
+            iptv.set_shown(b["kind"], b["cat"], bool(b.get("on")))
+        elif act == "hide":
+            iptv.set_channel_hidden(b["id"], bool(b.get("on")))
+        elif act == "play":
+            entries, idx = iptv.playlist(b["kind"], b.get("cat"), b.get("id"), b.get("series"))
+            pause_spotify()
+            player.play_video(None, idx, mpv_gamepad=mpv_should_read_gamepad(PADS), entries=entries)
+            return {"ok": True, "title": entries[idx][0]}
+        return iptv.status()
+    if head == "nas":
+        if parts[1] == "add":
+            return JOBS.start("login", b.get("name") or "Network drive", lambda j: nas.add(j, b), "nas").as_dict()
+        if parts[1] == "remove":
+            nas.remove(b["name"])
+        elif parts[1] == "remount":
+            nas.remount(b["name"])
+        return nas.drives()
+    if head == "files":
+        act = parts[1]
+        if act in ("copy", "move"):
+            label = f"{'Moving' if act == 'move' else 'Copying'} {len(b['paths'])} item(s)"
+            return JOBS.start("files", label, lambda j: files.paste(j, b["paths"], b["dest"], move=act == "move")).as_dict()
+        if act == "trash":
+            files.trash(b["paths"])
+        elif act == "delete":
+            files.delete_forever(b["paths"])
+        elif act == "rename":
+            return {"path": files.rename(b["path"], b["name"])}
+        elif act == "mkdir":
+            return {"path": files.mkdir(b["path"], b["name"])}
+        elif act == "empty-trash":
+            files.empty_trash()
+        return {"ok": True}
+    if head == "compat":
+        if parts[1] == "default":
+            compat.set_default(b["tool"])
+        elif parts[1] == "game":
+            compat.set_game(b["game"], b.get("tool"))
+        elif parts[1] == "install":
+            return JOBS.start("install", b["tag"], lambda j: compat.install_ge(j, b["tag"]), "proton", b["tag"]).as_dict()
+        elif parts[1] == "remove":
+            compat.remove_proton(b["tool"])
+        return compat.summary()
     if head == "bluetooth":
         if parts[1] == "power":
             system.bluetooth_power(bool(b.get("on")))

@@ -16,6 +16,7 @@ import socket
 import struct
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -219,13 +220,22 @@ class Discord:
         """First-time: Discord shows an 'Authorize' prompt; approve it once."""
         if not self.configured():
             raise RuntimeError("Enter the Client ID and Client Secret first")
-        if not self.running():
-            launch(minimized=False)
-            job.set(0.1, "Starting Discord — sign in there if asked…")
-            for _ in range(180):
-                if self.running():
-                    break
-                time.sleep(1)
+        if not installed_cmd():
+            raise RuntimeError("The Discord app isn't installed. Install it (Settings › System Settings › Terminal: "
+                               "sudo pacman -S discord) and try again.")
+        job.set(0.05, "Opening Discord — sign in there if it asks")
+        launch(minimized=False)
+        for i in range(300):                      # up to 5 minutes to sign in
+            if self.running():
+                break
+            why = crashed()
+            if why:
+                raise RuntimeError(f"Discord closed by itself: {why}")
+            if i == 20:
+                job.set(0.1, "Waiting for Discord — finish signing in to it")
+            time.sleep(1)
+        else:
+            raise RuntimeError("Discord didn't finish starting. Open Discord from Social and sign in, then try again.")
         self._disconnect()
         with self.lock:            # connect without authenticating
             c = self.cfg()
@@ -243,7 +253,11 @@ class Discord:
                     break
             else:
                 raise RuntimeError("Discord isn't running")
-        job.set(0.4, "Approve Crossbar in the Discord window…")
+        job.set(0.4, "In Discord, click Authorize to let Crossbar control voice")
+        try:
+            launch(minimized=False)               # bring Discord to the front for the prompt
+        except RuntimeError:
+            pass
         try:
             data = self.request("AUTHORIZE", {"client_id": c["client_id"], "scopes": SCOPES}, timeout=300)
         except DiscordError as e:
@@ -251,10 +265,19 @@ class Discord:
             if e.code in (4000, 4002, 4006, 5000):
                 raise RuntimeError(f"Discord said: {e}. Make sure your account is allowed to test the app.") from None
             raise
-        tok = self._oauth({"grant_type": "authorization_code", "code": data["code"], "redirect_uri": REDIRECT})
+        job.set(0.8, "Finishing…")
+        try:
+            tok = self._oauth({"grant_type": "authorization_code", "code": data["code"], "redirect_uri": REDIRECT})
+        except urllib.error.HTTPError as e:
+            raise RuntimeError("Discord rejected the Client Secret or the redirect "
+                               f"(add {REDIRECT} under OAuth2 › Redirects) — HTTP {e.code}") from None
         self._save_token(tok)
         self._disconnect()
         self.connect()
+        try:
+            hide()                                # done: Discord back to the background
+        except Exception:
+            pass
 
     def unlink(self):
         self._disconnect()
@@ -383,11 +406,79 @@ def _channel(data):
             "members": [_member(v) for v in data.get("voice_states") or []]}
 
 
+LOG = os.path.join(util.HOME, ".cache", "crossbar", "discord.log")
+_proc = {"p": None}
+
+
+def installed_cmd():
+    return next((c for c in ("discord", "discord-canary", "vesktop") if util.which(c)), None)
+
+
+def _windows():
+    from . import system
+    return [w for w in system.all_windows() if "discord" in w["app"].lower() or "vesktop" in w["app"].lower()]
+
+
 def launch(minimized=True):
-    cmd = next((c for c in ("discord", "discord-canary", "vesktop") if util.which(c)), None)
+    """Start Discord (or bring it forward). Minimized = keep it hidden, voice only."""
+    from . import system
+    import subprocess
+    wins = _windows()
+    if wins:
+        if not minimized:
+            system.bring_to_front(wins[-1]["con_id"])
+        return
+    cmd = installed_cmd()
     if not cmd:
         raise RuntimeError("The Discord app isn't installed (sudo pacman -S discord)")
-    util.spawn([cmd] + (["--start-minimized"] if minimized else []))
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    log = open(LOG, "a")
+    log.write(f"\n--- {time.ctime()} starting {cmd} (minimized={minimized})\n")
+    log.flush()
+    proc = subprocess.Popen([cmd] + (["--start-minimized"] if minimized else []),
+                            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    _proc["p"] = proc
+
+    def manage():
+        # Discord shows an update splash, then its main window. Minimized: hide them as
+        # they appear. Otherwise: make sure the main window ends up in front.
+        seen = set()
+        for _ in range(240):
+            time.sleep(0.5)
+            if _proc["p"] is not proc:            # a newer launch took over
+                return
+            for w in _windows():
+                if w["con_id"] in seen:
+                    continue
+                if minimized:
+                    system.hide_window(w["con_id"])
+                    system.show_shell()
+                else:
+                    system.bring_to_front(w["con_id"])
+                seen.add(w["con_id"])
+            if proc.poll() is not None and not _windows():
+                return
+    threading.Thread(target=manage, daemon=True).start()
+
+
+def hide():
+    from . import system
+    for w in _windows():
+        system.hide_window(w["con_id"])
+    system.show_shell()
+
+
+def crashed():
+    """If Discord exited by itself, the last lines of its log (else None)."""
+    p = _proc["p"]
+    if p is None or p.poll() is None:
+        return None
+    try:
+        with open(LOG) as f:
+            tail = [ln.strip() for ln in f.readlines()[-6:] if ln.strip()]
+    except OSError:
+        tail = []
+    return " / ".join(tail)[-300:] or f"exit code {p.returncode}"
 
 
 DISCORD = Discord()

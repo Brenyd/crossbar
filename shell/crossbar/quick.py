@@ -75,7 +75,7 @@ def overlay_go_home():
 def overlay_close_app():
     closed = close()
     close_overlay(resume=False)
-    system.show_shell()
+    system.hide_steam()                       # Steam's Big Picture shouldn't pop up after
     return closed
 
 
@@ -143,7 +143,7 @@ def close():
     if app["video"]:
         player.VIDEO.stop()
     else:
-        system.close_window(app["con_id"])
+        system.force_close(app["con_id"])     # polite close, then end it if it hangs
     STATE["app"] = None
     return True
 

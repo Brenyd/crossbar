@@ -237,6 +237,7 @@ CATS.push(
         items.push({ key: `vw:${w.con_id}`, label: `Return to ${w.title}`, icon: 'play', sub: 'Now playing',
           action: () => api.post('/api/window/focus', { con_id: w.con_id }) });
       }
+      if (S.state.iptv?.linked) items.push(iptvTopFolder('vod'), iptvTopFolder('series'));
       items.push(allItem('video', 'All Videos'));
       return items.concat(await mediaItems('video'));
     },
@@ -250,6 +251,8 @@ CATS.push(
         options: [{ label: 'Open', action: () => call(() => api.post('/api/tv/open', { index: i })) },
                   { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${t.name}?`)) { S.state = await api.post('/api/tv/remove', { index: i }); refresh('tv'); } } }],
       }));
+      if (S.state.iptv?.linked) items.unshift(iptvTopFolder('live'));
+      else items.push({ key: 'iptv-in', label: 'IPTV', icon: 'tv', sub: 'Sign in with Xtream Codes to watch live TV here', action: () => openIptvSettings('live') });
       items.push({ key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Full web browser',
         action: () => call(() => api.post('/api/browser', {}), 'Opening the browser — Select + Start for the Quick Menu') });
       items.push({ key: 'add', label: 'Add Service…', icon: 'add', sub: 'Jellyfin, Plex, Crunchyroll — any web app', action: async () => {

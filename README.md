@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.7
+# Crossbar — prototype 0.8
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -175,10 +175,38 @@ One-time setup (Discord only lets "tester" accounts control voice from other app
 
 ## Games
 
+Sign in to **Steam, GOG and Epic** in **Settings › Account Settings**; your libraries then show
+in **Store**, and installed games in **Game**.
+
+- **Steam** games launch through **Big Picture** (Steam's console mode) by default, so Steam Input
+  and Steam's overlay work like on a Steam Deck. When the game ends — or you close it from the
+  Quick Menu — Steam is tucked away and you're back in Crossbar. (Toggle in Game Settings.)
+- **GOG** Windows games install from GOG's own installers (unpacked with innoextract) and run with
+  Proton through **umu-launcher**; native Linux builds are used when GOG has one.
+- **Epic** games run through the same Proton setup (legendary + umu).
+- **Settings › Game Settings › Windows Games**: choose the default tool (UMU-Proton, newest
+  GE-Proton, a GE-Proton version you download there, Steam's Proton, or Wine). Per game:
+  Y › *Compatibility Tool…*. Each game gets its own prefix in `~/Games/prefixes`.
+- Closing a game from the Quick Menu asks it to quit, and ends it if it hangs.
+
 Launching shows a *Starting…* screen until the game's window appears, then hands over. Steam runs
 in the background with its library window tucked away, and **Steam's overlay works normally**
 inside Steam games. GOG and Epic games can optionally run in gamescope (Settings › Game Settings).
 When a game closes you're back in the menu.
+
+## Files, network drives, IPTV
+
+- **Users › File Browser** — your home folder, USB drives and network drives: open media,
+  copy / cut / paste, rename, new folder, move to Trash (restorable) or delete permanently.
+- **Settings › Network Settings › Network Drives** — add an SMB (Windows/Samba, most NAS boxes) or
+  NFS share: server, share, username, password. It's written to `/etc/fstab` as an on-demand mount
+  under `/mnt/nas/<name>` (with `nofail`, so an offline NAS never blocks boot); the password lives in
+  a root-only file in `/etc/crossbar/nas/`, never in fstab. Use a drive as your Music/Video/Photo
+  folder from its options.
+- **IPTV (Xtream Codes)** — **Settings › Media Settings › IPTV**: sign in with the server, username
+  and password from your provider, then choose which **Live TV**, **Movie** and **TV Show**
+  categories appear (and hide channels you don't want). Live TV shows under TV & Video Services
+  (L1/R1 change channel while watching); Movies and TV Shows under Video.
 
 ## Settings
 
@@ -186,14 +214,14 @@ When a game closes you're back in the menu.
 |---|---|
 | Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep |
 | Sound | Output device, input (mic) device, volumes, menu sounds |
-| Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget |
+| Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
-| Game Settings | Gamescope for GOG/Epic, Steam overlay info, demo library |
+| Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, demo library |
 | Theme | Background colour, or automatic by month |
-| Media | Music / Video / Photo folders, resume videos, subtitles default |
+| Media | Music / Video / Photo folders, IPTV, resume videos, subtitles default |
 | Date & Time | Time zone, automatic time, 12/24-hour clock |
-| Accounts | User name, Spotify |
+| Accounts | Steam, GOG, Epic sign-in; Spotify; Discord; user name |
 | System | Terminal, update Crossbar, share support report, system information, install to disk |
 
 Everything is set inside Crossbar — no separate settings apps. Under the hood these are the same

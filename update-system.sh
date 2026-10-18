@@ -58,6 +58,8 @@ install -Dm644 "$HERE/iso/airootfs/etc/modules-load.d/crossbar-uinput.conf" /etc
 install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-inputd.service" /etc/systemd/system/crossbar-inputd.service
 install -Dm644 "$HERE/iso/airootfs/etc/systemd/system/crossbar-setup.service" /etc/systemd/system/crossbar-setup.service
 install -Dm644 "$HERE/iso/airootfs/etc/polkit-1/rules.d/50-crossbar.rules" /etc/polkit-1/rules.d/50-crossbar.rules
+install -Dm644 "$HERE/iso/airootfs/usr/share/polkit-1/actions/org.crossbar.admin.policy" /usr/share/polkit-1/actions/org.crossbar.admin.policy
+chmod 755 /usr/lib/crossbar/admin.py /usr/lib/crossbar/inputd.py /usr/lib/crossbar/overlay.py
 modprobe uinput || true
 udevadm control --reload
 udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change

@@ -468,15 +468,23 @@ class Gamepads:
             try:
                 p = subprocess.Popen(["swaymsg", "-t", "subscribe", "-m", '["window"]'],
                                      stdout=subprocess.PIPE, text=True)
+                steam_guard = 0
                 for line in p.stdout:
+                    if ('"change": "focus"' in line or '"change":"focus"' in line) and time.time() < steam_guard:
+                        # Steam brings Big Picture back after a game: send it away again
+                        time.sleep(0.1)
+                        f = system.focused()
+                        if f and system.is_steam_client(f) and not self.overlay_open:
+                            system.hide_steam()
                     if '"change": "close"' in line or '"change":"close"' in line:
+                        steam_guard = time.time() + 12    # native games don't all say "steam_app"
                         # a game/video/app closed: go back to the menu, like a console
                         time.sleep(0.15)
                         if not self.overlay_open:
                             f = system.focused()
                             if f is not None and not ("xmb" in f["marks"] or system.is_xmb(f)) \
                                     and (not f.get("con_id") or system.is_background_window(f)):
-                                system.show_shell()
+                                system.hide_steam() if system.is_steam_client(f) else system.show_shell()
                     if any(k in line for k in ('"focus"', '"close"', '"new"', '"fullscreen_mode"')):
                         time.sleep(0.05)
                         self.update_grab()

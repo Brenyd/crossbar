@@ -75,7 +75,10 @@ sed -i '/^file_permissions=(/a\
   ["/usr/local/bin/crossbar-install"]="0:0:755"\
   ["/usr/local/bin/crossbar-home"]="0:0:755"\
   ["/usr/local/bin/crossbar-doctor"]="0:0:755"\
-  ["/usr/local/bin/legendary"]="0:0:755"' "$PROFILE/profiledef.sh"
+  ["/usr/local/bin/legendary"]="0:0:755"\
+  ["/usr/lib/crossbar/admin.py"]="0:0:755"\
+  ["/usr/lib/crossbar/inputd.py"]="0:0:755"\
+  ["/usr/lib/crossbar/overlay.py"]="0:0:755"' "$PROFILE/profiledef.sh"
 
 # Bigger RAM overlay (Steam's first-run bootstrap is ~1 GB) and a quiet boot.
 find "$PROFILE"/{efiboot,syslinux,grub} -type f \( -name '*.conf' -o -name '*.cfg' \) 2>/dev/null \

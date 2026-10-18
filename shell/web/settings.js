@@ -209,11 +209,53 @@ async function runInTerminal(path, label) {
   if (r?.cmd) { toast(label, 'system'); Term.show(r.cmd); }
 }
 
+async function pickCompatTool(gameKey, title) {
+  const c = await api.get(`/api/compat?game=${encodeURIComponent(gameKey || '')}`);
+  if (!c.tools.length) return message('No way to run Windows games yet.\nInstall umu-launcher: Settings › System Settings › Terminal, then\nsudo pacman -S umu-launcher', 'Windows Games');
+  const current = gameKey ? (c.games[gameKey] || '') : c.default;
+  const opts = (gameKey ? [{ id: '', name: `Use Default (${c.tools.find((t) => t.id === c.default)?.name || c.default})` }] : []).concat(c.tools);
+  Options.show(opts.map((t) => ({
+    label: `${t.id === current ? '✓ ' : ''}${t.name}`,
+    action: async () => {
+      await call(() => api.post(gameKey ? '/api/compat/game' : '/api/compat/default', gameKey ? { game: gameKey, tool: t.id } : { tool: t.id }),
+        gameKey ? `${title}: ${t.id ? t.name : 'default'}` : `Default: ${t.name}`);
+      if (S.stack.length) reloadFolder();
+    },
+  })), Math.max(0, opts.findIndex((t) => t.id === current)));
+}
+
+const COMPAT_FOLDER = {
+  key: 'compat', label: 'Windows Games (Proton / Wine)', icon: 'game', sub: 'Default compatibility tool, Proton versions',
+  children: async () => {
+    const c = await api.get('/api/compat');
+    const def = c.tools.find((t) => t.id === c.default);
+    return [
+      { key: 'default', label: 'Default Tool', icon: 'game', sub: def ? def.name : 'umu-launcher isn\'t installed', action: () => pickCompatTool(null) },
+      { key: 'ge', label: 'Proton Versions', icon: 'download', sub: 'Download GE-Proton releases to use per game',
+        children: async () => {
+          const rel = await api.get('/api/compat/ge');
+          return rel.map((r) => ({
+            key: `ge:${r.id}`, label: r.id, icon: r.installed ? 'check' : 'download',
+            sub: `${r.installed ? 'Installed · ' : ''}${r.date} · ${Math.round(r.size / 1048576)} MB`,
+            action: r.installed
+              ? async () => { if (await confirmBox(`Remove ${r.id}?`)) { await call(() => api.post('/api/compat/remove', { tool: r.id }), `Removed ${r.id}`); reloadFolder(); } }
+              : async () => { await call(() => api.post('/api/compat/install', { tag: r.id }), `Downloading ${r.id}…`); pollJobs(); },
+          }));
+        } },
+      { key: 'how', label: 'How This Works', icon: 'info', action: () => message('Windows games from GOG and Epic run through umu-launcher with Proton, like on a Steam Deck.\nEach game gets its own Wine prefix in Games/prefixes.\nPick a different tool for one game with Y › Compatibility Tool on that game.\nSteam games use Steam\'s own Proton settings.', 'Windows Games') },
+    ];
+  },
+};
+
 const GAMES_FOLDER = {
   key: 'games', label: 'Game Settings', icon: 'game', sub: 'Launching, demo library',
   children: async () => {
     const st = S.state;
     return [
+      COMPAT_FOLDER,
+      { key: 'bpm', label: 'Launch Steam Games in Big Picture', icon: 'game',
+        sub: st.steam_bigpicture ? 'On — Steam\'s console mode starts the game, then hides when you\'re done' : 'Off — launch directly',
+        action: async () => { await setSetting({ steam_bigpicture: !st.steam_bigpicture }); reloadFolder(); } },
       { key: 'gs', label: 'Run GOG & Epic Games in Gamescope', icon: 'display',
         sub: !st.gamescope_available ? 'Gamescope isn\'t installed' : st.gamescope ? 'On — fixed resolution, better frame pacing' : 'Off — games run directly',
         action: async () => { if (st.gamescope_available) { await setSetting({ gamescope: !st.gamescope }); reloadFolder(); } } },
@@ -225,6 +267,49 @@ const GAMES_FOLDER = {
             await setSetting({ demo: !st.demo }); refresh('game'); refresh('store'); reloadFolder();
           }
         } },
+    ];
+  },
+};
+
+async function addNas() {
+  const r = await Dialog.ask({ title: 'Add Network Drive', buttons: ['SMB (Windows / Samba)', 'NFS', 'Cancel'],
+    body: 'Most NAS boxes (Synology, QNAP, TrueNAS, Windows shares) use SMB.' });
+  if (r.button === 2 || r.button === null) return;
+  const smb = r.button === 0;
+  const f = await Dialog.ask({ title: smb ? 'SMB Network Drive' : 'NFS Network Drive', buttons: ['Connect', 'Cancel'],
+    fields: [
+      { key: 'name', label: 'Name (shown in Crossbar, e.g. "NAS Movies")' },
+      { key: 'server', label: 'Server (IP address or name, e.g. 192.168.1.20)' },
+      { key: 'share', label: smb ? 'Share name (e.g. Media)' : 'Export path (e.g. /volume1/media)' },
+      ...(smb ? [{ key: 'username', label: 'Username (leave empty for guest access)' },
+                 { key: 'password', label: 'Password', secret: true },
+                 { key: 'domain', label: 'Domain / workgroup (usually empty)' }] : []),
+    ] });
+  if (f.button !== 0) return;
+  if (!f.values.name.trim() || !f.values.server.trim() || !f.values.share.trim()) return toast('Name, server and share are needed', 'info');
+  await call(() => api.post('/api/nas/add', { ...f.values, type: smb ? 'smb' : 'nfs' }), `Connecting ${f.values.name}…`);
+  pollJobs();
+  setTimeout(() => S.stack.length && reloadFolder(), 4000);
+}
+
+const NAS_ITEM = {
+  key: 'nas', label: 'Network Drives', icon: 'folder', sub: 'NAS and shared folders (SMB / NFS)',
+  children: async () => {
+    const drives = await api.get('/api/nas').catch(() => []);
+    return [
+      ...drives.map((d) => ({
+        key: `nas:${d.name}`, label: d.label, icon: d.mounted ? 'check' : 'folder',
+        sub: `${d.source} · ${d.mounted ? 'Connected' : 'Connects when opened'} · ${d.path}`,
+        action: () => openFolder(folderNode(d.path, d.label)),
+        options: [
+          { label: 'Open in File Browser', action: () => openFolder(folderNode(d.path, d.label)) },
+          { label: 'Use as Music / Video / Photo Folder…', action: () => Options.show(['music', 'video', 'photo'].map((k) => ({
+            label: `${KIND_NAME[k]} Folder`, action: async () => { S.state = await api.post('/api/media/folder', { kind: k, path: d.path }); toast(`${KIND_NAME[k]} folder: ${d.label}`, 'folder'); refresh(k); } }))) },
+          { label: 'Reconnect', action: async () => { await call(() => api.post('/api/nas/remount', { name: d.name }), 'Reconnected'); reloadFolder(); } },
+          { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${d.label}?\nFiles on the NAS aren\'t touched.`)) { await call(() => api.post('/api/nas/remove', { name: d.name }), `Removed ${d.label}`); reloadFolder(); } } },
+        ],
+      })),
+      { key: 'add', label: 'Add Network Drive…', icon: 'add', sub: 'Saved permanently; connects automatically when used', action: addNas },
     ];
   },
 };
@@ -300,6 +385,7 @@ const SETTINGS_FOLDERS = [
         { key: 'music', label: 'Music Folder', icon: 'music', sub: m.music, action: () => pickFolder('music') },
         { key: 'video', label: 'Video Folder', icon: 'video', sub: m.video, action: () => pickFolder('video') },
         { key: 'photo', label: 'Photo Folder', icon: 'photo', sub: m.photo, action: () => pickFolder('photo') },
+        iptvSettingsFolder(),
         { key: 'resume', label: 'Resume Videos', icon: 'play', sub: v.resume ? 'On — continue where you left off' : 'Off — always start from the beginning',
           action: () => setVideo({ resume: !v.resume }) },
         { key: 'subs', label: 'Subtitles', icon: 'video', sub: v.subtitles === 'off' ? 'Off by default' : 'Automatic',
@@ -335,6 +421,7 @@ const SETTINGS_FOLDERS = [
             } });
         }
       }
+      items.push(NAS_ITEM);
       return items;
     },
   },
@@ -376,11 +463,17 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'accounts', label: 'Account Settings', icon: 'account', sub: 'User name, Spotify',
+    key: 'accounts', label: 'Account Settings', icon: 'account', sub: 'Steam, GOG, Epic, Spotify, user name',
     children: async () => {
       const sp = S.state.spotify;
       return [
         { key: 'name', label: 'User Name', icon: 'user', sub: S.state.user, action: async () => { await renameUser(); reloadFolder(); } },
+        ...S.state.providers.map((p) => ({
+          key: `acct:${p.id}`, label: p.name, icon: 'store',
+          sub: p.linked ? `Signed in${p.account ? ' · ' + p.account : ''} — library in Store` : (p.note && !p.ready ? p.note : 'Not signed in'),
+          action: () => (p.linked ? Options.show([{ label: 'Sign Out', action: () => signOut(p) }, { label: 'Sign In Again', action: () => signIn(p) }]) : signIn(p)),
+          options: p.linked ? [{ label: 'Sign Out', action: () => signOut(p) }] : [{ label: 'Sign In', action: () => signIn(p) }],
+        })),
         ...(sp.linked ? [{ key: 'sp-restart', label: 'Restart Spotify Speaker', icon: 'refresh',
           sub: sp.speaker_running ? 'Speaker running' : 'Speaker not running',
           action: async () => { await call(() => api.post('/api/spotify/restart'), 'Spotify speaker restarted'); setTimeout(async () => { await loadState(); reloadFolder(); }, 1500); } }] : []),
@@ -413,7 +506,7 @@ const SETTINGS_FOLDERS = [
           } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.7', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.7', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.8', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.8', 'About') },
       ];
     },
   },

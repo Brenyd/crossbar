@@ -13,21 +13,22 @@
 - [x] Shareable support report
 - [ ] **Confirm on real hardware** — overlay, controller grab, YouTube keys (needs a report from a real machine)
 
+## 0.8
+- [x] Proton / Wine picker (umu-launcher), GE-Proton download manager, per-game tool
+- [x] GOG Windows games (innoextract + goggame .info launch tasks); Epic through umu too
+- [x] File browser (copy / cut / paste / rename / Trash / delete)
+- [x] Network drives: SMB / NFS via a polkit-authorised root helper, fstab automount, root-only credentials
+- [x] IPTV (Xtream Codes): Live TV, Movies, TV Shows; choose categories, hide channels
+- [x] Steam games via Big Picture, Steam hidden again afterwards; store accounts in Settings
+- [x] Discord linking: Discord window brought forward, progress shown, crashes reported
+
 ## Next
-- **Wine / Proton picker** — per-game compatibility tool (Proton-GE, Wine-GE, system Wine) via umu-launcher;
-  download/manage versions from Settings › Game Settings.
-- **GOG Windows games** — install Windows builds (gogdl / innoextract) and run them through the picked Proton.
-- **File browser** — built into the XMB: browse drives, copy / paste / move / rename / delete, with controller.
-- **NAS mounts** — Settings › Network › Network Drives: SMB/CIFS and NFS; server, share, user, password,
-  mount point; writes a credentials file (0600) and an fstab entry with `x-systemd.automount` so a missing
-  NAS never blocks boot.
 - **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
   virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.
 
+- IPTV extras: EPG (now/next) for live channels, favourites, search.
+
 ## Later
-- **IPTV (Xtream Codes)** — log in once in Settings › Media › IPTV; Movies and TV Shows appear under Video,
-  Live TV under TV & Video Services; choose which categories/channels show on the XMB; plays in mpv with the
-  same controller panel; EPG for live channels.
 - **Other desktop backends** — option to run Crossbar on KDE Plasma (KWin) and use KDE's settings backends
   (kscreen, bluedevil, plasma-nm), or on lighter compositors.
 - Trophies/achievements view, friends list, screenshots/video capture.

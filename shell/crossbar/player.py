@@ -169,15 +169,20 @@ def pause_music():
 
 
 # ---- video ---------------------------------------------------------------
-def play_video(paths, index=0, mpv_gamepad=False):
-    paths = [p for p in paths if os.path.isfile(p)]
-    if not paths:
+def play_video(paths, index=0, mpv_gamepad=False, entries=None):
+    """Play local files (paths) or streams (entries = [(title, url)], e.g. IPTV)."""
+    if entries:
+        lines = ["#EXTM3U"] + [ln for t, u in entries for ln in (f"#EXTINF:-1,{t.replace(chr(10), ' ')}", u)]
+    else:
+        lines = [p for p in paths if os.path.isfile(p)]
+    if not lines:
         raise RuntimeError("Nothing to play")
     pause_music()
     cfg = util.load_config()["video"]
     m3u = os.path.join(RUNTIME, "crossbar-video.m3u")
-    with open(m3u, "w") as f:
-        f.write("\n".join(paths) + "\n")
+    fd = os.open(m3u, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)   # stream URLs can contain a password
+    with os.fdopen(fd, "w") as f:
+        f.write("\n".join(lines) + "\n")
     if VIDEO.running():
         VIDEO.cmd("loadlist", m3u, "replace")
         VIDEO.cmd("set_property", "playlist-pos", int(index))

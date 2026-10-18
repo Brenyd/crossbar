@@ -4,8 +4,11 @@ Uses the same public Galaxy client credentials as Minigalaxy, Heroic and
 lgogdownloader. Windows-only titles are listed but not yet installable in this
 prototype (next step: innoextract + Wine/Proton).
 """
+import glob
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -86,12 +89,18 @@ class GOG(Provider):
             gid = str(p["id"])
             art = ("https:" + p["image"] + "_392.jpg") if p.get("image") else None
             linux = p.get("worksOn", {}).get("Linux")
-            out.append(game("gog", gid, p["title"], art, gid in installed,
-                            "" if linux else "Windows only — install coming soon"))
+            g = game("gog", gid, p["title"], art, gid in installed, "" if linux else "Windows version · runs with Proton")
+            g["windows"] = (installed.get(gid, {}).get("platform") == "windows") if gid in installed else not linux
+            out.append(g)
         return sorted(out, key=lambda g: g["title"].lower())
 
     def installed(self):
-        return [game("gog", k, v["title"], v.get("art"), True) for k, v in _read(INSTALLED_PATH, {}).items()]
+        out = []
+        for k, v in _read(INSTALLED_PATH, {}).items():
+            g = game("gog", k, v["title"], v.get("art"), True)
+            g["windows"] = v.get("platform") == "windows"
+            out.append(g)
+        return out
 
     def login(self, job, fields):
         job.set(0.1, "Opening GOG sign-in…")
@@ -112,33 +121,59 @@ class GOG(Provider):
 
     def install(self, job, gid):
         info = self._api(f"https://api.gog.com/products/{gid}?expand=downloads")
-        installers = [i for i in info.get("downloads", {}).get("installers", []) if i.get("os") == "linux"]
-        if not installers:
-            raise RuntimeError("No native Linux build — Windows installs aren't supported in this prototype yet")
-        inst = next((i for i in installers if i.get("language") == "en"), installers[0])
-        link = self._api(inst["files"][0]["downlink"])["downlink"]
         title = info.get("title", gid)
-        cache = os.path.join(util.GAMES_DIR, ".cache", "gog", f"{gid}.sh")
-        job.set(0, "Downloading…")
-        util.download(link, cache, lambda f: job.set(f * 0.9, f"Downloading {int(f * 100)}%"))
-        job.set(0.92, "Installing…")
+        installers = info.get("downloads", {}).get("installers", [])
+        pick = lambda os_: next((i for i in installers if i.get("os") == os_ and i.get("language") == "en"),  # noqa: E731
+                                next((i for i in installers if i.get("os") == os_), None))
+        inst = pick("linux") or pick("windows")
+        if not inst:
+            raise RuntimeError("GOG has no installer for this game")
+        platform = inst["os"]
+        cache = os.path.join(util.GAMES_DIR, ".cache", "gog", gid)
+        shutil.rmtree(cache, ignore_errors=True)
+        os.makedirs(cache, exist_ok=True)
         dest = os.path.join(util.GAMES_DIR, "gog", util.slug(title))
-        tmp = tempfile.mkdtemp(dir=os.path.dirname(cache))
         try:
-            # GOG Linux installers are a makeself script with a zip appended; unzip skips the stub.
-            r = subprocess.run(["unzip", "-qq", "-o", cache, "-d", tmp], capture_output=True)
-            src = os.path.join(tmp, "data", "noarch")
-            if r.returncode > 1 or not os.path.isdir(src):
-                raise RuntimeError("Couldn't unpack installer: " + r.stderr.decode()[-200:])
+            # download every part (Windows installers are often setup.exe + .bin files)
+            files = inst.get("files", [])
+            total = sum(f.get("size", 0) for f in files) or 1
+            done, paths = 0, []
+            for f in files:
+                link = self._api(f["downlink"])["downlink"]
+                name = os.path.basename(urllib.parse.urlparse(link).path) or f"part{len(paths)}"
+                path = os.path.join(cache, name)
+                size = f.get("size", 0)
+                util.download(link, path, lambda x, d=done, sz=size: job.set(
+                    0.85 * (d + x * sz) / total, f"Downloading {int(100 * (d + x * sz) / total)}%"))
+                done += size
+                paths.append(path)
+            job.set(0.88, "Installing…")
+            tmp = tempfile.mkdtemp(dir=cache)
+            if platform == "linux":
+                # makeself script with a zip appended; unzip skips the stub
+                r = subprocess.run(["unzip", "-qq", "-o", paths[0], "-d", tmp], capture_output=True)
+                src = os.path.join(tmp, "data", "noarch")
+                if r.returncode > 1 or not os.path.isdir(src):
+                    raise RuntimeError("Couldn't unpack installer: " + r.stderr.decode()[-200:])
+            else:
+                if not util.which("innoextract"):
+                    raise RuntimeError("innoextract is needed to install Windows games")
+                exe = next((p for p in paths if p.lower().endswith(".exe")), paths[0])
+                r = subprocess.run(["innoextract", "--gog", "-s", "-m", "-d", tmp, exe], capture_output=True, text=True)
+                if r.returncode:
+                    raise RuntimeError("Couldn't unpack installer: " + (r.stderr or r.stdout).strip()[-200:])
+                src = os.path.join(tmp, "app") if os.path.isdir(os.path.join(tmp, "app")) else tmp
             shutil.rmtree(dest, ignore_errors=True)
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             shutil.move(src, dest)
         finally:
-            shutil.rmtree(tmp, ignore_errors=True)
-            os.remove(cache)
-        art = ("https:" + info["images"]["logo2x"]) if info.get("images", {}).get("logo2x") else None
+            shutil.rmtree(cache, ignore_errors=True)
+        entry = {"title": title, "path": dest, "platform": platform,
+                 "art": ("https:" + info["images"]["logo2x"]) if info.get("images", {}).get("logo2x") else None}
+        if platform == "windows":
+            entry.update(play_task(dest, gid))
         data = _read(INSTALLED_PATH, {})
-        data[gid] = {"title": title, "path": dest, "art": art}
+        data[gid] = entry
         _write(INSTALLED_PATH, data)
 
     def uninstall(self, job, gid):
@@ -152,7 +187,48 @@ class GOG(Provider):
         entry = _read(INSTALLED_PATH, {}).get(gid)
         if not entry:
             raise RuntimeError("Not installed")
-        util.spawn(["sh", os.path.join(entry["path"], "start.sh")], cwd=entry["path"])
+        if entry.get("platform") != "windows":
+            util.spawn(["sh", os.path.join(entry["path"], "start.sh")], cwd=entry["path"])
+            return
+        from .. import compat
+        exe = os.path.join(entry["path"], entry["exe"])
+        if not os.path.isfile(exe):
+            raise RuntimeError(f"Game file missing: {entry['exe']}")
+        argv, env = compat.command(exe, entry.get("args", []), f"gog:{gid}", "gog", gid)
+        cwd = os.path.join(entry["path"], entry.get("cwd") or os.path.dirname(entry["exe"]))
+        util.spawn(argv, cwd=cwd if os.path.isdir(cwd) else entry["path"], env=env)
+
+
+def _split(args):
+    try:
+        return shlex.split(args)
+    except ValueError:
+        return args.split()
+
+
+def play_task(root, gid):
+    """What to run, from GOG's goggame-<id>.info (the same data GOG Galaxy uses)."""
+    infos = glob.glob(os.path.join(root, f"goggame-{gid}.info")) + glob.glob(os.path.join(root, "goggame-*.info")) \
+        + glob.glob(os.path.join(root, "*", "goggame-*.info"))
+    for path in dict.fromkeys(infos):
+        try:
+            data = json.load(open(path, encoding="utf-8-sig"))
+        except (OSError, ValueError):
+            continue
+        tasks = [t for t in data.get("playTasks", []) if t.get("type") == "FileTask" and t.get("category", "game") == "game"]
+        task = next((t for t in tasks if t.get("isPrimary")), tasks[0] if tasks else None)
+        if task:
+            base = os.path.relpath(os.path.dirname(path), root)
+            norm = lambda p: os.path.normpath(os.path.join(base, (p or "").replace("\\", "/")))  # noqa: E731
+            return {"exe": norm(task["path"]), "cwd": norm(task.get("workingDir") or os.path.dirname(task["path"].replace("\\", "/"))),
+                    "args": _split(task.get("arguments") or "")}
+    # no info file: the biggest .exe that isn't an installer/uninstaller
+    exes = [p for p in glob.glob(os.path.join(root, "**", "*.exe"), recursive=True)
+            if not re.search(r"unins|setup|redist|vcredist|directx|dotnet|crash", os.path.basename(p), re.I)]
+    if not exes:
+        raise RuntimeError("Installed, but couldn't find the game's .exe")
+    exe = max(exes, key=os.path.getsize)
+    return {"exe": os.path.relpath(exe, root), "cwd": os.path.relpath(os.path.dirname(exe), root), "args": []}
 
 
 def run_login_helper(url, match, param=None, json_key=None):

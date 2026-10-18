@@ -59,12 +59,12 @@ class Epic(Provider):
         installed = self._installed_map()
         if time.time() - self._cache[0] > 600:
             self._cache = (time.time(), json.loads(self._run("list", "--json")))
-        out = [game("epic", g["app_name"], g.get("app_title", g["app_name"]), _art(g.get("metadata")),
-                    g["app_name"] in installed) for g in self._cache[1]]
+        out = [dict(game("epic", g["app_name"], g.get("app_title", g["app_name"]), _art(g.get("metadata")),
+                         g["app_name"] in installed), windows=True) for g in self._cache[1]]
         return sorted(out, key=lambda g: g["title"].lower())
 
     def installed(self):
-        return [game("epic", k, v.get("title", k), None, True) for k, v in self._installed_map().items()]
+        return [dict(game("epic", k, v.get("title", k), None, True), windows=True) for k, v in self._installed_map().items()]
 
     def login(self, job, fields):
         job.set(0.1, "Opening Epic sign-in…")
@@ -96,4 +96,15 @@ class Epic(Provider):
         self._run("-y", "uninstall", app, timeout=600)
 
     def launch(self, app):
-        util.spawn(["legendary", "launch", app])
+        """Run through the chosen Proton (umu) or Wine, picked in Game Settings."""
+        from .. import compat
+        try:
+            tool, env = compat.env_for(f"epic:{app}", "egs", app)
+        except RuntimeError:
+            tool, env = None, {}
+        if tool == "wine":
+            util.spawn(["legendary", "launch", app, "--wine", "wine", "--wine-prefix", env["WINEPREFIX"]])
+        elif tool:
+            util.spawn(["legendary", "launch", app, "--no-wine", "--wrapper", "umu-run"], env=env)
+        else:
+            util.spawn(["legendary", "launch", app])

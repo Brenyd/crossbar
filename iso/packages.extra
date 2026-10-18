@@ -37,6 +37,9 @@ librespot
 networkmanager
 bluez
 bluez-utils
+# network drives
+cifs-utils
+nfs-utils
 # audio
 pipewire
 pipewire-pulse
@@ -45,6 +48,10 @@ wireplumber
 # stores / games
 steam
 gamescope
+# Windows games (GOG / Epic) through Proton
+umu-launcher
+innoextract
+unrar
 wine
 mesa
 lib32-mesa

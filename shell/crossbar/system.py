@@ -30,11 +30,16 @@ def is_web_app(f):
     return bool(f) and "chrom" in (f.get("app") or "").lower() and not is_xmb(f) and "xmb" not in f.get("marks", [])
 
 
-def is_background_window(w):
-    """Windows that aren't something you'd want in front after a game closes:
-    Steam's own client window and Discord running in the background."""
+def is_steam_client(w):
+    """Steam's own windows (library, Big Picture, friends) — not a game."""
     app, title = (w.get("app") or "").lower(), w.get("title") or ""
-    return (app == "steam" and title in ("Steam", "Friends List", "Special Offers")) or "discord" in app
+    return app == "steam" and not app.startswith("steam_app")
+
+
+def is_background_window(w):
+    """Windows you wouldn't want left in front after a game closes: Steam's client.
+    (Discord is NOT one: when you open it, it should stay in front.)"""
+    return is_steam_client(w)
 
 
 def ensure_xmb_mark():
@@ -123,6 +128,71 @@ def windows():
 
 def focus_window(con_id):
     _swaymsg(f"[con_id={int(con_id)}] focus")
+
+
+def current_workspace():
+    raw = _swaymsg("-t", "get_workspaces", "-r")
+    try:
+        return next((w["name"] for w in json.loads(raw or "[]") if w.get("focused")), "1")
+    except ValueError:
+        return "1"
+
+
+def bring_to_front(con_id):
+    """Show a window as a normal full-size tab, even if it was hidden in the scratchpad."""
+    ws = current_workspace()
+    _swaymsg(f'[con_id={int(con_id)}] move container to workspace "{ws}"')
+    _swaymsg(f"[con_id={int(con_id)}] floating disable")
+    _swaymsg(f"[con_id={int(con_id)}] focus")
+
+
+def hide_steam():
+    """Tuck Steam's client / Big Picture windows away and go back to the menu."""
+    for w in all_windows():
+        if is_steam_client(w):
+            hide_window(w["con_id"])
+    show_shell()
+
+
+def force_close(con_id, grace=4):
+    """Ask a window to close; if it's still there after `grace` seconds, end its process."""
+    import signal
+    win = next((w for w in all_windows() if w["con_id"] == con_id), None)
+    close_window(con_id)
+    if not win:
+        return
+
+    def finish():
+        time.sleep(grace)
+        if any(w["con_id"] == con_id for w in all_windows()):
+            for sig in (signal.SIGTERM, signal.SIGKILL):
+                try:
+                    os.kill(win["pid"], sig)
+                except ProcessLookupError:
+                    return
+                time.sleep(3)
+    threading.Thread(target=finish, daemon=True).start()
+
+
+def hide_window(con_id):
+    """Tuck a window away (sway scratchpad) without closing it."""
+    _swaymsg(f"[con_id={int(con_id)}] move scratchpad")
+
+
+def all_windows():
+    """Every app window, including hidden (scratchpad) ones."""
+    raw = _swaymsg("-t", "get_tree", "-r")
+    if not raw:
+        return []
+    out, stack = [], [json.loads(raw)]
+    while stack:
+        n = stack.pop()
+        if n.get("pid") and n.get("type") in ("con", "floating_con"):
+            out.append({"con_id": n["id"], "pid": n["pid"], "title": n.get("name") or "",
+                        "app": n.get("app_id") or (n.get("window_properties") or {}).get("class") or "",
+                        "fullscreen": bool(n.get("fullscreen_mode"))})
+        stack += n.get("nodes", []) + n.get("floating_nodes", [])
+    return out
 
 
 def close_window(con_id):

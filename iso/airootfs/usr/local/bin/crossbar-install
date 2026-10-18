@@ -62,6 +62,7 @@ cp -r /usr/lib/crossbar /mnt/usr/lib/
 cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,crossbar-home,crossbar-doctor,legendary} /mnt/usr/local/bin/
 install -Dm644 /etc/udev/rules.d/70-crossbar-input.rules /mnt/etc/udev/rules.d/70-crossbar-input.rules
 install -Dm644 /etc/polkit-1/rules.d/50-crossbar.rules /mnt/etc/polkit-1/rules.d/50-crossbar.rules
+install -Dm644 /usr/share/polkit-1/actions/org.crossbar.admin.policy /mnt/usr/share/polkit-1/actions/org.crossbar.admin.policy
 install -Dm644 /etc/modules-load.d/crossbar-uinput.conf /mnt/etc/modules-load.d/crossbar-uinput.conf
 cp -r /etc/crossbar /mnt/etc/
 cp /etc/systemd/system/crossbar-setup.service /etc/systemd/system/crossbar-inputd.service /mnt/etc/systemd/system/

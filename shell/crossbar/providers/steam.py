@@ -147,4 +147,20 @@ class Steam(Provider):
         util.spawn(["steam", f"steam://uninstall/{appid}"])
 
     def launch(self, appid):
-        util.spawn(["steam", f"steam://rungameid/{appid}"])
+        """Big Picture (Steam's console UI) by default, so Steam Input and its overlay
+        behave like on a Steam Deck. Crossbar hides Steam again when the game ends."""
+        url = f"steam://rungameid/{appid}"
+        if not util.load_config().get("steam_bigpicture", True):
+            util.spawn(["steam", url])
+            return
+        if not steam_running():
+            util.spawn(["steam", "-gamepadui", url])
+        else:
+            util.spawn(["steam", "steam://open/bigpicture"])
+            time.sleep(1.5)
+            util.spawn(["steam", url])
+
+
+def steam_running():
+    import subprocess
+    return subprocess.run(["pgrep", "-x", "steam"], capture_output=True).returncode == 0

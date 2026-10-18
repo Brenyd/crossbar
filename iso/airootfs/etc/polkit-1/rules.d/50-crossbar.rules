@@ -1,4 +1,4 @@
-// Crossbar: let the console user change time zone, network, Bluetooth and power
+// Crossbar: let the console user change time zone, network, Bluetooth, power and network drives
 // from the menu without a password prompt (there's no prompt UI on a console).
 polkit.addRule(function (action, subject) {
   if (!(subject.isInGroup("wheel") && subject.local && subject.active)) return;
@@ -7,7 +7,8 @@ polkit.addRule(function (action, subject) {
       action.id.indexOf("org.bluez.") === 0 ||
       action.id === "org.freedesktop.login1.power-off" ||
       action.id === "org.freedesktop.login1.reboot" ||
-      action.id === "org.freedesktop.login1.suspend") {
+      action.id === "org.freedesktop.login1.suspend" ||
+      action.id === "org.crossbar.admin") {
     return polkit.Result.YES;
   }
 });

@@ -168,6 +168,7 @@ function gameItem(g, inStore) {
     it.action = () => install(g);
     options.push({ label: 'Download', action: () => install(g) });
   }
+  if (g.windows) options.push({ label: 'Compatibility Tool…', action: () => pickCompatTool(`${g.provider}:${g.id}`, g.title) });
   options.push({ label: 'Information', action: () => message(`${g.title}\n${STORE_NAMES[g.provider]} · ${g.installed ? 'Installed' : 'Not installed'}${g.note ? '\n' + g.note : ''}`, 'Information') });
   it.options = options;
   return it;
@@ -203,15 +204,21 @@ async function signIn(p) {
   pollJobs();
 }
 
+async function signOut(p) {
+  if (!(await confirmBox(`Sign out of ${p.name}?`))) return;
+  await call(() => api.post(`/api/logout/${p.id}`));
+  await loadState();
+  refresh('store');
+  if (S.stack.length) reloadFolder();
+}
+
+// Store shows only the stores you're signed in to (sign in under Settings › Accounts).
 function storeFolder(p) {
   return {
-    key: `store:${p.id}`, label: p.name, icon: 'folder', badge: p.linked ? '' : 'NOT SIGNED IN',
-    sub: p.linked ? (p.account ? `Signed in · ${p.account}` : 'Signed in') : (p.note || 'Sign in to see your library'),
-    options: [
-      p.linked ? { label: 'Sign Out', action: async () => { if (await confirmBox(`Sign out of ${p.name}?`)) { await call(() => api.post(`/api/logout/${p.id}`)); await loadState(); refresh('store'); } } }
-               : { label: 'Sign In', action: () => signIn(p) },
-      { label: 'Refresh', action: () => refresh('store') },
-    ],
+    key: `store:${p.id}`, label: p.name, icon: 'folder',
+    sub: p.account ? `Your library · ${p.account}` : 'Your library',
+    options: [{ label: 'Refresh', action: () => refresh('store') },
+              { label: 'Account Settings', action: () => openSettingsFolder('accounts') }],
     children: async () => {
       const fresh = prov(p.id);
       if (!fresh.linked) {
@@ -232,6 +239,7 @@ const CATS = [   // more categories are added by media.js and settings.js
     async load() {
       return [
         { key: 'me', label: S.state.user, icon: 'user', sub: 'Signed in', options: [{ label: 'Rename', action: renameUser }], action: renameUser },
+        fileBrowserItem(),
         { key: 'off', label: 'Turn Off System', icon: 'power', action: async () => { if (await confirmBox('Turn off the system?')) api.post('/api/power/poweroff'); } },
         { key: 'reboot', label: 'Restart System', icon: 'restart', action: async () => { if (await confirmBox('Restart the system?')) api.post('/api/power/reboot'); } },
       ];
@@ -262,7 +270,12 @@ const CATS = [   // more categories are added by media.js and settings.js
       const items = [];
       if (S.state.demo) items.push({ key: 'demo', label: 'Demo library is on', icon: 'demo', sub: 'Settings › Demo Library to use your real accounts', action: () => goCat('settings') });
       items.push({ key: 'search', label: 'Search All Stores', icon: 'search', sub: 'Find a game across Steam, GOG and Epic', action: searchStores });
-      items.push(...S.state.providers.map(storeFolder));
+      const linked = S.state.providers.filter((p) => p.linked);
+      items.push(...linked.map(storeFolder));
+      if (!linked.length) {
+        items.push({ key: 'signin', label: 'Sign In to a Store', icon: 'account', sub: 'Steam, GOG and Epic accounts are in Settings › Account Settings',
+          action: () => openSettingsFolder('accounts') });
+      }
       return items;
     },
   },
@@ -684,6 +697,12 @@ async function pollJobs() {
   if (sig === lastJobSig) return;
   lastJobSig = sig;
   let finished = false;
+  for (const j of jobs) {   // show sign-in / pairing steps as they happen
+    if (j.status === 'running' && ['login', 'pair', 'wifi'].includes(j.kind) && j.message && pollJobs.seen?.[j.id] !== j.message) {
+      (pollJobs.seen ||= {})[j.id] = j.message;
+      toast(`${j.title}: ${j.message}`, 'info');
+    }
+  }
   for (const j of jobs) {
     if (j.status === 'running' || seenDone.has(j.id)) continue;
     seenDone.add(j.id); finished = true;
@@ -692,7 +711,7 @@ async function pollJobs() {
     else if (j.kind === 'login') toast(`Signed in to ${j.title}`, 'link');
     else if (j.kind === 'wifi') toast(`Connected to ${j.title}`, 'wifi');
   }
-  if (finished) await loadState();
+  if (finished) { await loadState(); if (S.stack.at(-1)?.source?.key === 'accounts') reloadFolder(); }
   const cur = CATS[S.ci].id;
   if (S.stack.length) {
     // update progress text inside an open store folder without losing place
