@@ -39,6 +39,7 @@ REAL = {p.id: p for p in (Steam(), GOG(), Epic())}
 DEMO = {pid: Demo(pid) for pid in REAL}
 JOBS = JobManager()
 PADS = Gamepads(on_home=quick.home_pressed)
+quick.OVERLAY["hook"] = PADS.set_overlay
 FORCE_DEMO = False
 
 
@@ -117,6 +118,8 @@ def diagnostics():
         "grim": bool(util.which("grim")),
         "mpv": bool(util.which("mpv")),
         "event_stream_listeners": HUB.listeners(),
+        "overlay_window": quick.overlay_available(),
+        "inputd": os.path.exists("/run/crossbar/input.sock"),
     }
 
 
@@ -194,6 +197,7 @@ GET = {
     "/api/state": lambda q: state(),
     "/api/quick": lambda q: quick.info(),
     "/api/quick/pending": lambda q: {"open": quick.take_pending()},
+    "/api/quick/overlay-state": lambda q: {"open": quick.OVERLAY["open"]},
     "/api/diagnostics": lambda q: diagnostics(),
     "/api/controls": lambda q: {**controls.describe(), "pads": PADS.status()},
     "/api/installed": lambda q: installed_games(),
@@ -298,6 +302,16 @@ def route_post(path, b):
     if head == "window":
         {"focus": system.focus_window, "close": system.close_window}[parts[1]](b["con_id"])
         return {"ok": True}
+    if head == "overlay":
+        if parts[1] == "close":
+            quick.close_overlay(resume=b.get("resume", True))
+        elif parts[1] == "home":
+            quick.overlay_go_home()
+        elif parts[1] == "close-app":
+            return {"ok": quick.overlay_close_app()}
+        elif parts[1] == "settings":
+            quick.overlay_open_settings(b.get("folder", ""))
+        return {"ok": True}
     if head == "quick":
         if parts[1] == "resume":
             return {"ok": quick.resume()}
@@ -322,7 +336,7 @@ def route_post(path, b):
         system.bind_home_keys(controls.load()["keyboard"]["home"])
         return {**controls.describe(), "pads": PADS.status()}
     if head == "debug" and os.environ.get("CROSSBAR_DEBUG"):
-        HUB.publish({"type": "input", "action": b["action"]})   # simulate a controller press
+        PADS._press(b["action"], "DEBUG")   # simulate a controller press (routed like a real one)
         return {"ok": True}
     if head == "home":
         quick.home_pressed()
@@ -384,13 +398,13 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
-    def _events(self):
+    def _events(self, role=""):
         """Server-sent events stream for the XMB page (controller input, quick menu)."""
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
-        q = HUB.subscribe()
+        q = HUB.subscribe(role)
         try:
             while True:
                 try:
@@ -437,7 +451,7 @@ class Handler(BaseHTTPRequestHandler):
                     f"display:grid;place-items:center;height:100vh;margin:0'>{msg}</body>")
             return self._send(200, page.encode(), "text/html; charset=utf-8")
         if path == "/api/events":
-            return self._events()
+            return self._events(q.get("role", ""))
         if path == "/api/overlay.jpg":
             if not os.path.exists(quick.SHOT):
                 return self._send(404, b"none", "text/plain")

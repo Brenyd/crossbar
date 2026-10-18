@@ -8,8 +8,9 @@ class Hub:
         self._subs = []
         self._lock = threading.Lock()
 
-    def subscribe(self):
+    def subscribe(self, role=""):
         q = queue.Queue(maxsize=200)
+        q.role = role
         with self._lock:
             self._subs.append(q)
         return q
@@ -19,9 +20,9 @@ class Hub:
             if q in self._subs:
                 self._subs.remove(q)
 
-    def listeners(self):
+    def listeners(self, role=None):
         with self._lock:
-            return len(self._subs)
+            return len([q for q in self._subs if role is None or q.role == role])
 
     def publish(self, event):
         with self._lock:

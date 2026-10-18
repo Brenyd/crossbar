@@ -63,7 +63,7 @@ cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,crossbar-home,
 install -Dm644 /etc/udev/rules.d/70-crossbar-input.rules /mnt/etc/udev/rules.d/70-crossbar-input.rules
 install -Dm644 /etc/modules-load.d/crossbar-uinput.conf /mnt/etc/modules-load.d/crossbar-uinput.conf
 cp -r /etc/crossbar /mnt/etc/
-cp /etc/systemd/system/crossbar-setup.service /mnt/etc/systemd/system/
+cp /etc/systemd/system/crossbar-setup.service /etc/systemd/system/crossbar-inputd.service /mnt/etc/systemd/system/
 mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d
 cp /etc/systemd/system/getty@tty1.service.d/autologin.conf /mnt/etc/systemd/system/getty@tty1.service.d/
 install -Dm440 /etc/sudoers.d/player /mnt/etc/sudoers.d/player
@@ -82,7 +82,7 @@ locale-gen
 echo LANG=en_US.UTF-8 > /etc/locale.conf
 echo crossbar > /etc/hostname
 useradd -m -G wheel -s /bin/bash player
-systemctl enable NetworkManager crossbar-setup.service
+systemctl enable NetworkManager crossbar-setup.service crossbar-inputd.service
 bootctl install
 cat > /boot/loader/loader.conf <<L
 default crossbar.conf

@@ -5,6 +5,16 @@ python3 /usr/lib/crossbar/server.py >>"$HOME/.cache/crossbard.log" 2>&1 &
 
 until curl -s -o /dev/null http://127.0.0.1:7777/api/jobs; do sleep 0.3; done
 
+# Quick Menu overlay: drawn on the Wayland overlay layer, above games and video.
+if python3 -c "import ctypes; ctypes.CDLL('libgtk4-layer-shell.so')" 2>/dev/null; then
+  ( while true; do
+      python3 /usr/lib/crossbar/overlay.py >>"$HOME/.cache/crossbar-overlay.log" 2>&1
+      sleep 2
+    done ) &
+else
+  echo "gtk4-layer-shell missing: Quick Menu falls back to the XMB" >>"$HOME/.cache/crossbard.log"
+fi
+
 while true; do
   chromium \
     --ozone-platform=wayland \

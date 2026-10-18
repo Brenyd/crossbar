@@ -1,0 +1,14 @@
+[Unit]
+Description=Crossbar controller service (reads game controllers for the console user)
+After=systemd-udevd.service
+Wants=systemd-udevd.service
+
+[Service]
+Environment=CROSSBAR_USER=player
+ExecStartPre=-/usr/bin/modprobe uinput
+ExecStart=/usr/bin/python3 /usr/lib/crossbar/inputd.py
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

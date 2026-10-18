@@ -27,6 +27,8 @@ find "$PROFILE/airootfs/usr/lib/crossbar" -name __pycache__ -prune -exec rm -rf 
 mkdir -p "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants"
 ln -sf /etc/systemd/system/crossbar-setup.service \
   "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/crossbar-setup.service"
+ln -sf /etc/systemd/system/crossbar-inputd.service \
+  "$PROFILE/airootfs/etc/systemd/system/multi-user.target.wants/crossbar-inputd.service"
 
 echo ":: Networking: NetworkManager instead of releng's systemd-networkd + iwd"
 SD="$PROFILE/airootfs/etc/systemd/system"

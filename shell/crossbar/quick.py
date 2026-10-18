@@ -29,7 +29,71 @@ def _screenshot():
     return r.returncode == 0 and os.path.exists(SHOT)
 
 
+OVERLAY = {"open": False, "hook": None}
+
+
+def overlay_available():
+    """True when the always-on-top overlay window (crossbar-overlay) is running."""
+    return HUB.listeners("overlay-host") > 0
+
+
+def _app_from(f):
+    if not f or not f.get("con_id") or "xmb" in f["marks"] or system.is_xmb(f):
+        return None
+    video = f["app"] == player.VIDEO_APP_ID
+    return {"con_id": f["con_id"], "title": f["title"] or f["app"] or "App", "app": f["app"],
+            "video": video, "was_playing": video and not player.VIDEO.get("pause", True)}
+
+
+def open_overlay():
+    STATE["app"] = _app_from(system.focused())
+    if STATE["app"] and STATE["app"]["video"]:
+        player.pause_video()
+    OVERLAY["open"] = True
+    if OVERLAY["hook"]:
+        OVERLAY["hook"](True)
+    HUB.publish({"type": "overlay", "visible": True})
+
+
+def close_overlay(resume=True):
+    if not OVERLAY["open"]:
+        return
+    OVERLAY["open"] = False
+    if OVERLAY["hook"]:
+        OVERLAY["hook"](False)
+    HUB.publish({"type": "overlay", "visible": False})
+    app = _app()
+    if resume and app and app["video"] and app["was_playing"]:
+        player.VIDEO.cmd("set_property", "pause", False)
+
+
+def overlay_go_home():
+    close_overlay(resume=False)
+    system.show_shell()
+
+
+def overlay_close_app():
+    closed = close()
+    close_overlay(resume=False)
+    system.show_shell()
+    return closed
+
+
+def overlay_open_settings(folder):
+    close_overlay(resume=False)
+    system.show_shell()
+    HUB.publish({"type": "open-settings", "folder": folder})
+
+
 def home_pressed():
+    # Preferred: a real overlay drawn above whatever is running.
+    if overlay_available():
+        if OVERLAY["open"]:
+            close_overlay(resume=True)
+        else:
+            open_overlay()
+        return
+    # Fallback (no overlay window): switch to the XMB and open its Quick Menu.
     f = system.focused()
     if f is None or "xmb" in f["marks"] or not f["con_id"]:
         HUB.publish({"type": "quick", "toggle": True})

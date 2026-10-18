@@ -25,5 +25,13 @@ def walk(n):
     for c in n.get("nodes",[]) + n.get("floating_nodes",[]): walk(c)
 walk(json.load(sys.stdin))' || echo "not in the sway session"
 echo
+echo "== controller service (crossbar-inputd)"
+systemctl is-active crossbar-inputd 2>/dev/null; ls -l /run/crossbar/input.sock 2>/dev/null || echo "no socket"
+journalctl -u crossbar-inputd -n 8 --no-pager 2>/dev/null
+echo
+echo "== overlay (crossbar-overlay)"
+pgrep -af overlay.py || echo "overlay not running"
+tail -n 8 ~/.cache/crossbar-overlay.log 2>/dev/null
+echo
 echo "== last lines of ~/.cache/crossbard.log"
 tail -n 25 ~/.cache/crossbard.log 2>/dev/null

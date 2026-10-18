@@ -22,6 +22,9 @@ python-pywebview
 python-gobject
 webkit2gtk-4.1
 unzip
+# Quick Menu overlay (layer-shell window hosting a web view)
+gtk4-layer-shell
+webkitgtk-6.0
 # media
 grim
 mpv

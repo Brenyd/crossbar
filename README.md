@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.4
+# Crossbar — prototype 0.5
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -65,9 +65,18 @@ action, press the new button (or key), done. There's also *Swap Select and Back*
 *Reset All to Defaults*. Controllers are read by Crossbar itself and input only goes to
 whatever is on screen — the menu, the video player, or nothing (games read the pad directly).
 
+### How controllers work
+
+A small root service, `crossbar-inputd`, reads every controller (so permissions can't get in
+the way) and streams it to Crossbar, which applies your mapping and sends each press to
+what's in front. While the menu, a video, a web app or the Quick Menu is in front, Crossbar
+*holds* the controller so nothing behind reacts too. When a game is in front it lets go, and
+the game reads the controller itself. Guide/PS always reaches the Quick Menu.
+
 ### If the controller works in the menu but not in videos, web apps or the Quick Menu
 
-Crossbar can't read the controller device, so only the menu (via the browser) sees it.
+Check `systemctl status crossbar-inputd` (it should be *active*). Without it Crossbar falls
+back to reading the controller directly, which needs permissions.
 **Settings › Controller & Keyboard › Controller Diagnostics** shows what Crossbar sees and
 the last buttons it received. For a full report press Ctrl+Alt+T and run `crossbar-doctor`.
 The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that gives the
@@ -76,7 +85,9 @@ in and reboot. In a VM, pass the controller through as a USB device.
 
 ## Quick Menu
 
-Press **Guide/PS** (or **Home**) during a game, video or app. The screen dims behind a menu with:
+Press **Guide/PS** (or **Home**) during a game, video or app. The Quick Menu slides in
+**on top of** whatever is running (a real overlay on the Wayland overlay layer, so it works
+over fullscreen games and video), with:
 
 - **Resume** / **Close** the game or video (closing returns you straight to the XMB)
 - **Go to Home** — the XMB, leaving the game open
@@ -167,7 +178,9 @@ shell/crossbar/providers/     steam.py, gog.py, epic.py, demo.py
 shell/crossbar/system.py      sway windows, audio devices, Wi-Fi, power
 shell/crossbar/gamepad.py     reads every controller, applies the mapping, routes to what's in front
 shell/crossbar/controls.py    button/key mapping (~/.config/crossbar/controls.json)
-shell/crossbar/quick.py       Quick Menu: screenshot, resume/close the app in front
+shell/crossbar/quick.py       Quick Menu: open over the app in front, resume / close it
+shell/inputd.py               crossbar-inputd: root controller service (grab, virtual keyboard)
+shell/overlay.py              crossbar-overlay: GTK4 layer-shell window hosting web/overlay.html
 shell/crossbar/media.py       library folders, tags, thumbnails, folder picker
 shell/crossbar/player.py      mpv music (hidden) and video (full screen) over IPC
 shell/crossbar/spotify.py     librespot Connect speaker + Spotify Web API

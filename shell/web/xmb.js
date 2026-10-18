@@ -615,6 +615,8 @@ function connectEvents() {
   const es = new EventSource('/api/events');
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
+    if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); openSettingsFolder(ev.folder); return; }
+    if (ev.type === 'input' && ev.to === 'overlay') return;      // meant for the overlay window
     if (ev.type === 'input') {
       if (Dialog.open && document.activeElement?.tagName === 'INPUT' && (ev.action === 'up' || ev.action === 'down')) {
         document.activeElement.blur(); return;

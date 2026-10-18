@@ -304,7 +304,7 @@ const SETTINGS_FOLDERS = [
         } },
         ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
           action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.4', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.4', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.5', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.5', 'About') },
       ];
     },
   },
