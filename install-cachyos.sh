@@ -7,8 +7,9 @@
 # What it does:
 #   1. installs the packages Crossbar needs (pacman, then paru/yay for anything not in the repos)
 #   2. installs Crossbar itself (same as update-system.sh: /usr/lib/crossbar, services, rules)
-#   3. adds a "Crossbar" login session and sets the login manager to log you straight into it
-#      (no login screen; Plasma stays installed but doesn't run)
+#   3. makes tty1 autologin (or a login manager, if you use one) start Crossbar instead of your
+#      usual session; your autologin and startup scripts are kept, Plasma stays installed
+#      Graphics drivers, kernel, bootloader and NetworkManager are not touched.
 #   4. adds "Return to Crossbar" to the Plasma app menu; Crossbar gets Settings › System ›
 #      Switch to Desktop
 #
@@ -44,9 +45,10 @@ case "$DM" in sddm*) DM=sddm ;; plasmalogin*) DM=plasmalogin ;; esac
 # ---- uninstall ------------------------------------------------------------------------------
 if [[ -n "${UNINSTALL:-}" ]]; then
   rm -f "/etc/sddm.conf.d/zzz-crossbar.conf" "/etc/plasmalogin.conf.d/zzz-crossbar.conf"
-  if [[ -f /etc/greetd/config.toml.crossbar-backup ]]; then
-    mv /etc/greetd/config.toml.crossbar-backup /etc/greetd/config.toml
-  fi
+  for f in "$UHOME/.bash_profile" "$UHOME/.profile" "$UHOME/.zprofile"; do
+    [[ -f "$f" ]] && sed -i '/^# >>> crossbar (install-cachyos.sh) >>>$/,/^# <<< crossbar <<<$/d' "$f"
+  done
+  rm -f "$UHOME/.config/fish/conf.d/00-crossbar.fish" "$UHOME/.config/crossbar/boot-session"
   echo "Crossbar no longer starts at boot; your previous login setup is back."
   echo "(Crossbar is still installed: pick the \"Crossbar\" session on the login screen to use it.)"
   exit 0
@@ -65,17 +67,20 @@ fi
 # so the system must be up to date first; this only refreshes the database if multilib was just added.
 if [[ -n "${NEED_SYNC:-}" ]]; then pacman -Sy --noconfirm >/dev/null; fi
 # The ISO's list minus things only a VM or the live ISO needs (software rendering, VM agent).
-SKIP='^(spice-vdagent|vulkan-swrast|lib32-vulkan-swrast)$'
+# Graphics drivers are never touched: your system already has a working display stack
+# (on a PS5 that can be custom builds), and installing the stock ones could replace them.
+SKIP='^(spice-vdagent|mesa|lib32-mesa|vulkan-.*|lib32-vulkan-.*)$'
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$HERE/iso/packages.extra" | sed 's/\s.*//' | grep -vE "$SKIP")
 MISSING=()
-for p in "${PKGS[@]}"; do pacman -Qq "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
+# pacman -T also counts packages "provided" by something else (e.g. a -git build) as present
+for p in "${PKGS[@]}"; do pacman -T "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
 FAILED=()
 if ((${#MISSING[@]})); then
   echo "installing: ${MISSING[*]}"
   if ! pacman -S --needed --noconfirm "${MISSING[@]}"; then
     # one unknown name fails the whole batch: retry one by one and collect what's not in the repos
     for p in "${MISSING[@]}"; do
-      pacman -Qq "$p" >/dev/null 2>&1 && continue
+      pacman -T "$p" >/dev/null 2>&1 && continue
       pacman -S --needed --noconfirm "$p" >/dev/null 2>&1 || FAILED+=("$p")
     done
   fi
@@ -90,7 +95,7 @@ if ((${#FAILED[@]})); then
     sudo -u "$U" "$AUR" -S --needed --noconfirm "${FAILED[@]}" || true
   fi
   STILL=()
-  for p in "${FAILED[@]}"; do pacman -Qq "$p" >/dev/null 2>&1 || STILL+=("$p"); done
+  for p in "${FAILED[@]}"; do pacman -T "$p" >/dev/null 2>&1 || STILL+=("$p"); done
   ((${#STILL[@]})) && warn "couldn't install: ${STILL[*]} — Crossbar works without them, but some features won't"
 fi
 
@@ -103,39 +108,72 @@ CROSSBAR_SKIP_PACKAGES=1 CROSSBAR_NO_RESTART=1 SUDO_USER="$U" "$HERE/update-syst
 mkdir -p "$UHOME/Games" && chown "$U:" "$UHOME/Games"
 
 # ---- 3. boot straight into Crossbar ---------------------------------------------------------------
+HOOK_BEGIN="# >>> crossbar (install-cachyos.sh) >>>"
+HOOK_END="# <<< crossbar <<<"
+SHELL_NAME=$(basename "$(getent passwd "$U" | cut -d: -f7)")
+
+add_hook() {   # put the hook at the TOP of a login file, so it runs before your own autostart
+  local f="$1" body="$2"
+  sudo -u "$U" touch "$f"
+  remove_hook "$f"
+  { printf '%s\n%s\n%s\n' "$HOOK_BEGIN" "$body" "$HOOK_END"; cat "$f"; } >"$f.crossbar-tmp"
+  cat "$f.crossbar-tmp" >"$f" && rm -f "$f.crossbar-tmp"
+  echo "  added a 4-line block at the top of $f"
+}
+remove_hook() {
+  [[ -f "$1" ]] && sed -i "/^$HOOK_BEGIN\$/,/^$HOOK_END\$/d" "$1" || true
+}
+
 if ((AUTOLOGIN)); then
   step "Making Crossbar the session this machine boots into"
-  case "$DM" in
-    sddm|plasmalogin)
-      # A zzz-crossbar.conf drop-in sorts after the distro's own autologin files
-      # (CachyOS handheld writes zz-steamos-autologin.conf), so it wins without editing them.
-      echo '{"session":"crossbar","uid":'"$UID_U"'}' | python3 /usr/lib/crossbar/admin.py boot-session
-      echo "$DM will log $U straight into Crossbar (no login screen)."
-      ;;
-    none|getty*)
-      # No login manager: use greetd to start Crossbar on boot, with a login prompt as fallback.
-      pacman -S --needed --noconfirm greetd
-      [[ -f /etc/greetd/config.toml && ! -f /etc/greetd/config.toml.crossbar-backup ]] && \
-        cp /etc/greetd/config.toml /etc/greetd/config.toml.crossbar-backup
-      cat >/etc/greetd/config.toml <<EOF
-[terminal]
-vt = 1
-
-[default_session]
-command = "agreety --cmd /usr/local/bin/crossbar-session"
-
-[initial_session]
-command = "/usr/local/bin/crossbar-session"
-user = "$U"
+  if [[ "$DM" == sddm || "$DM" == plasmalogin ]] && systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
+    # A zzz-crossbar.conf drop-in sorts after the distro's own autologin files
+    # (CachyOS handheld writes zz-steamos-autologin.conf), so it wins without editing them.
+    echo '{"session":"crossbar","uid":'"$UID_U"'}' | python3 /usr/lib/crossbar/admin.py boot-session
+    echo "$DM will log $U straight into Crossbar (no login screen)."
+  else
+    # TTY autologin (no login manager). Your getty autologin and your own startup script stay
+    # exactly as they are; a small block at the top of your login file starts Crossbar on tty1
+    # when ~/.config/crossbar/boot-session says "crossbar", and otherwise does nothing, so your
+    # own setup (gaming mode / Plasma) runs as before.
+    if systemctl cat getty@tty1.service 2>/dev/null | grep -q -- '--autologin'; then
+      echo "TTY autologin found on tty1: keeping it."
+    else
+      warn "No TTY autologin on tty1 found. Crossbar will start when $U logs in on tty1."
+    fi
+    sudo -u "$U" mkdir -p "$UHOME/.config/crossbar"
+    echo crossbar | sudo -u "$U" tee "$UHOME/.config/crossbar/boot-session" >/dev/null
+    SH_HOOK='if [ -z "${WAYLAND_DISPLAY:-}${DISPLAY:-}" ] && [ "$(tty)" = /dev/tty1 ] && [ "$(cat "$HOME/.config/crossbar/boot-session" 2>/dev/null)" = crossbar ]; then
+  exec /usr/local/bin/crossbar-session
+fi'
+    case "$SHELL_NAME" in
+      fish)
+        F="$UHOME/.config/fish/conf.d/00-crossbar.fish"     # conf.d runs before config.fish; 00 runs first
+        sudo -u "$U" mkdir -p "$(dirname "$F")"
+        cat >"$F" <<'EOF'
+# Added by Crossbar's install-cachyos.sh: start Crossbar on tty1 when it's the chosen session.
+# Remove with ./install-cachyos.sh --uninstall (or delete this file).
+if status is-login; and test -z "$WAYLAND_DISPLAY$DISPLAY"; and test (tty) = /dev/tty1
+    if string match -q crossbar -- (cat ~/.config/crossbar/boot-session 2>/dev/null)
+        exec /usr/local/bin/crossbar-session
+    end
+end
 EOF
-      systemctl enable greetd.service
-      echo "greetd will start Crossbar for $U at boot."
-      ;;
-    *)
-      warn "Login manager '$DM' isn't set up automatically. Choose the \"Crossbar\" session on its"
-      warn "login screen and turn on automatic login for $U in its settings."
-      ;;
-  esac
+        chown "$U:" "$F"; echo "  added $F"
+        ;;
+      zsh) add_hook "$UHOME/.zprofile" "$SH_HOOK" ;;
+      *)   F="$UHOME/.bash_profile"; [[ -f "$F" ]] || F="$UHOME/.profile"; add_hook "$F" "$SH_HOOK" ;;
+    esac
+    # Where your current autostart lives (if it's in a system-wide file it runs before the hook).
+    FOUND=$(grep -lsE 'gamescope|startplasma|steamos-session|start-hyprland|sway' /etc/profile /etc/profile.d/* \
+            /etc/fish/config.fish /etc/fish/conf.d/* /etc/zsh/zprofile 2>/dev/null || true)
+    if [[ -n "$FOUND" ]]; then
+      warn "Your session autostart seems to be in a system-wide file that runs before Crossbar's hook:"
+      warn "  $FOUND"
+      warn "If you still boot into your old session, make that script skip when"
+      warn "~/.config/crossbar/boot-session contains 'crossbar' (or tell Crossbar's author)."
+    fi
+  fi
 fi
 
 # ---- 4. hide the boot text (optional, only when it's safe to do) -------------------------------------

@@ -2,7 +2,13 @@
 # From the Plasma desktop: make Crossbar the login session again, then log out
 # (the login manager logs straight back in, into Crossbar).
 set -u
+if [[ -f "$HOME/.config/crossbar/boot-session" ]]; then
+  # TTY autologin setup: choose Crossbar, then log out; tty1 logs back in and starts it
+  echo crossbar >"$HOME/.config/crossbar/boot-session"
+  out='"ok": true'
+else
 out=$(echo '{"session":"crossbar"}' | pkexec /usr/lib/crossbar/admin.py boot-session 2>&1)
+fi
 if ! grep -q '"ok": true' <<<"$out"; then
   msg="Couldn't switch to Crossbar: $out"
   command -v kdialog >/dev/null && kdialog --error "$msg" || echo "$msg" >&2

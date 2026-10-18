@@ -512,9 +512,10 @@ const SETTINGS_FOLDERS = [
           } },
         { key: 'restart-cb', label: 'Restart Crossbar', icon: 'restart', sub: 'Stop and restart every Crossbar piece (menu, Quick Menu, backend)',
           action: async () => { if (await confirmBox('Restart Crossbar?\nOpen games and apps keep running.')) { toast('Restarting Crossbar…', 'info'); api.post('/api/session/restart'); } } },
-        ...(st.desktop_available ? [{ key: 'desktop', label: 'Switch to Desktop', icon: 'browser',
-          sub: 'Log in to the Plasma desktop instead. On the desktop, open "Return to Crossbar" to come back',
-          action: async () => { if (await confirmBox('Switch to the desktop?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/desktop'), 'Switching to the desktop…'); } }] : []),
+        ...(st.desktop_available ? [{ key: 'desktop', label: st.boot_mode === 'tty' ? 'Switch to Your Usual Session' : 'Switch to Desktop', icon: 'browser',
+          sub: st.boot_mode === 'tty' ? 'Back to your own startup (Plasma / gaming mode). From Plasma, "Return to Crossbar" comes back'
+                                       : 'Log in to the Plasma desktop instead. On the desktop, open "Return to Crossbar" to come back',
+          action: async () => { if (await confirmBox('Leave Crossbar?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/desktop'), 'Switching…'); } }] : []),
         { key: 'exit-cb', label: 'Exit Crossbar', icon: 'power', sub: 'Close everything and go back to the login screen / TTY',
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',

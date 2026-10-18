@@ -111,6 +111,7 @@ def state():
         "steam_bigpicture": cfg.get("steam_bigpicture", True),
         "free_memory_in_games": cfg.get("free_memory_in_games", True),
         "desktop_available": session.desktop_available(),
+        "boot_mode": session.boot_mode(),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),

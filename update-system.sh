@@ -32,7 +32,11 @@ if ! grep -q '^\[multilib\]' /etc/pacman.conf; then
 fi
 mapfile -t PKGS < <(grep -vE '^\s*(#|$)' "$HERE/iso/packages.extra")
 MISSING=()
-for p in "${PKGS[@]}"; do pacman -Qq "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
+if ! id player >/dev/null 2>&1; then
+  # not the Crossbar ISO: leave the system's graphics drivers alone
+  mapfile -t PKGS < <(printf '%s\n' "${PKGS[@]}" | grep -vE '^(spice-vdagent|mesa|lib32-mesa|vulkan-.*|lib32-vulkan-.*)$')
+fi
+for p in "${PKGS[@]}"; do pacman -T "$p" >/dev/null 2>&1 || MISSING+=("$p"); done
 if ((${#MISSING[@]})); then
   echo "installing: ${MISSING[*]}"
   pacman -S --needed --noconfirm "${MISSING[@]}"

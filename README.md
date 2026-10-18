@@ -45,8 +45,8 @@ To install permanently, open **Settings › Install to Disk** from the live syst
 
 ### Install on an existing CachyOS / Arch system (PS5 included)
 
-Keeps your kernel, bootloader, Plasma and Steam gaming mode installed, and makes the machine
-boot straight into Crossbar (no login screen; Plasma doesn't run unless you switch to it).
+Keeps your kernel, bootloader, graphics drivers, NetworkManager, Plasma and your own
+autologin/startup setup, and makes the machine boot straight into Crossbar.
 
 ```bash
 sudo pacman -Syu                      # be fully up to date first (Arch doesn't do partial upgrades)
@@ -55,27 +55,33 @@ git clone https://github.com/Brenyd/crossbar.git && cd crossbar
 sudo reboot
 ```
 
-Over SSH works too (handy on a PS5). What it does:
+Works over SSH (handy on a PS5). What it does:
 
-1. Installs the packages Crossbar needs — from the repos, falling back to `paru`/`yay` for
-   anything that's only in the AUR. VM-only bits (software rendering, spice) are skipped.
-2. Installs Crossbar (`/usr/lib/crossbar`, the controller service, device rules, polkit rules)
-   exactly like an update does.
-3. Adds a **Crossbar** login session and sets your login manager to log you straight in to it.
-   On CachyOS (Plasma Login Manager or SDDM) this is one drop-in file,
-   `/etc/plasmalogin.conf.d/zzz-crossbar.conf` (or `/etc/sddm.conf.d/…`). It's read after CachyOS's own
-   gaming-mode autologin file, so nothing of yours is edited. Without a login manager, greetd is set up.
+1. Installs the packages Crossbar needs that are missing — repos first, `paru`/`yay` for AUR-only
+   ones. **Graphics drivers (mesa, vulkan) are never installed or replaced**, and packages provided
+   by something you already have (e.g. a `-git` build) count as installed.
+2. Installs Crossbar (`/usr/lib/crossbar`, controller service, device rules, polkit rules).
+3. Boots into Crossbar:
+   - **TTY autologin (no login manager)** — your getty autologin and startup script stay as they are.
+     A 4-line block goes at the top of your login file (`~/.config/fish/conf.d/00-crossbar.fish` for
+     fish, else `~/.bash_profile` / `~/.zprofile`). On tty1 it starts Crossbar when
+     `~/.config/crossbar/boot-session` says `crossbar`; otherwise it does nothing and your own setup
+     runs as before.
+   - **Login manager** (Plasma Login Manager / SDDM) — one drop-in, `zzz-crossbar.conf`, read after the
+     distro's own autologin file.
 4. Adds **Return to Crossbar** to the Plasma app menu.
 
-Switching: **Settings › System › Switch to Desktop** logs you into Plasma; on the desktop,
-**Return to Crossbar** (app menu) comes back. Whichever you were in last is what boots next time.
+**Switching:** in Crossbar, **Settings › System › Switch to Your Usual Session** hands tty1 back to
+your own startup (Plasma or gaming mode, as you had it). In Plasma, **Return to Crossbar** logs out
+and comes back. Whichever was chosen last is what boots next time.
 
-Options: `./install-cachyos.sh --no-autologin` (install only; pick "Crossbar" on the login screen),
-`./install-cachyos.sh --uninstall` (stop booting into Crossbar — removes the drop-in, so your
-previous login setup, e.g. Steam gaming mode, is back). Updates: **Settings › System › Update Crossbar**.
+If your usual session needs special environment variables for the display (e.g. exported in your
+startup script), put the same `KEY=value` lines in `~/.config/crossbar/session.env` and Crossbar's
+session uses them too.
 
-The PS5 boots through its own loader, so the installer doesn't touch the kernel command line;
-the console is quietened (`kernel.printk`), and the login manager hands over without a screen.
+Undo: `./install-cachyos.sh --uninstall` removes the block / drop-in, and you're back to exactly
+your previous boot. `--no-autologin` installs without changing what boots. Updates:
+**Settings › System › Update Crossbar**.
 
 ### Updating without rebuilding the ISO
 
