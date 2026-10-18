@@ -330,6 +330,7 @@ GET = {
     "/api/discord/state": lambda q: discord_state(),
     "/api/discord/guilds": lambda q: DISCORD.guilds(),
     "/api/discord/friends": lambda q: DISCORD.friends(),
+    "/api/discord/debug": lambda q: DISCORD.debug(),
     "/api/friends/steam": lambda q: friends.steam_friends(),
     "/api/discord/channels": lambda q: DISCORD.voice_channels(q["guild_id"]),
     "/api/quick/pending": lambda q: {"open": quick.take_pending()},

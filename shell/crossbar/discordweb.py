@@ -303,30 +303,106 @@ class DiscordWeb:
     def toggle_deaf(self):
         return self._click_label("^(Deafen|Undeafen)$", "Deafen")
 
-    # ---- friends (Home › Friends › Online) ------------------------------------------------
-    # Rows are people-list___<user id>; their text is the display name, then the status
-    # line ("Online", "Idle", "Playing Minecraft", a custom status…). The list is virtualised,
-    # so it's read while scrolling through it.
-    FRIENDS_JS = r"""(async () => {
-      const wait = (ms) => new Promise(r => setTimeout(r, ms));
-      const home = document.querySelector('[data-list-item-id="guildsnav___home"]');
-      if (!home) return null;
-      if (!location.pathname.startsWith('/channels/@me') || /\/channels\/@me\/\d/.test(location.pathname)) {
-        home.click(); await wait(500);
-        const link = document.querySelector('a[href="/channels/@me"]'); if (link) { link.click(); await wait(500); }
+    # ---- friends ----------------------------------------------------------------------------
+    # First choice: the friends list and online status the Discord page already has in memory
+    # (its RelationshipStore / PresenceStore / UserStore, found the way Discord's own modules
+    # find them). Nothing is sent to Discord: it's what the Friends page shows, read directly,
+    # so it works whatever page the window is on. Fallback: read the Friends › Online page.
+    STORES_JS = r"""(() => {
+      if (window.__cbStores && window.__cbStores.RelationshipStore) return window.__cbStores;
+      const chunk = window.webpackChunkdiscord_app;
+      if (!chunk || !chunk.push) return null;
+      let req = null;
+      try { chunk.push([[Symbol('crossbar')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return null; }
+      if (!req || !req.c) return null;
+      const want = ['RelationshipStore', 'PresenceStore', 'UserStore', 'ChannelStore'];
+      const found = {};
+      const check = (v) => {
+        try { if (v && typeof v.getName === 'function') { const n = v.getName(); if (want.includes(n) && !found[n]) found[n] = v; } } catch (e) { /* lazy export */ }
+      };
+      for (const m of Object.values(req.c)) {
+        const ex = m && m.exports;
+        if (!ex || (typeof ex !== 'object' && typeof ex !== 'function')) continue;
+        check(ex);
+        let keys = [];
+        try { keys = Object.keys(ex); } catch (e) { continue; }
+        for (const k of keys) { let v; try { v = ex[k]; } catch (e) { continue; } check(v); if (v && typeof v === 'object') check(v.default); }
+        if (want.every((n) => found[n])) break;
       }
-      const tab = [...document.querySelectorAll('[role="tab"]')].find(t => /^online$/i.test((t.textContent || '').trim()));
-      if (tab && tab.getAttribute('aria-selected') !== 'true') { tab.click(); await wait(500); }
+      if (!found.RelationshipStore) return null;
+      window.__cbStores = found;
+      return found;
+    })()"""
+
+    FRIENDS_STORE_JS = r"""(() => {
+      const S = %s;
+      if (!S || !S.RelationshipStore || !S.UserStore) return null;
+      const R = S.RelationshipStore, P = S.PresenceStore, U = S.UserStore;
+      let ids = [];
+      try { if (typeof R.getFriendIDs === 'function') ids = R.getFriendIDs() || []; } catch (e) { /* older client */ }
+      if (!ids.length) {
+        let rel = {};
+        try { rel = (R.getMutableRelationships || R.getRelationships).call(R) || {}; } catch (e) { /* ignore */ }
+        const entries = rel instanceof Map ? [...rel.entries()] : Object.entries(rel);
+        ids = entries.filter(([, t]) => t === 1 || (t && t.type === 1)).map(([id]) => id);
+      }
+      const rank = { online: 0, idle: 2, dnd: 3 };
+      const out = [];
+      for (const id of ids) {
+        const status = P && P.getStatus ? P.getStatus(id) : 'online';
+        if (!(status in rank)) continue;                        // offline / invisible
+        const acts = (P && P.getActivities ? P.getActivities(id) : []) || [];
+        const game = acts.find((a) => a.type === 0), listen = acts.find((a) => a.type === 2), custom = acts.find((a) => a.type === 4);
+        const u = U.getUser(id) || {};
+        const line = game ? `Playing ${game.name}` : listen ? `Listening to ${listen.name}`
+          : custom && custom.state ? custom.state : ({ online: 'Online', idle: 'Idle', dnd: 'Do Not Disturb' })[status];
+        out.push({ id, name: u.globalName || u.global_name || u.username || id, status: line, game: game ? game.name : '',
+                   presence: status, avatar: u.avatar ? `https://cdn.discordapp.com/avatars/${id}/${u.avatar}.png?size=128` : null,
+                   r: (game ? 0 : 1) + rank[status] });
+      }
+      out.sort((a, b) => a.r - b.r || a.name.localeCompare(b.name));
+      return out;
+    })()"""
+
+    # Fallback: Home › Friends › Online, read off the page (rows found several ways, since
+    # Discord renames its classes; the user id comes from the row id or the avatar picture).
+    GO_FRIENDS_JS = r"""(async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const home = document.querySelector('[data-list-item-id="guildsnav___home"]') ||
+                   document.querySelector('a[href="/channels/@me"]');
+      if (!home) return false;
+      if (!location.pathname.startsWith('/channels/@me') || /\/channels\/@me\/\d/.test(location.pathname)) {
+        home.click(); await wait(600);
+        const link = document.querySelector('a[href="/channels/@me"]'); if (link) { link.click(); await wait(600); }
+      }
+      const tab = [...document.querySelectorAll('[role="tab"]')].find(t => /^online/i.test((t.textContent || '').trim()));
+      if (tab && tab.getAttribute('aria-selected') !== 'true') { tab.click(); await wait(600); }
+      return true;
+    })()"""
+    ROWS_JS = r"""(() => {
+      const rows = new Set(document.querySelectorAll('[data-list-item-id^="people-list___"], [class*="peopleListItem"]'));
+      document.querySelectorAll('[aria-label="Message"], [aria-label="More"]').forEach((b) => {
+        const r = b.closest('[role="listitem"], [class*="peopleListItem"], [class*="listItem"]'); if (r) rows.add(r); });
+      return [...rows];
+    })()"""
+    FRIENDS_PAGE_JS = r"""(async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const rowsNow = () => %s;
       const out = new Map();
-      const grab = () => document.querySelectorAll('[data-list-item-id^="people-list___"]').forEach(e => {
-        const id = e.getAttribute('data-list-item-id').split('___')[1];
-        const lines = (e.innerText || '').split('\n').map(x => x.trim()).filter(Boolean);
-        const avatar = e.querySelector('img[src*="avatars"], img[class*="avatar"]');
-        if (/^\d+$/.test(id) && lines.length) out.set(id, { id, name: lines[0], status: lines.length > 1 ? lines[lines.length - 1] : '',
-          avatar: avatar ? avatar.src : null });
+      const grab = () => rowsNow().forEach((e) => {
+        const lid = e.getAttribute('data-list-item-id') || '';
+        const img = e.querySelector('img[src*="/avatars/"]');
+        const m = (img && img.src.match(/\/avatars\/(\d+)\//)) || lid.match(/___(\d+)$/);
+        const btn = new Set([...e.querySelectorAll('button, [role="button"]')].map((b) => (b.innerText || '').trim()).filter(Boolean));
+        const lines = (e.innerText || '').split('\n').map((x) => x.trim()).filter((x) => x && !btn.has(x));
+        if (!lines.length) return;
+        const id = m ? m[1] : 'name:' + lines[0];
+        out.set(id, { id, name: lines[0], status: lines[1] || 'Online',
+                      avatar: img ? img.src : null });
       });
       grab();
-      let list = document.querySelector('[data-list-item-id^="people-list___"]');
+      const first = rowsNow()[0];
+      let list = first;
       while (list && list.scrollHeight <= list.clientHeight + 4) list = list.parentElement;
       for (let i = 0; list && i < 40 && list.scrollTop + list.clientHeight < list.scrollHeight - 4; i++) {
         list.scrollTop += list.clientHeight * 0.8; await wait(150); grab();
@@ -336,36 +412,93 @@ class DiscordWeb:
     })()"""
 
     def friends(self):
-        """Friends who are online now: [{id, name, status, avatar}]."""
+        """Friends who are online now: [{id, name, status, avatar}], people in a game first."""
         self.start()
-        for _ in range(3):
-            r = self.js(self.FRIENDS_JS, timeout=20)
-            if r is not None:
+        for attempt in range(4):
+            if not self.js("!!document.querySelector('[data-list-item-id^=\"guildsnav___\"]')", timeout=6):
+                time.sleep(1.5)                     # still loading (or signed out)
+                continue
+            try:
+                r = self.js(self.FRIENDS_STORE_JS % self.STORES_JS, timeout=15)
+                if r is not None:
+                    self.cache["friends_via"] = "stores"
+                    return r
+            except DiscordError as e:
+                print(f"discord: friends from stores: {e}", flush=True)
+            if self.js(self.GO_FRIENDS_JS, timeout=15):
+                time.sleep(0.4)
+                r = self.js(self.FRIENDS_PAGE_JS % self.ROWS_JS, timeout=25) or []
+                self.cache["friends_via"] = "page"
                 return r
-            time.sleep(1)                       # still loading after a cold start
         raise DiscordError("Sign in to Discord first (Social › Sign In to Discord)")
+
+    DEBUG_JS = r"""(() => {
+      const S = %s;
+      const q = (sel) => document.querySelectorAll(sel).length;
+      let friendIds = null;
+      try { friendIds = S && S.RelationshipStore && S.RelationshipStore.getFriendIDs ? S.RelationshipStore.getFriendIDs().length : null; } catch (e) { friendIds = 'error: ' + e; }
+      return { path: location.pathname, webpack: !!window.webpackChunkdiscord_app,
+               stores: S ? Object.keys(S) : null, friendIds,
+               guilds: q('[data-list-item-id^="guildsnav___"]'), peopleRows: q('[data-list-item-id^="people-list___"]'),
+               peopleClass: q('[class*="peopleListItem"]'), messageButtons: q('[aria-label="Message"]'),
+               tabs: [...document.querySelectorAll('[role="tab"]')].map((t) => (t.textContent || '').trim()).slice(0, 8) };
+    })()"""
+
+    def debug(self):
+        """What the friends reader can see (for bug reports)."""
+        self.start()
+        return {**(self.js(self.DEBUG_JS % self.STORES_JS, timeout=15) or {}), "via": self.cache.get("friends_via")}
+
+    def _call_button(self, tries=20):
+        for _ in range(tries):                      # the DM opens, then its header has the call button
+            time.sleep(0.3)
+            if self.js(r"""(() => { const b = [...document.querySelectorAll('[aria-label]')]
+                         .find(x => /^start (voice )?call$/i.test(x.getAttribute('aria-label')));
+                         if (!b) return false; b.click(); return true; })()"""):
+                return True
+        return False
 
     def call(self, user_id):
         """Open the DM with a friend and press Start Voice Call (voice runs in the hidden window)."""
-        if not re.fullmatch(r"\d+", str(user_id)):
+        uid = str(user_id)
+        if not re.fullmatch(r"\d+|name:.{1,100}", uid):
             raise ValueError("user id")
-        self.friends()                              # on the Friends › Online page, row rendered
-        ok = False
-        for _ in range(20):
-            ok = self.js(f"""(() => {{ const e = document.querySelector('[data-list-item-id="people-list___{user_id}"]');
-                             if (!e) return false; e.click(); return true; }})()""")
-            if ok:
-                break
-            time.sleep(0.25)
-        if not ok:
-            raise DiscordError("That friend isn't online in Discord's list anymore")
-        for _ in range(20):                         # the DM opens, then its header has the call button
-            time.sleep(0.3)
-            if self.js(r"""(() => { const b = [...document.querySelectorAll('[aria-label]')]
-                         .find(x => /^start voice call$/i.test(x.getAttribute('aria-label')));
-                         if (!b) return false; b.click(); return true; })()"""):
-                break
-        else:
+        self.start()
+        opened = False
+        if uid.isdigit():
+            # the DM channel Discord already knows for this friend: go there like a link click
+            path = self.js(f"""(() => {{ const S = {self.STORES_JS};
+                const C = S && S.ChannelStore; let cid = null;
+                try {{ cid = C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; }} catch (e) {{ cid = null; }}
+                if (!cid) return null;
+                const path = '/channels/@me/' + cid;
+                if (location.pathname !== path) {{ history.pushState(null, '', path); dispatchEvent(new PopStateEvent('popstate', {{ state: null }})); }}
+                return path; }})()""", timeout=15)
+            if path:
+                opened = self._call_button(12)
+                if not opened:                       # the router ignored it: load the page directly
+                    self.js(f"location.assign({json.dumps(path)}); true")
+                    time.sleep(4)
+                    self.session = None
+                    opened = self._call_button(30)
+        if not opened:
+            # no DM yet: click the friend on Home › Friends › Online, which opens one
+            self.js(self.GO_FRIENDS_JS, timeout=15)
+            if uid.isdigit():
+                find = f"""r.getAttribute('data-list-item-id') === 'people-list___{uid}' || !!r.querySelector('img[src*="/avatars/{uid}/"]')"""
+            else:
+                find = f"""(r.innerText || '').split('\\n')[0].trim() === {json.dumps(uid[5:])}"""
+            ok = False
+            for _ in range(20):
+                ok = self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
+                                 if (!r) return false; r.click(); return true; }})()""")
+                if ok:
+                    break
+                time.sleep(0.25)
+            if not ok:
+                raise DiscordError("Couldn't find that friend in Discord's Friends list")
+            opened = self._call_button()
+        if not opened:
             raise DiscordError("Couldn't find Discord's Start Voice Call button")
         for _ in range(30):                         # in a call once Disconnect shows up
             time.sleep(0.25)

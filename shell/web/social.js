@@ -103,7 +103,11 @@ function discordFriendsFolder() {
           action: () => openDiscord('Scan the QR code with the Discord app on your phone, then come back with the Quick Menu') }];
       }
       const list = await api.get('/api/discord/friends');
-      if (!list.length) return [{ key: 'none', label: 'No friends online', icon: 'info', sub: 'Nobody on your Discord friends list is online right now' }];
+      if (!list.length) {
+        return [{ key: 'none', label: 'No friends online', icon: 'info', sub: 'Nobody on your Discord friends list is online right now' },
+          { key: 'dbg', label: 'Friends Missing?', icon: 'info', sub: 'Show what Crossbar can see in Discord (for a bug report)',
+            action: async () => { const r = await call(() => api.get('/api/discord/debug')); if (r) message(JSON.stringify(r, null, 1), 'Discord Friends Check'); } }];
+      }
       return list.map((f) => ({
         key: `df:${f.id}`, label: f.name, sub: `${f.status || 'Online'} · {ok} call`,
         ...(f.avatar ? { art: f.avatar, artTitle: f.name, artShape: 'poster' } : { icon: 'user' }),

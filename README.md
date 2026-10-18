@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.11.1
+# Crossbar — prototype 0.11.2
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
