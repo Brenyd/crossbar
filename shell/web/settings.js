@@ -512,7 +512,12 @@ const SETTINGS_FOLDERS = [
           } },
         { key: 'restart-cb', label: 'Restart Crossbar', icon: 'restart', sub: 'Stop and restart every Crossbar piece (menu, Quick Menu, backend)',
           action: async () => { if (await confirmBox('Restart Crossbar?\nOpen games and apps keep running.')) { toast('Restarting Crossbar…', 'info'); api.post('/api/session/restart'); } } },
-        ...(st.desktop_available ? [{ key: 'desktop', label: st.boot_mode === 'tty' ? 'Switch to Your Usual Session' : 'Switch to Desktop', icon: 'browser',
+        ...(st.boot_mode === 'ps5' ? [
+          { key: 'gaming', label: 'Switch to Gaming Mode', icon: 'game', sub: 'Steam\'s gaming mode. Its "Switch to Desktop", then "Return to Crossbar", comes back',
+            action: async () => { if (await confirmBox('Switch to Gaming Mode?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/gaming'), 'Switching…'); } },
+          { key: 'desktop', label: 'Switch to Desktop', icon: 'browser', sub: 'Plasma. "Return to Crossbar" in its app menu comes back',
+            action: async () => { if (await confirmBox('Switch to the desktop?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/desktop'), 'Switching…'); } }] :
+        st.desktop_available ? [{ key: 'desktop', label: st.boot_mode === 'tty' ? 'Switch to Your Usual Session' : 'Switch to Desktop', icon: 'browser',
           sub: st.boot_mode === 'tty' ? 'Back to your own startup (Plasma / gaming mode). From Plasma, "Return to Crossbar" comes back'
                                        : 'Log in to the Plasma desktop instead. On the desktop, open "Return to Crossbar" to come back',
           action: async () => { if (await confirmBox('Leave Crossbar?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/desktop'), 'Switching…'); } }] : []),

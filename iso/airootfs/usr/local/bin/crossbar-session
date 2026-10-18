@@ -3,6 +3,7 @@
 export XDG_CURRENT_DESKTOP=sway XDG_SESSION_TYPE=wayland XDG_SESSION_DESKTOP=sway
 export WLR_NO_HARDWARE_CURSORS=1
 export WLR_RENDERER_ALLOW_SOFTWARE=1      # VMs without 3D acceleration
+export WLR_LIBINPUT_NO_DEVICES=1        # start even with no keyboard/pad connected yet (PS5)
 export CROSSBAR_GAMES="$HOME/Games"
 mkdir -p "$HOME/.cache"
 # Machine-specific variables your usual session needs (display / GPU tweaks), if any.

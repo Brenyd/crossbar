@@ -44,6 +44,7 @@ case "$DM" in sddm*) DM=sddm ;; plasmalogin*) DM=plasmalogin ;; esac
 
 # ---- uninstall ------------------------------------------------------------------------------
 if [[ -n "${UNINSTALL:-}" ]]; then
+  "$HERE/ps5-session.sh" detect && "$HERE/ps5-session.sh" uninstall "$U"
   rm -f "/etc/sddm.conf.d/zzz-crossbar.conf" "/etc/plasmalogin.conf.d/zzz-crossbar.conf"
   for f in "$UHOME/.bash_profile" "$UHOME/.profile" "$UHOME/.zprofile"; do
     [[ -f "$f" ]] && sed -i '/^# >>> crossbar (install-cachyos.sh) >>>$/,/^# <<< crossbar <<<$/d' "$f"
@@ -153,7 +154,14 @@ remove_hook() {
 
 if ((AUTOLOGIN)); then
   step "Making Crossbar the session this machine boots into"
-  if [[ "$DM" == sddm || "$DM" == plasmalogin ]] && systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
+  if "$HERE/ps5-session.sh" detect; then
+    # PS5 setup: tty1 autologin + /etc/profile.d/ps5-tty-session.sh picking gamescope/desktop
+    # from ~/.config/ps5-next-session. Crossbar becomes a third choice and the boot default.
+    "$HERE/ps5-session.sh" install "$U"
+    # an earlier run's generic hook isn't needed with this setup
+    for f in "$UHOME/.bash_profile" "$UHOME/.profile" "$UHOME/.zprofile"; do remove_hook "$f"; done
+    rm -f "$UHOME/.config/fish/conf.d/00-crossbar.fish" "$UHOME/.config/crossbar/boot-session"
+  elif [[ "$DM" == sddm || "$DM" == plasmalogin ]] && systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
     # A zzz-crossbar.conf drop-in sorts after the distro's own autologin files
     # (CachyOS handheld writes zz-steamos-autologin.conf), so it wins without editing them.
     echo '{"session":"crossbar","uid":'"$UID_U"'}' | python3 /usr/lib/crossbar/admin.py boot-session
@@ -196,7 +204,7 @@ EOF
             /etc/fish/config.fish /etc/fish/conf.d/* /etc/zsh/zprofile 2>/dev/null || true)
     # ...or started by systemd instead of a login shell (getty override running it directly,
     # or a service), which the hook can't come before either.
-    GETTY=$(systemctl cat getty@tty1.service 2>/dev/null | grep -E '^ExecStart=.*(gamescope|steam|startplasma)' || true)
+    GETTY=$(systemctl cat getty@tty1.service 2>/dev/null | grep -E '^ExecStart=' | grep -vE 'agetty' | grep -E 'gamescope|startplasma' || true)
     UNITS=$(grep -lsE 'gamescope|steamos-session' /etc/systemd/system/*.service \
             "$UHOME"/.config/systemd/user/*.service 2>/dev/null || true)
     [[ -n "$GETTY" ]] && FOUND="$FOUND getty@tty1 (its ExecStart starts the session directly)"

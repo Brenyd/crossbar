@@ -2,7 +2,17 @@
 # From the Plasma desktop: make Crossbar the login session again, then log out
 # (the login manager logs straight back in, into Crossbar).
 set -u
-if [[ -f "$HOME/.config/crossbar/boot-session" ]]; then
+if [[ -f "$HOME/.config/ps5-next-session" ]] && grep -q '>>> crossbar >>>' /etc/profile.d/ps5-tty-session.sh 2>/dev/null; then
+  # PS5 setup: pick Crossbar in its session switcher, then end this session
+  echo crossbar >"$HOME/.config/ps5-next-session"
+  if pgrep -u "$(id -u)" -f gamescope-session >/dev/null; then
+    steam -shutdown >/dev/null 2>&1 &         # gaming mode: Steam quits, the session ends
+    sleep 8
+    pkill -u "$(id -u)" -f gamescope-session || true
+    exit 0
+  fi
+  out='"ok": true'
+elif [[ -f "$HOME/.config/crossbar/boot-session" ]]; then
   # TTY autologin setup: choose Crossbar, then log out; tty1 logs back in and starts it
   echo crossbar >"$HOME/.config/crossbar/boot-session"
   out='"ok": true'

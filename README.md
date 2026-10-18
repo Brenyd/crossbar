@@ -71,6 +71,16 @@ Works over SSH (handy on a PS5). What it does:
      distro's own autologin file.
 4. Adds **Return to Crossbar** to the Plasma app menu.
 
+   - **PS5 (CachyOS PS5 setup)** — detected automatically: its tty1 switcher
+     (`/etc/profile.d/ps5-tty-session.sh`, token in `~/.config/ps5-next-session`) gets **crossbar** as a
+     third choice next to gamescope/desktop, and the boot default becomes Crossbar (a drop-in for
+     `ps5-session-default.service`). Two small marked blocks are added to that script, the original is
+     backed up to `/var/lib/crossbar/`, and `--uninstall` restores it exactly. If Crossbar ever fails to
+     start, that boot falls back to gaming mode instead of looping. On the PS5, Settings › System has
+     **Switch to Gaming Mode** and **Switch to Desktop**; from Plasma, **Return to Crossbar** (app menu)
+     comes back; from gaming mode use Steam's Switch to Desktop, then Return to Crossbar (or add
+     "Return to Crossbar" to Steam as a non-Steam game).
+
 **Switching:** in Crossbar, **Settings › System › Switch to Your Usual Session** hands tty1 back to
 your own startup (Plasma or gaming mode, as you had it). In Plasma, **Return to Crossbar** logs out
 and comes back. Whichever was chosen last is what boots next time.

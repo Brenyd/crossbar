@@ -75,8 +75,22 @@ def restart():
 BOOT_FILE = os.path.expanduser("~/.config/crossbar/boot-session")
 
 
+PS5_TOKEN = os.path.expanduser("~/.config/ps5-next-session")
+PS5_SCRIPT = "/etc/profile.d/ps5-tty-session.sh"
+
+
+def ps5_mode():
+    """PS5 setup with Crossbar added to its session switcher (ps5-session.sh)."""
+    try:
+        return os.path.exists(PS5_TOKEN) and ">>> crossbar >>>" in open(PS5_SCRIPT).read()
+    except OSError:
+        return False
+
+
 def boot_mode():
-    """'tty' (tty1 autologin + login-file hook), 'dm' (login manager), or None."""
+    """'ps5', 'tty' (tty1 autologin + login-file hook), 'dm' (login manager), or None."""
+    if ps5_mode():
+        return "ps5"
     if os.path.exists(BOOT_FILE):
         return "tty"
     return "dm" if desktop_available() else None
@@ -84,7 +98,7 @@ def boot_mode():
 
 def desktop_available():
     """True when the login manager starts Crossbar and a Plasma session exists to switch to."""
-    if os.path.exists(BOOT_FILE):
+    if os.path.exists(BOOT_FILE) or ps5_mode():
         return True
     ws = "/usr/share/wayland-sessions"
     if not os.path.exists(os.path.join(ws, "crossbar.desktop")):
@@ -95,7 +109,18 @@ def desktop_available():
     return target.startswith(("sddm", "plasmalogin"))
 
 
+def switch_session(target):
+    """PS5 setup: leave Crossbar for gaming mode ("gamescope") or Plasma ("desktop")."""
+    if target not in ("gamescope", "desktop"):
+        raise ValueError(target)
+    with open(PS5_TOKEN, "w") as f:
+        f.write(target + "\n")
+    subprocess.Popen(["sh", "-c", "sleep 1; swaymsg exit"], start_new_session=True)
+
+
 def switch_to_desktop():
+    if ps5_mode():
+        return switch_session("desktop")
     if os.path.exists(BOOT_FILE):
         # TTY setup: hand tty1 back to your own startup (gaming mode / Plasma) until you return
         with open(BOOT_FILE, "w") as f:

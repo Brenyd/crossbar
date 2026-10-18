@@ -447,6 +447,8 @@ def route_post(path, b):
             session.exit_session()
         elif parts[1] == "desktop":
             session.switch_to_desktop()
+        elif parts[1] == "gaming":
+            session.switch_session("gamescope")
         return {"ok": True}
     if head == "overlay":
         if parts[1] == "ack":
