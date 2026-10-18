@@ -96,8 +96,8 @@ const QuickMenu = {
     rows.push({ key: 'pad', icon: 'game', label: 'Controller & Keyboard', sub: 'Button mapping', ok: () => this.goSettings('controls') });
     rows.push({ key: 'net', icon: 'wifi', label: 'Network', sub: 'Wi-Fi and connection', ok: () => this.goSettings('network') });
     rows.push({ key: 'power', icon: 'power', label: 'Power', sub: 'Turn off or restart', ok: () => Options.show([
-      { label: 'Turn Off System', action: async () => { if (await confirmBox('Turn off the system?')) api.post('/api/power/poweroff'); } },
-      { label: 'Restart System', action: async () => { if (await confirmBox('Restart the system?')) api.post('/api/power/reboot'); } },
+      { label: 'Turn Off System', action: async () => { if (await confirmSafe('Turn off the system?')) api.post('/api/power/poweroff'); } },
+      { label: 'Restart System', action: async () => { if (await confirmSafe('Restart the system?')) api.post('/api/power/reboot'); } },
     ]) });
     return rows;
   },

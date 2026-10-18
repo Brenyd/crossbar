@@ -7,6 +7,7 @@ volume, output device and more.
 """
 import os
 import subprocess
+import threading
 import time
 
 from . import player, system, util
@@ -29,7 +30,7 @@ def _screenshot():
     return r.returncode == 0 and os.path.exists(SHOT)
 
 
-OVERLAY = {"open": False, "hook": None}
+OVERLAY = {"open": False, "hook": None, "acked": False, "seq": 0}
 
 
 def overlay_available():
@@ -49,10 +50,21 @@ def open_overlay():
     STATE["app"] = _app_from(system.focused())
     if STATE["app"] and STATE["app"]["video"]:
         player.pause_video()
-    OVERLAY["open"] = True
+    OVERLAY.update(open=True, acked=False, seq=OVERLAY["seq"] + 1)
+    seq = OVERLAY["seq"]
     if OVERLAY["hook"]:
         OVERLAY["hook"](True)
     HUB.publish({"type": "overlay", "visible": True})
+
+    def confirm():
+        # The overlay says "I'm on screen" when it shows. If it doesn't, the controller
+        # must NOT stay pointed at an invisible menu: give it back and use the XMB's menu.
+        time.sleep(1.5)
+        if OVERLAY["open"] and OVERLAY["seq"] == seq and not OVERLAY["acked"]:
+            print("quick: overlay didn't show — using the XMB's Quick Menu instead", flush=True)
+            close_overlay(resume=False)
+            _fallback(system.focused())
+    threading.Thread(target=confirm, daemon=True).start()
 
 
 def close_overlay(resume=True):
@@ -79,6 +91,26 @@ def overlay_close_app():
     return closed
 
 
+def overlay_switch(con_id):
+    """App switcher: go to another open app (or Crossbar itself when con_id is empty)."""
+    close_overlay(resume=False)
+    if not con_id:
+        system.show_shell()
+        return True
+    system.bring_to_front(int(con_id))
+    return True
+
+
+def open_windows():
+    out = []
+    for w in system.all_windows():
+        if system.is_xmb(w) or w.get("app") == "":
+            continue
+        out.append({"con_id": w["con_id"], "title": w["title"] or w["app"], "app": w["app"],
+                    "video": w["app"] == player.VIDEO_APP_ID})
+    return out
+
+
 def overlay_open_settings(folder):
     close_overlay(resume=False)
     system.show_shell()
@@ -93,8 +125,11 @@ def home_pressed():
         else:
             open_overlay()
         return
-    # Fallback (no overlay window): switch to the XMB and open its Quick Menu.
-    f = system.focused()
+    _fallback(system.focused())
+
+
+def _fallback(f):
+    """No overlay window: switch to the XMB and open its own Quick Menu."""
     if f is None or "xmb" in f["marks"] or not f["con_id"]:
         HUB.publish({"type": "quick", "toggle": True})
         return
@@ -166,6 +201,7 @@ def info():
     except Exception:
         pass
     return {
+        "windows": open_windows(),
         "voice": voice,
         "app": _app(),
         "music": player.music_state(),

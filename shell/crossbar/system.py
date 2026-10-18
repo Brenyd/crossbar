@@ -60,7 +60,10 @@ def ensure_xmb_mark():
 
 
 def show_shell():
-    """Bring the XMB to the front (two steps, so one failing can't block the other)."""
+    """Bring the XMB to the front (two steps, so one failing can't block the other).
+    If it was closed for game mode, it's started again first."""
+    from . import session
+    session.leave_game_mode()
     _swaymsg("[all] fullscreen disable")
     xmb = ensure_xmb_mark()
     if xmb:
@@ -152,6 +155,17 @@ def hide_steam():
         if is_steam_client(w):
             hide_window(w["con_id"])
     show_shell()
+
+
+def kill_window(con_id):
+    """Force close: end the window's process right away."""
+    import signal
+    win = next((w for w in all_windows() if w["con_id"] == int(con_id)), None)
+    if win and win.get("pid"):
+        try:
+            os.kill(win["pid"], signal.SIGKILL)
+        except ProcessLookupError:
+            pass
 
 
 def force_close(con_id, grace=4):

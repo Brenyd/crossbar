@@ -13,14 +13,16 @@ function openSettingsFolder(id) {
   openFolder(f);
 }
 
+const hz = (r) => (r > 0 ? `${(r / 1000).toFixed(2)} Hz` : 'Auto');
+
 async function changeMode(o, m) {
   const prev = o.current;
   const r1 = await call(() => api.post('/api/display/mode', { name: o.name, ...m, save: false }));
   if (!r1) return;
-  const r = await Dialog.ask({ title: 'Display Settings', body: `${m.width} × ${m.height} at ${(m.refresh / 1000).toFixed(2)} Hz\nKeep this setting?`,
+  const r = await Dialog.ask({ title: 'Display Settings', body: `${m.width} × ${m.height}${m.refresh > 0 ? ` at ${hz(m.refresh)}` : ''}\nKeep this setting?`,
     buttons: ['Keep', 'Revert'], def: 1, timeout: 15000, timeoutButton: 1 });
   if (r.button === 0) await api.post('/api/display/mode', { name: o.name, ...m, save: true });
-  else await api.post('/api/display/mode', { name: o.name, width: prev.width, height: prev.height, refresh: prev.refresh, save: false });
+  else await api.post('/api/display/mode', { name: o.name, width: prev.width, height: prev.height, refresh: prev.refresh, custom: !o.listed, save: false });
   reloadFolder();
 }
 
@@ -259,6 +261,9 @@ const GAMES_FOLDER = {
       { key: 'gs', label: 'Run GOG & Epic Games in Gamescope', icon: 'display',
         sub: !st.gamescope_available ? 'Gamescope isn\'t installed' : st.gamescope ? 'On — fixed resolution, better frame pacing' : 'Off — games run directly',
         action: async () => { if (st.gamescope_available) { await setSetting({ gamescope: !st.gamescope }); reloadFolder(); } } },
+      { key: 'freemem', label: 'Free Memory While Gaming', icon: 'game',
+        sub: st.free_memory_in_games !== false ? 'On — the menu closes while a game runs; Quick Menu, music and voice keep working' : 'Off — the menu stays open behind games',
+        action: async () => { await setSetting({ free_memory_in_games: st.free_memory_in_games === false }); reloadFolder(); } },
       { key: 'steamov', label: 'Steam Overlay', icon: 'info', sub: 'Works in Steam games: Steam button or Shift+Tab. Crossbar\'s Quick Menu: Select + Start',
         action: () => message('Steam games run through Steam, so Steam\'s overlay works as usual (Steam/Guide button or Shift+Tab).\nCrossbar\'s Quick Menu uses Select + Start so the two never fight over a button.\nChange either in Controller & Keyboard.', 'Steam Overlay') },
       { key: 'demo', label: 'Demo Library', icon: 'demo', sub: st.demo ? 'On — showing sample games' : 'Off — using your real accounts',
@@ -324,22 +329,23 @@ const SETTINGS_FOLDERS = [
       for (const o of outs) {
         const c = o.current, multi = outs.length > 1 ? ` (${o.label})` : '';
         const sizes = [...new Map(o.modes.map((m) => [`${m.width}x${m.height}`, m])).values()];
-        items.push({ key: `res:${o.name}`, label: `Resolution${multi}`, icon: 'display', sub: `${c.width} × ${c.height}`,
-          children: async () => sizes.map((m) => {
+        items.push({ key: `res:${o.name}`, label: `Resolution${multi}`, icon: 'display',
+          sub: `${c.width} × ${c.height}${o.listed ? '' : ' · screen lists no modes, common sizes offered'}`,
+          children: async () => (!sizes.length ? [{ key: 'none', label: 'No resolutions reported', icon: 'info', sub: 'The screen or driver didn\'t list any' }] : sizes.map((m) => {
             // keep the current refresh rate if this size supports it, else its best rate
             const same = o.modes.filter((x) => x.width === m.width && x.height === m.height);
             const pick = same.find((x) => Math.abs(x.refresh - c.refresh) < 500) || same[0];
             const cur = m.width === c.width && m.height === c.height;
             return { key: `m:${m.width}x${m.height}`, label: `${m.width} × ${m.height}`, icon: cur ? 'check' : 'display',
-              sub: cur ? 'Current' : '', action: () => changeMode(o, pick) };
-          }) });
-        const rates = o.modes.filter((m) => m.width === c.width && m.height === c.height);
-        items.push({ key: `hz:${o.name}`, label: `Refresh Rate${multi}`, icon: 'display', sub: `${(c.refresh / 1000).toFixed(2)} Hz`,
-          children: async () => rates.map((m) => {
+              sub: cur ? 'Current' : (m.custom ? 'Custom mode — may not work on every screen' : ''), action: () => changeMode(o, pick) };
+          })) });
+        const rates = o.modes.filter((m) => m.width === c.width && m.height === c.height && m.refresh > 0);
+        items.push({ key: `hz:${o.name}`, label: `Refresh Rate${multi}`, icon: 'display', sub: hz(c.refresh),
+          children: async () => (!rates.length ? [{ key: 'none', label: 'Only one rate available', icon: 'info', sub: 'The screen didn\'t report other refresh rates for this resolution' }] : rates.map((m) => {
             const cur = Math.abs(m.refresh - c.refresh) < 50;
-            return { key: `r:${m.refresh}`, label: `${(m.refresh / 1000).toFixed(2)} Hz`, icon: cur ? 'check' : 'display',
+            return { key: `r:${m.refresh}`, label: hz(m.refresh), icon: cur ? 'check' : 'display',
               sub: cur ? 'Current' : '', action: () => changeMode(o, m) };
-          }) });
+          })) });
         const scales = [1, 1.25, 1.5, 2];
         items.push({ key: `sc:${o.name}`, label: `Display Scale${multi}`, icon: 'display', sub: `${Math.round(o.scale * 100)}%`,
           action: () => Options.show(scales.map((x) => ({ label: `${check(Math.abs(x - o.scale) < 0.01)}${x * 100}%`,
@@ -504,9 +510,13 @@ const SETTINGS_FOLDERS = [
             const r = await call(() => api.post('/api/report'));
             if (r?.url) message(`Your report link:\n\n${r.url}\n\nType or paste this link into your message.`, 'Support Report');
           } },
+        { key: 'restart-cb', label: 'Restart Crossbar', icon: 'restart', sub: 'Stop and restart every Crossbar piece (menu, Quick Menu, backend)',
+          action: async () => { if (await confirmBox('Restart Crossbar?\nOpen games and apps keep running.')) { toast('Restarting Crossbar…', 'info'); api.post('/api/session/restart'); } } },
+        { key: 'exit-cb', label: 'Exit Crossbar', icon: 'power', sub: 'Close everything and go back to the login screen / TTY',
+          action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.8', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.8', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.9', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.9', 'About') },
       ];
     },
   },

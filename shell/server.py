@@ -25,7 +25,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import compat, controls, files, iptv, nas, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import compat, controls, files, iptv, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -108,6 +108,7 @@ def state():
         "clock24": cfg.get("clock24", False),
         "gamescope": cfg.get("gamescope", False),
         "steam_bigpicture": cfg.get("steam_bigpicture", True),
+        "free_memory_in_games": cfg.get("free_memory_in_games", True),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),
@@ -232,6 +233,8 @@ def r_launch(b):
                 if new:
                     system.focus_window(new[-1]["con_id"])
                     HUB.publish({"type": "launched", "title": title})
+                    time.sleep(3)          # let the "launched" splash finish before the XMB closes
+                    session.enter_game_mode(title)
                     return
             HUB.publish({"type": "launch-timeout", "title": title})
         threading.Thread(target=watch, daemon=True).start()
@@ -246,7 +249,7 @@ def r_login(pid, b):
 
 
 def r_settings(b):
-    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture"}
+    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games"}
 
     def apply(c):
         for k, v in b.items():
@@ -406,9 +409,20 @@ def route_post(path, b):
         system.set_audio(b["target"], b.get("delta"), b.get("mute"))
         return system.audio()
     if head == "window":
-        {"focus": system.focus_window, "close": system.close_window}[parts[1]](b["con_id"])
+        {"focus": system.bring_to_front, "close": system.close_window, "kill": system.kill_window}[parts[1]](b["con_id"])
+        return {"ok": True}
+    if head == "session":
+        if parts[1] == "restart":
+            session.restart()
+        elif parts[1] == "exit":
+            session.exit_session()
         return {"ok": True}
     if head == "overlay":
+        if parts[1] == "ack":
+            quick.OVERLAY["acked"] = True
+            return {"ok": True}
+        if parts[1] == "switch":
+            return {"ok": quick.overlay_switch(b.get("con_id"))}
         if parts[1] == "close":
             quick.close_overlay(resume=b.get("resume", True))
         elif parts[1] == "home":
@@ -470,7 +484,7 @@ def route_post(path, b):
         return {"ok": True}
     if head == "display":
         if parts[1] == "mode":
-            display.set_mode(b["name"], b["width"], b["height"], b["refresh"], b.get("save", True))
+            display.set_mode(b["name"], b["width"], b["height"], b.get("refresh") or 0, b.get("save", True), bool(b.get("custom")))
         else:
             display.set_scale(b["name"], b["scale"], b.get("save", True))
         return display.outputs()
@@ -494,7 +508,7 @@ def route_post(path, b):
         elif act == "play":
             entries, idx = iptv.playlist(b["kind"], b.get("cat"), b.get("id"), b.get("series"))
             pause_spotify()
-            player.play_video(None, idx, mpv_gamepad=mpv_should_read_gamepad(PADS), entries=entries)
+            player.play_video(None, idx, mpv_gamepad=mpv_should_read_gamepad(PADS), entries=entries, user_agent=iptv.USER_AGENT)
             return {"ok": True, "title": entries[idx][0]}
         return iptv.status()
     if head == "nas":
@@ -730,6 +744,7 @@ def main():
     a = ap.parse_args()
     FORCE_DEMO = a.demo
     os.makedirs(util.GAMES_DIR, exist_ok=True)
+    session.watchdog()
     PADS.start()
 
     def keep_xmb_marked():

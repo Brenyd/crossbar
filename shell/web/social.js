@@ -23,7 +23,9 @@ async function setupDiscord() {
   const intro = 'One-time setup (Discord requires it for apps that control voice):\n' +
     '1. On any device: discord.com/developers/applications › New Application.\n' +
     '2. OAuth2 › Redirects: add http://127.0.0.1:7777/discord/callback and save.\n' +
-    '3. Copy the Client ID and Client Secret (OAuth2 page) into the boxes below.\n' +
+    '3. App Testers: add your Discord username, then accept the invite Discord sends you.\n' +
+    '   (Without this Discord refuses with "invalid scope".)\n' +
+    '4. Copy the Client ID and Client Secret (OAuth2 page) into the boxes below.\n' +
     'Discord then opens and asks you to approve Crossbar once.';
   const r = await Dialog.ask({ title: 'Set Up Discord', body: intro, buttons: ['Continue', 'Cancel'],
     fields: [{ key: 'client_id', label: 'Client ID', value: '' }, { key: 'client_secret', label: 'Client Secret', secret: true }] });

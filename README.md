@@ -115,9 +115,23 @@ Keyboard can give it to Crossbar instead). It has:
 - **Go to Home** — the XMB, leaving the game open
 - **Now Playing** — your music or Spotify: ◀ ▶ skip, A play/pause
 - **Volume** (◀ ▶, A mutes), **Sound Output** switch, **Microphone** mute
-- **Controller & Keyboard**, **Network**, **Power**
+- **Switch App** — every open app and game, plus Crossbar: A switches to it, Y opens
+  **Switch To / Close / Force Close** (force close ends a frozen app right away)
+- **Controller & Keyboard**, **Settings**
+- **Power…** — its own page that opens with **Cancel** selected: Restart Crossbar, Restart
+  Computer, Turn Off Computer. A stray A press can't turn the machine off.
 
-B resumes what you were doing.
+B resumes what you were doing (or goes back a page).
+
+If the Quick Menu ever fails to appear, Crossbar notices within a second and a half, gives the
+controller back and opens the menu inside the XMB instead.
+
+**Game mode (saves memory):** when a game starts, the XMB window — a full browser and the biggest
+part of Crossbar — closes. The backend, Quick Menu, controller service, music, Spotify and Discord
+voice keep running, so everything in the Quick Menu still works. **Go to Home** (or quitting the
+game) brings the XMB back in a couple of seconds. Turn it off in Settings › Game Settings › Free
+Memory While Gaming. (It stays off if the Quick Menu overlay isn't available, so there's always a
+way back.)
 **While a video plays** (panel hidden): A pause · ◀/▶ seek −10 s/+30 s · ▲/▼ volume ·
 L1/R1 previous/next · Y show panel · B jump to Stop. With the panel open, ◀/▶ pick a
 button (previous, rewind, play/pause, forward, next, subtitles, audio track, stop), A presses
@@ -169,9 +183,12 @@ One-time setup (Discord only lets "tester" accounts control voice from other app
 
 1. On any device: [discord.com/developers/applications](https://discord.com/developers/applications) › **New Application**.
 2. **OAuth2 › Redirects**: add `http://127.0.0.1:7777/discord/callback`, save.
-3. Copy the **Client ID** and **Client Secret** (OAuth2 page).
-4. Crossbar: **Social › Set Up Discord**, paste both, sign in to Discord if asked, approve Crossbar.
-5. **Social › Add Voice Channel…** › pick a server › pick channels.
+3. **App Testers**: add your own Discord username, then **accept the invite** Discord sends you
+   (DM/email). This is the step that's easy to miss: without it Discord refuses with
+   *invalid scope* even for the app's owner.
+4. Copy the **Client ID** and **Client Secret** (OAuth2 page).
+5. Crossbar: **Social › Set Up Discord**, paste both, sign in to Discord if asked, approve Crossbar.
+6. **Social › Add Voice Channel…** › pick a server › pick channels.
 
 ## Games
 
@@ -207,22 +224,25 @@ When a game closes you're back in the menu.
   and password from your provider, then choose which **Live TV**, **Movie** and **TV Show**
   categories appear (and hide channels you don't want). Live TV shows under TV & Video Services
   (L1/R1 change channel while watching); Movies and TV Shows under Video.
+  If sign-in times out, use the exact address your provider gave **including the port**
+  (e.g. `http://example.com:8080`); without one, Crossbar tries the usual Xtream ports (8080,
+  25461, 8000, 80). Requests identify as VLC, since many providers block unknown players.
 
 ## Settings
 
 | Section | What's in it |
 |---|---|
-| Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep |
+| Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep. Screens that report no modes get common sizes as custom modes, rate shown as Auto |
 | Sound | Output device, input (mic) device, volumes, menu sounds |
 | Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
-| Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, demo library |
+| Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, demo library |
 | Theme | Background colour, or automatic by month |
 | Media | Music / Video / Photo folders, IPTV, resume videos, subtitles default |
 | Date & Time | Time zone, automatic time, 12/24-hour clock |
 | Accounts | Steam, GOG, Epic sign-in; Spotify; Discord; user name |
-| System | Terminal, update Crossbar, share support report, system information, install to disk |
+| System | Terminal, **Restart Crossbar** (restarts every Crossbar piece — useful while testing), **Exit Crossbar**, update, share support report, system information, install to disk |
 
 Everything is set inside Crossbar — no separate settings apps. Under the hood these are the same
 system services KDE Plasma's settings use (NetworkManager, BlueZ, PipeWire, systemd), driven

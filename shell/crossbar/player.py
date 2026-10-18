@@ -169,7 +169,7 @@ def pause_music():
 
 
 # ---- video ---------------------------------------------------------------
-def play_video(paths, index=0, mpv_gamepad=False, entries=None):
+def play_video(paths, index=0, mpv_gamepad=False, entries=None, user_agent=None):
     """Play local files (paths) or streams (entries = [(title, url)], e.g. IPTV)."""
     if entries:
         lines = ["#EXTM3U"] + [ln for t, u in entries for ln in (f"#EXTINF:-1,{t.replace(chr(10), ' ')}", u)]
@@ -184,6 +184,7 @@ def play_video(paths, index=0, mpv_gamepad=False, entries=None):
     with os.fdopen(fd, "w") as f:
         f.write("\n".join(lines) + "\n")
     if VIDEO.running():
+        VIDEO.cmd("set_property", "user-agent", user_agent or "")
         VIDEO.cmd("loadlist", m3u, "replace")
         VIDEO.cmd("set_property", "playlist-pos", int(index))
         VIDEO.cmd("set_property", "pause", False)
@@ -200,7 +201,7 @@ def play_video(paths, index=0, mpv_gamepad=False, entries=None):
         f"crossbar-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--input-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--playlist={m3u}", f"--playlist-start={int(index)}",
-    ]
+    ] + ([f"--user-agent={user_agent}"] if user_agent else [])
     VIDEO.start(args)
     threading.Thread(target=_focus_player, daemon=True).start()
 

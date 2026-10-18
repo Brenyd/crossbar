@@ -45,7 +45,13 @@ def normalise(server):
     return f"{p.scheme}://{p.netloc}{p.path}".rstrip("/")
 
 
-def _call(acct, action=None, use_cache=True, **params):
+# Many IPTV providers refuse or stall requests that don't look like a known player.
+USER_AGENT = "VLC/3.0.20 LibVLC/3.0.20"
+# Xtream panels commonly listen on one of these when the address has no port.
+PORTS = (8080, 25461, 8000, 80)
+
+
+def _call(acct, action=None, use_cache=True, timeout=90, **params):
     q = {"username": acct["username"], "password": acct["password"], **params}
     if action:
         q["action"] = action
@@ -55,12 +61,24 @@ def _call(acct, action=None, use_cache=True, **params):
     if use_cache and action and os.path.exists(path) and time.time() - os.path.getmtime(path) < TTL.get(action, 3600):
         with open(path) as f:
             return json.load(f)
-    data = util.http_json(url, timeout=30)
+    data = util.http_json(url, headers={"User-Agent": USER_AGENT}, timeout=timeout)
     if action:
         os.makedirs(CACHE, exist_ok=True)
         with open(path, "w") as f:
             json.dump(data, f)
     return data
+
+
+def _reach_error(e):
+    text = str(getattr(e, "reason", "") or e)
+    if "timed out" in text.lower() or isinstance(e, TimeoutError):
+        return ("The server didn't answer in time. Check the address includes the port your provider gave you "
+                "(for example http://example.com:8080) and that it works in another player on this network.")
+    if getattr(e, "code", None) in (401, 403):
+        return f"The server refused the connection ({e.code}). Check the username and password, or whether the account allows this device."
+    if getattr(e, "code", None) == 404:
+        return "That address isn't an Xtream Codes server (player_api.php not found). Use the server URL from your provider's Xtream details, not an M3U link."
+    return f"Couldn't reach the server: {text}"
 
 
 def require():
@@ -77,9 +95,24 @@ def login(job, server, username, password):
         raise ValueError("Enter the username")
     job.set(0.3, "Checking the account…")
     try:
-        info = _call(acct, None, use_cache=False)
+        info = _call(acct, None, use_cache=False, timeout=20)
     except Exception as e:
-        raise RuntimeError(f"Couldn't reach the server: {e}") from None
+        info = None
+        first = e
+        p = urllib.parse.urlparse(acct["server"])
+        if p.port is None and not isinstance(e, ValueError):
+            # no port given: try the ports Xtream servers usually use
+            for port in PORTS:
+                alt = dict(acct, server=f"{p.scheme}://{p.hostname}:{port}{p.path}".rstrip("/"))
+                job.set(0.4, f"Trying port {port}…")
+                try:
+                    info = _call(alt, None, use_cache=False, timeout=8)
+                    acct = alt
+                    break
+                except Exception:
+                    continue
+        if info is None:
+            raise RuntimeError(_reach_error(first)) from None
     ui = (info or {}).get("user_info") or {}
     if str(ui.get("auth")) != "1":
         raise RuntimeError("The server rejected that username or password")

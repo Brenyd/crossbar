@@ -28,7 +28,7 @@ import subprocess
 import threading
 import time
 
-from . import controls, player, system
+from . import controls, player, session, system
 from .events import HUB
 
 REPEAT_DELAY, REPEAT_RATE = 0.38, 0.085
@@ -485,6 +485,18 @@ class Gamepads:
                             if f is not None and not ("xmb" in f["marks"] or system.is_xmb(f)) \
                                     and (not f.get("con_id") or system.is_background_window(f)):
                                 system.hide_steam() if system.is_steam_client(f) else system.show_shell()
+                        # game mode: the XMB is closed, so when the last game goes, bring it back
+                        if session.game_mode() and not self.overlay_open and not any(
+                                not system.is_background_window(w) and not system.is_xmb(w)
+                                and "discord" not in (w.get("app") or "").lower() for w in system.windows()):
+                            system.hide_steam()
+                            system.show_shell()
+                    if ('"change": "new"' in line or '"change":"new"' in line or '"change": "focus"' in line) \
+                            and not session.game_mode():
+                        f = system.focused()
+                        app = ((f or {}).get("app") or "").lower()
+                        if app.startswith("steam_app_") or app == "gamescope":
+                            threading.Thread(target=session.enter_game_mode, args=(app,), daemon=True).start()
                     if any(k in line for k in ('"focus"', '"close"', '"new"', '"fullscreen_mode"')):
                         time.sleep(0.05)
                         self.update_grab()

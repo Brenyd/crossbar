@@ -24,7 +24,9 @@ class Model:
     def __init__(self, api):
         self.api = api
         self.data = {}
-        self.armed = None          # "close" | "power" while waiting for the confirming second press
+        self.armed = None          # "close" while waiting for the confirming second press
+        self.page = "main"         # main | apps | app | power
+        self.app = None            # the app picked in the switcher
         self.sel = 0
         self.rows = []
         self.notice = ""
@@ -44,14 +46,78 @@ class Model:
         self.sel = keys.index(key) if key in keys else min(self.sel, len(self.rows) - 1)
 
     def title(self):
+        if self.page == "apps":
+            return "Switch App"
+        if self.page == "app" and self.app:
+            return self.app["title"]
+        if self.page == "power":
+            return "Power"
         app = self.data.get("app")
         return app["title"] if app else "Crossbar"
 
     def back_to(self):
+        if self.page != "main":
+            return "previous"
         k = kind_of(self.data.get("app"))
         return k.lower() if k else "menu"
 
+    def go(self, page, app=None):
+        self.page, self.app, self.sel, self.armed = page, app, 0, None
+        self.rebuild()
+
     def build(self, d):
+        if self.page == "apps":
+            return self.build_apps(d)
+        if self.page == "app":
+            return self.build_app()
+        if self.page == "power":
+            return self.build_power()
+        return self.build_main(d)
+
+    def build_apps(self, d):
+        rows = [{"key": "xmb", "icon": "go-home-symbolic", "label": "Crossbar", "sub": "The menu",
+                 "ok": lambda: self.api.post("/api/overlay/switch", {"con_id": None})}]
+        for w in d.get("windows") or []:
+            rows.append({"key": f"w{w['con_id']}", "icon": "video-x-generic-symbolic" if w.get("video") else "applications-games-symbolic",
+                         "label": w["title"], "sub": w["app"], "hint": "A switch · Y close",
+                         "ok": lambda w=w: self.api.post("/api/overlay/switch", {"con_id": w["con_id"]}),
+                         "menu": lambda w=w: self.go("app", w)})
+        return rows
+
+    def build_app(self):
+        w, api = self.app, self.api
+        if not w:
+            return []
+
+        def close(kind):
+            api.post(f"/api/window/{kind}", {"con_id": w["con_id"]})
+            self.notice = f"{'Force closed' if kind == 'kill' else 'Closed'} {w['title']}"
+            self.go("apps")
+            self.refresh()
+        return [
+            {"key": "switch", "icon": "go-next-symbolic", "label": "Switch To", "sub": w["title"],
+             "ok": lambda: api.post("/api/overlay/switch", {"con_id": w["con_id"]})},
+            {"key": "close", "icon": "window-close-symbolic", "label": "Close", "sub": "Ask it to quit", "danger": True,
+             "ok": lambda: close("close")},
+            {"key": "kill", "icon": "process-stop-symbolic", "label": "Force Close", "danger": True,
+             "sub": "End it now — unsaved progress is lost", "ok": lambda: close("kill")},
+            {"key": "back", "icon": "go-previous-symbolic", "label": "Back", "sub": "", "ok": lambda: self.go("apps")},
+        ]
+
+    def build_power(self):
+        api = self.api
+        return [   # Cancel first and selected: a stray press never turns the machine off
+            {"key": "cancel", "icon": "go-previous-symbolic", "label": "Cancel", "sub": "Back to the Quick Menu",
+             "ok": lambda: self.go("main")},
+            {"key": "restart-crossbar", "icon": "view-refresh-symbolic", "label": "Restart Crossbar", "sub": "Restart the menu, keep the computer on",
+             "ok": lambda: api.post("/api/session/restart", {})},
+            {"key": "reboot", "icon": "system-reboot-symbolic", "label": "Restart Computer", "sub": "", "danger": True,
+             "ok": lambda: api.post("/api/power/reboot", {})},
+            {"key": "off", "icon": "system-shutdown-symbolic", "label": "Turn Off Computer", "sub": "", "danger": True,
+             "ok": lambda: api.post("/api/power/poweroff", {})},
+        ]
+
+    def build_main(self, d):
         api, rows = self.api, []
         app = d.get("app")
         what = kind_of(app)
@@ -115,14 +181,15 @@ class Model:
             rows.append({"key": "mic", "icon": "audio-input-microphone-symbolic", "label": "Microphone",
                          "sub": "Muted" if mic.get("muted") else f"{mic['volume']}%", "hint": "A mute",
                          "ok": lambda: (api.post("/api/audio", {"target": "mic", "mute": True}), self.refresh())})
+        wins = d.get("windows") or []
+        rows.append({"key": "apps", "icon": "view-app-grid-symbolic", "label": "Switch App",
+                     "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
         rows.append({"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller & Keyboard", "sub": "Button mapping",
                      "ok": lambda: api.post("/api/overlay/settings", {"folder": "controls"})})
         rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings", "sub": "Display, sound, network…",
                      "ok": lambda: api.post("/api/overlay/settings", {"folder": ""})})
-        armed = self.armed == "power"
-        rows.append({"key": "power", "icon": "system-shutdown-symbolic", "danger": True,
-                     "label": "Press A again to turn off" if armed else "Turn Off System", "sub": "",
-                     "ok": self._power})
+        rows.append({"key": "power", "icon": "system-shutdown-symbolic", "label": "Power…",
+                     "sub": "Restart Crossbar, restart or turn off", "ok": lambda: self.go("power")})
         return rows
 
     # ---- actions --------------------------------------------------------------
@@ -136,13 +203,6 @@ class Model:
         self.api.post("/api/overlay/close-app", {})
         self.notice = f"Closed {title}"
 
-    def _power(self):
-        if self.armed != "power":
-            self.armed = "power"
-            self.rebuild()
-            return
-        self.api.post("/api/power/poweroff", {})
-
     def _next_output(self):
         r = self.api.post("/api/quick/output", {}) or {}
         if r.get("name"):
@@ -153,7 +213,7 @@ class Model:
         self.api.post("/api/overlay/close", {"resume": resume})
 
     def reset(self):
-        self.sel, self.armed, self.notice = 0, None, ""
+        self.sel, self.armed, self.notice, self.page, self.app = 0, None, "", "main", None
 
     # ---- input ----------------------------------------------------------------
     def handle(self, a):
@@ -171,10 +231,14 @@ class Model:
             r["adjust"](1 if a == "right" else -1)
         elif a == "ok" and r.get("ok"):
             r["ok"]()
+        elif a == "menu" and r.get("menu"):
+            r["menu"]()
         elif a in ("back", "menu", "home"):
             if self.armed and a == "back":
                 self.armed = None
                 self.rebuild()
+            elif self.page != "main" and a == "back":
+                self.go("apps" if self.page == "app" else "main")
             else:
                 self.close(True)
         elif a in ("toggle", "prev", "next"):

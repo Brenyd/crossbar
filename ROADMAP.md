@@ -22,6 +22,17 @@
 - [x] Steam games via Big Picture, Steam hidden again afterwards; store accounts in Settings
 - [x] Discord linking: Discord window brought forward, progress shown, crashes reported
 
+## 0.9
+- [x] Crossbar cleans up after itself: a new session stops leftovers from the last one; the backend exits with sway
+- [x] Quick Menu must confirm it's on screen, otherwise the controller is handed back (no more invisible menu)
+- [x] Settings › System: Restart Crossbar / Exit Crossbar
+- [x] Power in the Quick Menu is its own page with Cancel selected; power confirms default to No
+- [x] App switcher in the Quick Menu: switch, close, force close
+- [x] Game mode: the menu closes while a game runs to free memory; Quick Menu, music, Spotify, voice keep working
+- [x] Display: screens that report no modes get common sizes (custom modes), rate shown as Auto instead of 0.00
+- [x] IPTV: player user agent, tries the usual Xtream ports, clearer errors
+- [x] Discord: explains the App Testers step when Discord refuses with invalid_scope
+
 ## Next
 - **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
   virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.

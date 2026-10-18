@@ -113,6 +113,8 @@ const Dialog = {
   },
 };
 const confirmBox = async (body, title = '') => (await Dialog.ask({ title, body, buttons: ['Yes', 'No'] })).button === 0;
+// For things that can't be undone (power): "No" is highlighted, so a stray A press does nothing.
+const confirmSafe = async (body, title = '') => (await Dialog.ask({ title, body, buttons: ['Yes', 'No'], def: 1 })).button === 0;
 const message = (body, title = '') => Dialog.ask({ title, body });
 
 // ---------------------------------------------------------------- options panel
@@ -240,8 +242,8 @@ const CATS = [   // more categories are added by media.js and settings.js
       return [
         { key: 'me', label: S.state.user, icon: 'user', sub: 'Signed in', options: [{ label: 'Rename', action: renameUser }], action: renameUser },
         fileBrowserItem(),
-        { key: 'off', label: 'Turn Off System', icon: 'power', action: async () => { if (await confirmBox('Turn off the system?')) api.post('/api/power/poweroff'); } },
-        { key: 'reboot', label: 'Restart System', icon: 'restart', action: async () => { if (await confirmBox('Restart the system?')) api.post('/api/power/reboot'); } },
+        { key: 'off', label: 'Turn Off System', icon: 'power', action: async () => { if (await confirmSafe('Turn off the system?')) api.post('/api/power/poweroff'); } },
+        { key: 'reboot', label: 'Restart System', icon: 'restart', action: async () => { if (await confirmSafe('Restart the system?')) api.post('/api/power/reboot'); } },
       ];
     },
   },

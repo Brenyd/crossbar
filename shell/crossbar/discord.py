@@ -34,6 +34,23 @@ class DiscordError(RuntimeError):
     code = 0
 
 
+TESTER_HELP = ("Discord only lets an app control voice for accounts on its tester list. "
+               "On discord.com/developers/applications open your app › App Testers, add your Discord "
+               "username, accept the invite Discord sends you (check your Discord DMs/email), then try Set Up Discord again.")
+
+
+def authorize_error(e):
+    """Turn Discord's AUTHORIZE refusal into something you can act on."""
+    text = str(e)
+    if e.code == 5000 or "invalid_scope" in text.lower() or "scope" in text.lower():
+        return f"Discord refused the voice permissions ({text}). {TESTER_HELP}"
+    if e.code in (4000, 4002, 4006):
+        return f"Discord refused the request ({text}). Check the Client ID is copied exactly. {TESTER_HELP}"
+    if e.code == 5001 or "cancel" in text.lower() or "denied" in text.lower():
+        return "The request was cancelled in Discord. Try again and press Authorize."
+    return f"Discord said: {text} (code {e.code})"
+
+
 def socket_paths():
     bases = [os.environ.get(k) for k in ("XDG_RUNTIME_DIR", "TMPDIR", "TMP", "TEMP")] + ["/tmp"]
     out = []
@@ -262,9 +279,7 @@ class Discord:
             data = self.request("AUTHORIZE", {"client_id": c["client_id"], "scopes": SCOPES}, timeout=300)
         except DiscordError as e:
             self._disconnect()
-            if e.code in (4000, 4002, 4006, 5000):
-                raise RuntimeError(f"Discord said: {e}. Make sure your account is allowed to test the app.") from None
-            raise
+            raise RuntimeError(authorize_error(e)) from None
         job.set(0.8, "Finishing…")
         try:
             tok = self._oauth({"grant_type": "authorization_code", "code": data["code"], "redirect_uri": REDIRECT})

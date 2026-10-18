@@ -158,6 +158,9 @@ class Overlay(Gtk.Application):
             self.render()
             LayerShell.set_keyboard_mode(self.win, LayerShell.KeyboardMode.EXCLUSIVE)
             self.win.present()
+            # tell crossbard we're really on screen (otherwise it takes the controller back)
+            GLib.timeout_add(150, lambda: threading.Thread(
+                target=lambda: self.api.post("/api/overlay/ack", {}), daemon=True).start() or False)
         else:
             LayerShell.set_keyboard_mode(self.win, LayerShell.KeyboardMode.NONE)
             self.win.set_visible(False)

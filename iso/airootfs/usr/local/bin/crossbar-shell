@@ -1,13 +1,38 @@
 #!/bin/bash
-# Runs inside sway: starts the backend, then keeps the XMB window alive.
+# Runs inside sway: starts and looks after Crossbar's pieces —
+#   the backend (server.py), the Quick Menu overlay, and the XMB window.
+# Each is restarted if it stops (that's how Settings › Restart Crossbar works),
+# and everything stops when this sway session ends.
 mkdir -p "$HOME/.cache"
-python3 /usr/lib/crossbar/server.py >>"$HOME/.cache/crossbard.log" 2>&1 &
+RUN="${XDG_RUNTIME_DIR:-/tmp}"
+GAMEMODE="$RUN/crossbar-gamemode"     # present while a game runs: the XMB window stays closed to save memory
+rm -f "$GAMEMODE"
+
+# A previous session may have left pieces running (for example if sway was quit):
+# they would answer on the backend's port with a dead screen behind them.
+pkill -u "$USER" -f "/usr/lib/crossbar/server.py" 2>/dev/null
+pkill -u "$USER" -f "/usr/lib/crossbar/overlay.py" 2>/dev/null
+pkill -u "$USER" -f "crossbar/shell-browser" 2>/dev/null
+sleep 0.5
+
+alive() { swaymsg -t get_version >/dev/null 2>&1; }
+cleanup() {
+  pkill -u "$USER" -f "/usr/lib/crossbar/server.py" 2>/dev/null
+  pkill -u "$USER" -f "/usr/lib/crossbar/overlay.py" 2>/dev/null
+  pkill -u "$USER" -f "crossbar/shell-browser" 2>/dev/null
+}
+trap cleanup EXIT
+
+( while alive; do
+    python3 /usr/lib/crossbar/server.py >>"$HOME/.cache/crossbard.log" 2>&1
+    sleep 1
+  done ) &
 
 until curl -s -o /dev/null http://127.0.0.1:7777/api/jobs; do sleep 0.3; done
 
 # Quick Menu overlay: drawn on the Wayland overlay layer, above games and video.
 if python3 -c "import ctypes; ctypes.CDLL('libgtk4-layer-shell.so')" 2>/dev/null; then
-  ( while true; do
+  ( while alive; do
       python3 /usr/lib/crossbar/overlay.py >>"$HOME/.cache/crossbar-overlay.log" 2>&1
       sleep 2
     done ) &
@@ -15,7 +40,8 @@ else
   echo "gtk4-layer-shell missing: Quick Menu falls back to the XMB" >>"$HOME/.cache/crossbard.log"
 fi
 
-while true; do
+while alive; do
+  if [ -e "$GAMEMODE" ]; then sleep 0.5; continue; fi
   chromium \
     --ozone-platform=wayland \
     --app=http://127.0.0.1:7777 \
@@ -23,6 +49,7 @@ while true; do
     --no-first-run --noerrdialogs --disable-infobars \
     --disable-session-crashed-bubble --disable-features=Translate \
     --autoplay-policy=no-user-gesture-required \
-    --password-store=basic
-  sleep 1   # crashed or closed: bring it straight back
+    --password-store=basic \
+    >>"$HOME/.cache/crossbar-xmb.log" 2>&1
+  sleep 1
 done
