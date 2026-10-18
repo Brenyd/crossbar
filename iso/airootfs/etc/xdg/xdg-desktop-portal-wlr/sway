@@ -1,0 +1,5 @@
+# Crossbar (sway session only): share the screen without a picker (nothing to click on a TV).
+# With no output_name, the portal picks the screen itself.
+[screencast]
+chooser_type=none
+max_fps=30

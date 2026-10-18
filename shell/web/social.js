@@ -160,6 +160,9 @@ async function socialItems() {
                 { label: d.mute ? 'Unmute Microphone' : 'Mute Microphone', action: () => discordAction('mute') },
                 { label: d.deaf ? 'Undeafen' : 'Deafen', action: () => discordAction('deaf') }] });
     items.push({ key: 'dc-mute', label: d.mute ? 'Unmute Microphone' : 'Mute Microphone', icon: 'mic', action: () => discordAction('mute') });
+    items.push({ key: 'dc-share', label: d.sharing ? 'Stop Sharing Screen' : 'Share Screen', icon: 'display', badge: d.sharing ? 'LIVE' : '',
+      sub: d.sharing ? 'Your friends can see your screen' : 'Show your friends what\'s on the TV (also in the Quick Menu)',
+      action: () => discordAction('share', { on: !d.sharing }, d.sharing ? 'Screen share stopped' : 'Sharing your screen') });
     items.push({ key: 'dc-deaf', label: d.deaf ? 'Undeafen' : 'Deafen', icon: 'sound', action: () => discordAction('deaf') });
   }
   items.push({ key: 'friends', label: 'Friends', icon: 'users', sub: 'Steam and Discord friends online now',

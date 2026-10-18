@@ -65,6 +65,8 @@ class DiscordWeb:
                 "--no-first-run", "--noerrdialogs", "--disable-infobars", "--disable-session-crashed-bubble",
                 "--hide-crash-restore-bubble", "--autoplay-policy=no-user-gesture-required",
                 "--enable-wayland-ime", "--wayland-text-input-version=3",
+                # screen share: through PipeWire / the desktop portal, the whole screen picked for you
+                "--enable-features=WebRTCPipeWireCapturer", "--auto-select-desktop-capture-source=Entire screen",
                 f"--window-size={w},{h}", "--window-position=0,0",
                 *os.environ.get("CROSSBAR_DISCORD_ARGS", "").split(),          # tests only
                 f"--app={os.environ.get('CROSSBAR_DISCORD_URL', URL)}"]
@@ -210,8 +212,9 @@ class DiscordWeb:
         voice = { channel: chan || 'Voice channel', guild, guild_id: parts[2] || '', channel_id: parts[3] || '' };
       }
       const on = (b) => b ? (b.getAttribute('aria-checked') === 'true' || /^un/i.test(b.getAttribute('aria-label'))) : false;
+      const sharing = !![...document.querySelectorAll('[aria-label]')].find((x) => /^(stop streaming|stop sharing)/i.test(x.getAttribute('aria-label')));
       return { signedIn, login: location.pathname.startsWith('/login'), voice,
-               mute: on(mute), deaf: on(deaf) };
+               mute: on(mute), deaf: on(deaf), sharing };
     })()"""
 
     def status(self):
@@ -225,7 +228,8 @@ class DiscordWeb:
             util.update_config(lambda c: c["discord"].__setitem__("signed_in", True))
         self.cache["voice"] = st.get("voice")
         return {"running": True, "signed_in": bool(st.get("signedIn")), "login": bool(st.get("login")),
-                "voice": st.get("voice"), "mute": bool(st.get("mute")), "deaf": bool(st.get("deaf"))}
+                "voice": st.get("voice"), "mute": bool(st.get("mute")), "deaf": bool(st.get("deaf")),
+                "sharing": bool(st.get("sharing"))}
 
     def guilds(self):
         self.start()
@@ -532,28 +536,148 @@ class DiscordWeb:
             time.sleep(0.25)
         raise DiscordError("Couldn't find that friend in Discord's Friends list")
 
+    # Discord's own functions, found among the page's modules the way its code finds them:
+    # open a DM (openPrivateChannel), go to a page (transitionTo), start or join a call
+    # (selectVoiceChannel: in a DM that's exactly what the call button does, and it rings them).
+    ACTIONS_JS = r"""(() => {
+      if (window.__cbActions && window.__cbActions.selectVoiceChannel) return window.__cbActions;
+      const chunk = window.webpackChunkdiscord_app;
+      if (!chunk || !chunk.push) return null;
+      let req = null;
+      try { chunk.push([[Symbol('crossbar-actions')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return null; }
+      if (!req || !req.c) return null;
+      const out = {};
+      const take = (obj) => {
+        if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
+        for (const name of ['selectVoiceChannel', 'openPrivateChannel', 'ensurePrivateChannel']) {
+          try { if (!out[name] && typeof obj[name] === 'function') out[name] = obj[name].bind(obj); } catch (e) { /* lazy */ }
+        }
+      };
+      for (const m of Object.values(req.c)) {
+        const ex = m && m.exports;
+        if (!ex) continue;
+        take(ex);
+        let keys = [];
+        try { keys = Object.keys(ex); } catch (e) { continue; }
+        for (const k of keys) {
+          let v; try { v = ex[k]; } catch (e) { continue; }
+          take(v);
+          if (!out.transitionTo && typeof v === 'function') {
+            try { if (/transitionTo - Transitioning to/.test(Function.prototype.toString.call(v))) out.transitionTo = v; } catch (e) { /* native */ }
+          }
+        }
+        if (out.selectVoiceChannel && out.openPrivateChannel && out.transitionTo) break;
+      }
+      window.__cbActions = out;
+      return out;
+    })()"""
+
+    def _internal_call(self, uid):
+        """Start the call with Discord's own functions. Returns a note of what was missing, or None."""
+        r = self.js(f"""(async () => {{
+            const S = {self.STORES_JS}, A = {self.ACTIONS_JS};
+            if (!S || !S.ChannelStore || !A) return {{ ok: false, why: 'modules not found' }};
+            const C = S.ChannelStore;
+            let cid = null;
+            try {{ cid = C.getDMFromUserId('{uid}'); }} catch (e) {{ /* older client */ }}
+            if (!cid) {{
+              const open = A.openPrivateChannel || A.ensurePrivateChannel;
+              if (!open) return {{ ok: false, why: 'no DM yet, and openPrivateChannel not found' }};
+              try {{ const r = open('{uid}'); if (r && r.then) await r; }} catch (e) {{ /* it may still have opened */ }}
+              for (let i = 0; i < 40 && !cid; i++) {{ await new Promise(r => setTimeout(r, 150)); try {{ cid = C.getDMFromUserId('{uid}'); }} catch (e) {{}} }}
+              if (!cid) return {{ ok: false, why: "Discord didn't create the DM" }};
+            }}
+            try {{ if (A.transitionTo) A.transitionTo('/channels/@me/' + cid); }} catch (e) {{ /* showing it is optional */ }}
+            if (!A.selectVoiceChannel) return {{ ok: false, why: 'selectVoiceChannel not found', cid }};
+            A.selectVoiceChannel(cid);
+            return {{ ok: true, cid }};
+          }})()""", timeout=20) or {}
+        return None if r.get("ok") else (r.get("why") or "unknown")
+
     def call(self, user_id):
-        """Open the DM with a friend and start a voice call (voice runs in the hidden window)."""
+        """Call a friend: Discord's own "start call" for your DM with them (it rings them),
+        falling back to opening the DM and pressing its call button / Ctrl+'."""
         uid = str(user_id)
         if not re.fullmatch(r"\d+|name:.{1,100}", uid):
             raise ValueError("user id")
         self.start()
-        if not self._open_dm(uid):
-            raise DiscordError("Discord didn't open the chat with that friend")
-        time.sleep(0.5)
-        for _ in range(15):                      # the header's buttons render a moment after the chat
-            if self.js(self.CALL_BTN_JS):
-                st = self._in_call()
+        notes = []
+        if uid.isdigit():
+            try:
+                why = self._internal_call(uid)
+            except DiscordError as e:
+                why = str(e)
+            if not why:
+                st = self._in_call(12)
                 if st:
                     return st
-                break
+                why = "the call didn't start"
+            notes.append(why)
+        try:
+            opened = self._open_dm(uid)
+        except DiscordError as e:
+            opened, _ = False, notes.append(str(e))
+        if opened:
+            time.sleep(0.5)
+            for _ in range(15):
+                if self.js(self.CALL_BTN_JS):
+                    st = self._in_call()
+                    if st:
+                        return st
+                    break
+                time.sleep(0.4)
+            self._press_call_shortcut()
+            st = self._in_call(10)
+            if st:
+                return st
+            notes.append("header buttons: " + (", ".join(self.js(self.HEADER_LABELS_JS) or []) or "none"))
+        else:
+            notes.append(f"chat didn't open (at {self.js('location.pathname')})")
+        raise DiscordError("Couldn't start the call — " + "; ".join(n for n in notes if n))
+
+    # ---- screen share (Go Live) -----------------------------------------------------------
+    # The button must be pressed with a real (trusted) click: browsers only allow screen
+    # capture from one. The screen is picked automatically (no picker to use on a TV).
+    SHARE_BTN_JS = r"""((want) => {
+      const re = want === 'stop' ? /^(stop streaming|stop sharing|stop screen ?share)/i : /^(share your screen|share screen|screen ?share|go live)/i;
+      const b = [...document.querySelectorAll('button[aria-label], [role=button][aria-label]')].find((x) => re.test(x.getAttribute('aria-label')))
+             || (want === 'golive' ? [...document.querySelectorAll('button')].find((x) => /^go live$/i.test((x.innerText || '').trim())) : null);
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return [r.left + r.width / 2, r.top + r.height / 2];
+    })"""
+
+    def _trusted_click(self, xy):
+        for t in ("mousePressed", "mouseReleased"):
+            self._cmd("Input.dispatchMouseEvent", {"type": t, "x": xy[0], "y": xy[1], "button": "left", "clickCount": 1})
+
+    def sharing(self):
+        return bool(self.js(f"!!{self.SHARE_BTN_JS}('stop')"))
+
+    def share_screen(self, on=True):
+        self.start()
+        if not self.status().get("voice"):
+            raise DiscordError("Join a voice channel or call first")
+        if not on:
+            xy = self.js(f"{self.SHARE_BTN_JS}('stop')")
+            if not xy:
+                return {"sharing": False}
+            self._trusted_click(xy)
+            return {"sharing": False}
+        if self.sharing():
+            return {"sharing": True}
+        xy = self.js(f"{self.SHARE_BTN_JS}('start')")
+        if not xy:
+            raise DiscordError("Couldn't find Discord's Share Your Screen button")
+        self._trusted_click(xy)
+        for _ in range(30):                     # Discord may ask for quality first: press its Go Live
             time.sleep(0.4)
-        self._press_call_shortcut()              # no button found (or it didn't start a call)
-        st = self._in_call(10)
-        if st:
-            return st
-        labels = ", ".join(self.js(self.HEADER_LABELS_JS) or []) or "none"
-        raise DiscordError(f"Couldn't start the call: no call button found (header buttons: {labels})")
+            if self.sharing():
+                return {"sharing": True}
+            golive = self.js(f"{self.SHARE_BTN_JS}('golive')")
+            if golive:
+                self._trusted_click(golive)
+        raise DiscordError("Screen sharing didn't start (the screen-capture portal may be missing: update Crossbar)")
 
     def sign_out_local(self):
         """Forget the Discord sign-in on this console (deletes the window's profile)."""

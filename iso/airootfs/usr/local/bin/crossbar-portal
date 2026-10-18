@@ -1,0 +1,13 @@
+#!/bin/bash
+# Run by sway at the start of the Crossbar session: tell D-Bus / systemd services which
+# Wayland display this is (the screen-capture portal needs it), then (re)start the portal so
+# it serves this session rather than one left from Plasma or gaming mode.
+#   crossbar-portal stop   — after the session ends, so the next session starts its own
+if [[ "${1:-}" == stop ]]; then
+  systemctl --user stop xdg-desktop-portal-wlr.service xdg-desktop-portal.service 2>/dev/null
+  exit 0
+fi
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK 2>/dev/null \
+  || systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK
+systemctl --user stop xdg-desktop-portal-wlr.service xdg-desktop-portal.service 2>/dev/null
+systemctl --user start xdg-desktop-portal.service 2>/dev/null || true

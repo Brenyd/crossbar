@@ -45,6 +45,8 @@ nfs-utils
 pipewire
 pipewire-pulse
 pipewire-alsa
+xdg-desktop-portal
+xdg-desktop-portal-wlr
 wireplumber
 # stores / games
 flatpak

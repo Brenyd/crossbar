@@ -201,7 +201,7 @@ def info():
             st = DISCORD.status()
             if st.get("voice"):
                 voice = {"channel": {"name": st["voice"]["channel"], "guild": st["voice"].get("guild"), "members": []},
-                         "mute": st.get("mute"), "deaf": st.get("deaf")}
+                         "mute": st.get("mute"), "deaf": st.get("deaf"), "sharing": st.get("sharing")}
     except Exception:
         pass
     browser = None

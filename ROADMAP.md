@@ -82,6 +82,10 @@
 - [x] Controller-friendly browser: link-to-link navigation, keyboard typing into pages, tabs, pointer mode, bookmarks, TV-sized
 - [x] Discord: calling friends opens the DM properly; looser call-button match plus Discord's Ctrl+' shortcut
 
+## 0.12.1
+- [x] Discord: Share Screen (Social / Quick Menu), with the wlroots screen-capture portal set up for the Crossbar session
+- [x] Discord: calling friends through Discord's own start-call (rings them; creates the DM if needed)
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

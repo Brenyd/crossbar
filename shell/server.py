@@ -191,6 +191,8 @@ def r_discord(action, b):
         return discord_state()
     if action == "call":
         return DISCORD.call(b["id"])
+    if action == "share":
+        return DISCORD.share_screen(bool(b.get("on", True)))
     if action == "signout":
         DISCORD.sign_out_local()
         return discord_state()

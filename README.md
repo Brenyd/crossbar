@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.12
+# Crossbar — prototype 0.12.1
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -325,6 +325,14 @@ rarely break it; if one does, an action reports "couldn't find" and **Open Disco
    so Party only lists the ones you use.
 3. **Open Discord** shows the full client (text chat, friends) with controller keys and the
    on-screen keyboard; the Quick Menu brings you back.
+
+**Calling a friend** (Social › Friends › Discord › A) uses Discord's own "start call" for your DM with
+them, the same thing its call button does, so it rings them; a DM is created first if you've never
+messaged them.
+
+**Share Screen** (Social, or the Quick Menu while you're in a call) goes live with what's on the TV.
+The screen is picked for you (there's no picker to click on a TV); it uses the wlroots screen-capture
+portal, which Crossbar sets up for its own session only (Plasma and gaming mode keep theirs).
 
 Automating your own Discord client is a grey area in Discord's terms; Crossbar only does what you
 ask for (join, leave, mute) and never reads or sends messages on its own.

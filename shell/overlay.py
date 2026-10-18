@@ -48,12 +48,17 @@ class Api:
         with urllib.request.urlopen(BASE + path, timeout=5) as r:
             return json.loads(r.read() or b"null")
 
-    def post(self, path, body):
+    def post(self, path, body, timeout=10):
         req = urllib.request.Request(BASE + path, data=json.dumps(body or {}).encode(),
                                      headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.loads(r.read() or b"null")
+        except urllib.error.HTTPError as e:            # the backend's own message ("Join a voice channel first")
+            try:
+                return {"error": json.loads(e.read() or b"{}").get("error") or str(e)}
+            except ValueError:
+                return {"error": str(e)}
         except Exception as e:
             print(f"overlay: {path}: {e}", flush=True)
             return None

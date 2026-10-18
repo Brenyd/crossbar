@@ -280,6 +280,21 @@ class Model:
                          "hint": "{ok} mute · ◀ leave",
                          "ok": lambda: (api.post("/api/discord/mute", {}), self.refresh()),
                          "adjust": lambda d_: (api.post("/api/discord/leave", {}), self.refresh()) if d_ < 0 else None})
+            sharing = bool(voice.get("sharing"))
+
+            def share():
+                self.notice = "Stopping…" if sharing else "Starting screen share…"
+                self.rebuild()
+
+                def run():                            # can take several seconds: don't freeze the menu
+                    try:
+                        r = api.post("/api/discord/share", {"on": not sharing}, timeout=40) or {}
+                    except TypeError:                 # an api without timeouts (tests)
+                        r = api.post("/api/discord/share", {"on": not sharing}) or {}
+                    self.notice = r.get("error") or ("Sharing your screen" if r.get("sharing") else "Screen share stopped")
+                __import__("threading").Thread(target=run, daemon=True).start()
+            rows.append({"key": "share", "icon": "video-display-symbolic", "label": "Stop Sharing Screen" if sharing else "Share Screen",
+                         "sub": "Your friends see what's on the TV" if not sharing else "Live on Discord", "ok": share})
 
         out = (d.get("audio") or {}).get("output") or {}
         if out.get("volume") is not None:

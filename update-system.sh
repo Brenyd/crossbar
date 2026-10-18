@@ -70,6 +70,9 @@ install -Dm644 "$HERE/iso/airootfs/etc/polkit-1/rules.d/50-crossbar.rules" /etc/
 install -Dm644 "$HERE/iso/airootfs/usr/share/polkit-1/actions/org.crossbar.admin.policy" /usr/share/polkit-1/actions/org.crossbar.admin.policy
 install -Dm644 "$HERE/iso/airootfs/usr/share/wayland-sessions/crossbar.desktop" /usr/share/wayland-sessions/crossbar.desktop
 install -Dm644 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.desktop" /usr/share/applications/crossbar-return.desktop
+# screen capture (Discord's Share Screen) in the Crossbar session only
+install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal/sway-portals.conf" /etc/xdg/xdg-desktop-portal/sway-portals.conf
+install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal-wlr/sway" /etc/xdg/xdg-desktop-portal-wlr/sway
 chmod 755 /usr/lib/crossbar/admin.py /usr/lib/crossbar/inputd.py /usr/lib/crossbar/overlay.py
 modprobe uinput || true
 udevadm control --reload
@@ -105,6 +108,7 @@ if [[ -n "$SOCK" ]]; then
     echo "$(date "+%F %T") update: restarting Crossbar"
     sleep 2
     swaymsg reload >/dev/null 2>&1                                   # new keybindings / rules
+    swaymsg exec /usr/local/bin/crossbar-portal >/dev/null 2>&1     # screen capture for this session
     # the new supervisor takes over: stops the old one and its pieces, then starts everything
     swaymsg exec /usr/local/bin/crossbar-shell
     sleep 10                     # the old backend is still answering for a few seconds

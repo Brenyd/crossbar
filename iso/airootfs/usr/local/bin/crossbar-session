@@ -8,4 +8,7 @@ export CROSSBAR_GAMES="$HOME/Games"
 mkdir -p "$HOME/.cache"
 # Machine-specific variables your usual session needs (display / GPU tweaks), if any.
 [ -f "$HOME/.config/crossbar/session.env" ] && { set -a; . "$HOME/.config/crossbar/session.env"; set +a; }
-exec sway -c /etc/crossbar/sway.conf >"$HOME/.cache/sway.log" 2>&1
+sway -c /etc/crossbar/sway.conf >"$HOME/.cache/sway.log" 2>&1
+rc=$?
+/usr/local/bin/crossbar-portal stop     # the next session (Plasma, gaming mode) starts its own
+exit $rc

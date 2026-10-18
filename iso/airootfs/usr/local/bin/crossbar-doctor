@@ -47,5 +47,10 @@ echo "== overlay (crossbar-overlay)"
 pgrep -af overlay.py || echo "overlay not running"
 tail -n 8 ~/.cache/crossbar-overlay.log 2>/dev/null
 echo
+echo "== screen capture (Discord Share Screen)"
+for p in xdg-desktop-portal xdg-desktop-portal-wlr; do pacman -Q "$p" 2>/dev/null || echo "$p: NOT installed"; done
+systemctl --user is-active xdg-desktop-portal.service xdg-desktop-portal-wlr.service 2>&1 | paste -sd' ' | sed 's/^/portal services: /'
+systemctl --user show-environment 2>/dev/null | grep -E '^(WAYLAND_DISPLAY|XDG_CURRENT_DESKTOP)=' | paste -sd' ' | sed 's/^/activation env: /'
+echo
 echo "== last lines of ~/.cache/crossbard.log"
 tail -n 25 ~/.cache/crossbard.log 2>/dev/null
