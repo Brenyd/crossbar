@@ -245,8 +245,8 @@ CATS.push(
     id: 'tv', label: 'TV & Video Services', icon: 'tv',
     async load() {
       const items = S.state.tv.map((t, i) => ({
-        key: `tv:${t.url}`, label: t.name, icon: 'tv', sub: t.tv_ui ? 'TV interface — arrow keys or controller' : t.url.replace(/^https?:\/\//, ''),
-        action: () => call(() => api.post('/api/tv/open', { index: i }), `Opening ${t.name}… press Home to come back`),
+        key: `tv:${t.url}`, label: t.name, icon: 'tv', sub: t.tv_ui ? 'TV interface — controller ready' : t.url.replace(/^https?:\/\//, ''),
+        action: () => call(() => api.post('/api/tv/open', { index: i }), `Opening ${t.name} full screen — Guide/PS or Home for the Quick Menu`),
         options: [{ label: 'Open', action: () => call(() => api.post('/api/tv/open', { index: i })) },
                   { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${t.name}?`)) { S.state = await api.post('/api/tv/remove', { index: i }); refresh('tv'); } } }],
       }));

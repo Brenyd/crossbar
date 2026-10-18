@@ -75,6 +75,7 @@ const Dialog = {
     this.open = true; this.sel = def; this.buttons = buttons;
     $('.dlg-title').textContent = title;
     $('.dlg-body').textContent = body;
+    $('.dlg-body').classList.toggle('long', String(body).split('\n').length > 5);
     clearInterval(this.timer);
     if (timeout) {  // e.g. "Keep this resolution?" reverts by itself
       let left = Math.round(timeout / 1000);
@@ -602,7 +603,12 @@ function fire(a) {
 }
 requestAnimationFrame(pollPads);
 // Coming back from a game: buttons still held must not "click" in the XMB.
-addEventListener('focus', () => { pad.justFocused = true; });
+addEventListener('focus', async () => {
+  pad.justFocused = true;
+  // Backup path: if the Quick Menu was requested while the event stream was down.
+  const p = await api.get('/api/quick/pending').catch(() => null);
+  if (p?.open && !QuickMenu.open) QuickMenu.show(true);
+});
 
 // Event stream from the backend: controller input and Quick Menu requests.
 function connectEvents() {
@@ -615,7 +621,7 @@ function connectEvents() {
       }
       act(ev.action);
     } else if (ev.type === 'quick') {
-      if (ev.open) QuickMenu.show(ev.shot); else QuickMenu.toggle();
+      if (ev.open) { api.get('/api/quick/pending').catch(() => {}); QuickMenu.show(ev.shot); } else QuickMenu.toggle();
     }
   };
   es.onerror = () => { es.close(); setTimeout(connectEvents, 1500); };
@@ -698,4 +704,5 @@ async function boot() {
   await Promise.all(CATS.map((c) => refresh(c.id)));
   render();
   setTimeout(() => { $('#boot').classList.add('done'); Sfx.ok(); }, 900);
+  if (S.state.pads?.error) setTimeout(() => toast(S.state.pads.error, 'game'), 2500);
 }

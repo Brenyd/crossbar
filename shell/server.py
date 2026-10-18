@@ -26,7 +26,7 @@ if os.path.isdir(vendor):
 
 from crossbar import controls, display, media, party, player, quick, system, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
-from crossbar.gamepad import Gamepads  # noqa: E402
+from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
 from crossbar.providers.demo import Demo  # noqa: E402
 from crossbar.providers.epic import Epic  # noqa: E402
@@ -101,6 +101,34 @@ def state():
 
 
 # ---- routes ------------------------------------------------------------
+def diagnostics():
+    """What crossbard sees — for Settings › Controller Diagnostics and crossbar-doctor."""
+    import grp
+    f = system.focused()
+    groups = sorted({grp.getgrgid(g).gr_name for g in os.getgroups() if _safe_gr(g)})
+    return {
+        "pads": PADS.status(),
+        "recent_input": PADS.recent(),
+        "sway": f is not None,
+        "focused": f,
+        "xmb_window": bool(system.ensure_xmb_mark()),
+        "user_groups": groups,
+        "uinput": os.access("/dev/uinput", os.W_OK),
+        "grim": bool(util.which("grim")),
+        "mpv": bool(util.which("mpv")),
+        "event_stream_listeners": HUB.listeners(),
+    }
+
+
+def _safe_gr(g):
+    import grp
+    try:
+        grp.getgrgid(g)
+        return True
+    except KeyError:
+        return False
+
+
 def r_install(b):
     p = provider(b["provider"])
     return JOBS.start("install", b.get("title", b["id"]), lambda j: p.install(j, b["id"]), p.id, b["id"]).as_dict()
@@ -165,6 +193,8 @@ def r_search(q):
 GET = {
     "/api/state": lambda q: state(),
     "/api/quick": lambda q: quick.info(),
+    "/api/quick/pending": lambda q: {"open": quick.take_pending()},
+    "/api/diagnostics": lambda q: diagnostics(),
     "/api/controls": lambda q: {**controls.describe(), "pads": PADS.status()},
     "/api/installed": lambda q: installed_games(),
     "/api/jobs": lambda q: JOBS.list(),
@@ -233,7 +263,7 @@ def r_tv(action, b):
     if action == "open":
         svc = util.load_config()["tv"][int(b["index"])]
         player.pause_music()
-        system.open_web(svc["url"], "tv", tv_ui=svc.get("tv_ui", False))
+        system.open_web(svc["url"], "tv-" + util.slug(svc["name"]), tv_ui=svc.get("tv_ui", False))
     elif action == "add":
         url = b["url"].strip()
         if not url.startswith(("http://", "https://")):
@@ -309,7 +339,7 @@ def route_post(path, b):
         return player.music_state()
     if head == "video" and parts[1] == "play":
         pause_spotify()
-        player.play_video(b["paths"], b.get("index", 0))
+        player.play_video(b["paths"], b.get("index", 0), mpv_gamepad=mpv_should_read_gamepad(PADS))
         return {"ok": True}
     if head == "display":
         if parts[1] == "mode":
@@ -462,6 +492,12 @@ def main():
     FORCE_DEMO = a.demo
     os.makedirs(util.GAMES_DIR, exist_ok=True)
     PADS.start()
+
+    def keep_xmb_marked():
+        while True:
+            system.ensure_xmb_mark()
+            time.sleep(5)
+    threading.Thread(target=keep_xmb_marked, daemon=True).start()
     system.bind_home_keys(controls.load()["keyboard"]["home"])
     threading.Thread(target=lambda: (display.apply_saved(), SPOTIFY.ensure_receiver()), daemon=True).start()
     srv = ThreadingHTTPServer(("127.0.0.1", a.port), Handler)

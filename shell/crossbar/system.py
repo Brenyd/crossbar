@@ -17,9 +17,43 @@ def _swaymsg(*args):
     return r.stdout if r.returncode == 0 else None
 
 
+XMB_TITLE = "Crossbar"
+
+
+def is_xmb(f):
+    return bool(f) and f.get("title") == XMB_TITLE and "chrom" in (f.get("app") or "").lower()
+
+
+def is_web_app(f):
+    """Chromium windows other than the XMB: TV services, the browser, sign-in pages."""
+    return bool(f) and "chrom" in (f.get("app") or "").lower() and not is_xmb(f) and "xmb" not in f.get("marks", [])
+
+
+def ensure_xmb_mark():
+    """Mark the XMB window so we can always focus it, even if sway's title rule missed it."""
+    raw = _swaymsg("-t", "get_tree", "-r")
+    if not raw:
+        return None
+    stack, found = [json.loads(raw)], None
+    while stack:
+        n = stack.pop()
+        if n.get("pid") and (n.get("name") == XMB_TITLE or "xmb" in n.get("marks", [])):
+            found = n
+            if "xmb" not in n.get("marks", []):
+                _swaymsg(f"[con_id={n['id']}] mark --add xmb")
+            break
+        stack += n.get("nodes", []) + n.get("floating_nodes", [])
+    return found
+
+
 def show_shell():
-    """Bring the XMB to the front."""
-    _swaymsg("[all] fullscreen disable; [con_mark=xmb] focus")
+    """Bring the XMB to the front (two steps, so one failing can't block the other)."""
+    _swaymsg("[all] fullscreen disable")
+    xmb = ensure_xmb_mark()
+    if xmb:
+        _swaymsg(f"[con_id={xmb['id']}] focus")
+    else:
+        _swaymsg("[con_mark=xmb] focus")
 
 
 def focus_shell():
@@ -233,12 +267,30 @@ def wifi_connect(ssid, password=""):
 
 
 # ---- apps in their own window (TV services, browser) ------------------------
+def screen_size():
+    """Current resolution of the main display (falls back to 1920x1080)."""
+    raw = _swaymsg("-t", "get_outputs", "-r")
+    try:
+        for o in json.loads(raw or "[]"):
+            if o.get("active") and o.get("current_mode"):
+                scale = o.get("scale") or 1
+                return int(o["current_mode"]["width"] / scale), int(o["current_mode"]["height"] / scale)
+    except (ValueError, KeyError):
+        pass
+    return 1920, 1080
+
+
 def open_web(url, profile, tv_ui=False, app=True):
+    w, h = screen_size()
     args = ["chromium", "--ozone-platform-hint=auto", f"--user-data-dir={os.path.join(util.CONFIG_DIR, profile)}",
-            "--no-first-run", "--autoplay-policy=no-user-gesture-required"]
+            "--no-first-run", "--autoplay-policy=no-user-gesture-required", "--noerrdialogs",
+            "--disable-infobars", "--disable-session-crashed-bubble", "--hide-crash-restore-bubble",
+            f"--window-size={w},{h}", "--window-position=0,0"]
     if tv_ui:
         # YouTube serves its controller-friendly TV interface to console browsers.
         args.append("--user-agent=Mozilla/5.0 (PS4; Leanback Shell) Gecko/20100101 Firefox/65.0 "
                     "LeanbackShell/01.00.01.75 Sony PS4/ (PS4, , no, CH)")
-    args += [f"--app={url}"] if app else ["--start-maximized", url]
+    # TV services run full screen with no browser UI, like a console app;
+    # Guide/PS (or Home) opens the Quick Menu to leave or close them.
+    args += ["--kiosk", url] if app else ["--start-maximized", url]
     util.spawn(args)

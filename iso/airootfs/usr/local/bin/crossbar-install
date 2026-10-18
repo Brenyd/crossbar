@@ -59,7 +59,9 @@ pacstrap -K /mnt base linux linux-firmware "${UCODE[@]}" networkmanager iwd sudo
 bold ":: Copying Crossbar"
 cp /etc/pacman.conf /mnt/etc/pacman.conf            # keeps multilib for Steam
 cp -r /usr/lib/crossbar /mnt/usr/lib/
-cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,crossbar-home,legendary} /mnt/usr/local/bin/
+cp /usr/local/bin/{crossbar-session,crossbar-shell,crossbar-setup,crossbar-home,crossbar-doctor,legendary} /mnt/usr/local/bin/
+install -Dm644 /etc/udev/rules.d/70-crossbar-input.rules /mnt/etc/udev/rules.d/70-crossbar-input.rules
+install -Dm644 /etc/modules-load.d/crossbar-uinput.conf /mnt/etc/modules-load.d/crossbar-uinput.conf
 cp -r /etc/crossbar /mnt/etc/
 cp /etc/systemd/system/crossbar-setup.service /mnt/etc/systemd/system/
 mkdir -p /mnt/etc/systemd/system/getty@tty1.service.d

@@ -155,3 +155,7 @@ body.infolder #cats { opacity: 0; }
 #options { z-index: 7; }
 #dialog { z-index: 8; }
 #toasts { z-index: 9; }
+
+.dlg-body { max-height: 640px; overflow: hidden; }
+#dialog .dlg-body:has(+ .dlg-fields:empty) { text-align: center; }
+.dlg-body.long { font-size: 25px; text-align: left; max-width: 1100px; line-height: 1.55; }

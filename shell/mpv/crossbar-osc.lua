@@ -247,6 +247,25 @@ for action, list in pairs(load_keys()) do
   end
 end
 mp.add_forced_key_binding("KP_ENTER", "crossbar-kpenter", function() act("ok") end)
+
+-- Fallback when Crossbar's controller service can't read the pad: mpv reads it
+-- itself (--input-gamepad) and these bindings drive the same panel.
+if mp.get_opt("crossbar-gamepad") == "yes" then
+  local PAD = {
+    GAMEPAD_DPAD_UP = "up", GAMEPAD_DPAD_DOWN = "down", GAMEPAD_DPAD_LEFT = "left", GAMEPAD_DPAD_RIGHT = "right",
+    GAMEPAD_LEFT_STICK_UP = "up", GAMEPAD_LEFT_STICK_DOWN = "down",
+    GAMEPAD_LEFT_STICK_LEFT = "left", GAMEPAD_LEFT_STICK_RIGHT = "right",
+    GAMEPAD_ACTION_DOWN = "ok", GAMEPAD_ACTION_RIGHT = "back", GAMEPAD_ACTION_UP = "menu", GAMEPAD_ACTION_LEFT = "menu",
+    GAMEPAD_LEFT_SHOULDER = "prev", GAMEPAD_RIGHT_SHOULDER = "next", GAMEPAD_START = "toggle", GAMEPAD_BACK = "menu",
+  }
+  for key, a in pairs(PAD) do
+    mp.add_forced_key_binding(key, "crossbar-pad-" .. key, function() act(a) end,
+      { repeatable = (a == "up" or a == "down") })
+  end
+  mp.add_forced_key_binding("GAMEPAD_GUIDE", "crossbar-pad-guide", function()
+    mp.commandv("run", "/usr/local/bin/crossbar-home")
+  end)
+end
 mp.add_forced_key_binding("MOUSE_MOVE", "crossbar-mouse", function() show() end)
 mp.add_forced_key_binding("MBTN_LEFT", "crossbar-click", function() act(visible and "toggle" or "menu") end)
 

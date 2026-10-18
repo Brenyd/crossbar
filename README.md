@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.3
+# Crossbar — prototype 0.4
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -55,10 +55,24 @@ To install permanently, open **Settings › Install to Disk** from the live syst
 | Play/Pause, previous, next track (in the XMB) | P, Page Up, Page Down | Start, L1, R1 |
 | Terminal (debugging) | Ctrl+Alt+T | |
 
+**Web apps** (YouTube, Twitch, Plex, the browser) open full screen at your display's
+resolution, and the controller works in them too: Crossbar types arrow keys, Enter (A),
+Esc (B), Tab (Y) and media keys on a virtual keyboard. YouTube opens in its TV interface,
+which is built for exactly this.
+
 Every button and key above can be changed in **Settings › Controller & Keyboard**: pick an
 action, press the new button (or key), done. There's also *Swap Select and Back* and
 *Reset All to Defaults*. Controllers are read by Crossbar itself and input only goes to
 whatever is on screen — the menu, the video player, or nothing (games read the pad directly).
+
+### If the controller works in the menu but not in videos, web apps or the Quick Menu
+
+Crossbar can't read the controller device, so only the menu (via the browser) sees it.
+**Settings › Controller & Keyboard › Controller Diagnostics** shows what Crossbar sees and
+the last buttons it received. For a full report press Ctrl+Alt+T and run `crossbar-doctor`.
+The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that gives the
+console user access to controllers and `/dev/uinput`. On an existing install, copy that rule
+in and reboot. In a VM, pass the controller through as a USB device.
 
 ## Quick Menu
 

@@ -8,6 +8,11 @@ for g in wheel input video audio render; do
   getent group "$g" >/dev/null && usermod -aG "$g" "$U"
 done
 
+# Re-apply device permissions now that the groups exist (controllers, /dev/uinput).
+modprobe uinput 2>/dev/null || true
+udevadm control --reload 2>/dev/null || true
+udevadm trigger --subsystem-match=input --subsystem-match=misc --action=change 2>/dev/null || true
+
 # A disk for games. Only ever formats the VM disk created by run-vm.sh (serial
 # "crossbar-games") and only if it's blank. On real hardware, label any ext4
 # partition CROSSBAR_GAMES yourself and it will be mounted.

@@ -169,7 +169,7 @@ def pause_music():
 
 
 # ---- video ---------------------------------------------------------------
-def play_video(paths, index=0):
+def play_video(paths, index=0, mpv_gamepad=False):
     paths = [p for p in paths if os.path.isfile(p)]
     if not paths:
         raise RuntimeError("Nothing to play")
@@ -191,7 +191,9 @@ def play_video(paths, index=0):
         "--save-position-on-quit" if cfg.get("resume", True) else "--no-save-position-on-quit",
         "--sub-auto=fuzzy", f"--sid={'no' if cfg.get('subtitles') == 'off' else 'auto'}",
         "--hwdec=auto-safe", "--cursor-autohide=1000",
-        f"--script-opts=crossbar-controls={os.path.join(util.CONFIG_DIR, 'controls.json')}",
+        f"--script-opts=crossbar-controls={os.path.join(util.CONFIG_DIR, 'controls.json')},"
+        f"crossbar-gamepad={'yes' if mpv_gamepad else 'no'}",
+        f"--input-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--playlist={m3u}", f"--playlist-start={int(index)}",
     ]
     VIDEO.start(args)

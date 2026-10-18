@@ -1,0 +1,8 @@
+# Crossbar: let the console user read controllers and drive web apps with them.
+# (uaccess = an ACL for whoever is logged in on the screen; the group is a backup.)
+
+# Game controllers
+SUBSYSTEM=="input", KERNEL=="event*", ENV{ID_INPUT_JOYSTICK}=="1", MODE="0660", GROUP="input", TAG+="uaccess"
+
+# Virtual keyboard Crossbar uses to send controller presses to YouTube and other web apps
+KERNEL=="uinput", SUBSYSTEM=="misc", MODE="0660", GROUP="input", TAG+="uaccess", OPTIONS+="static_node=uinput"

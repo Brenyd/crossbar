@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Prints what Crossbar can see — paste the output when reporting a problem.
+#   crossbar-doctor            (in the terminal: Ctrl+Alt+T)
+echo "== Crossbar doctor  $(date)"
+echo "user: $(id)"
+echo
+echo "== crossbard diagnostics"
+curl -s http://127.0.0.1:7777/api/diagnostics | python3 -m json.tool 2>/dev/null || echo "crossbard is not running (see ~/.cache/crossbard.log)"
+echo
+echo "== controller device nodes"
+for n in /dev/input/event*; do
+  name=$(cat /sys/class/input/$(basename "$n")/device/name 2>/dev/null)
+  if udevadm info -q property -n "$n" 2>/dev/null | grep -q '^ID_INPUT_JOYSTICK=1'; then
+    printf '%-20s %-40s %s  readable:%s\n' "$n" "$name" "$(stat -c '%U:%G %a' "$n")" "$([ -r "$n" ] && echo yes || echo NO)"
+  fi
+done
+echo "/dev/uinput: $(stat -c '%U:%G %a' /dev/uinput 2>/dev/null || echo missing)  writable:$([ -w /dev/uinput ] && echo yes || echo NO)"
+echo
+echo "== windows (sway)"
+swaymsg -t get_tree -r 2>/dev/null | python3 -c '
+import json,sys
+def walk(n):
+    if n.get("pid"):
+        print(("* " if n.get("focused") else "  ") + str(n.get("app_id") or (n.get("window_properties") or {}).get("class")) + "  |  " + str(n.get("name")) + "  marks=" + str(n.get("marks")))
+    for c in n.get("nodes",[]) + n.get("floating_nodes",[]): walk(c)
+walk(json.load(sys.stdin))' || echo "not in the sway session"
+echo
+echo "== last lines of ~/.cache/crossbard.log"
+tail -n 25 ~/.cache/crossbard.log 2>/dev/null

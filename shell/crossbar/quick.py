@@ -14,7 +14,7 @@ from .events import HUB
 from .spotify import SPOTIFY
 
 SHOT = os.path.join(player.RUNTIME, "crossbar-overlay.jpg")
-STATE = {"app": None}
+STATE = {"app": None, "pending": 0}
 _sp_cache = [0, None]
 
 
@@ -40,8 +40,16 @@ def home_pressed():
     shot = _screenshot()
     if video:
         player.pause_video()
+    STATE["pending"] = time.time()
     system.show_shell()
     HUB.publish({"type": "quick", "open": True, "shot": shot, "t": time.time()})
+
+
+def take_pending():
+    """The XMB asks this when it gets focus, in case the event stream missed the request."""
+    pending = time.time() - STATE["pending"] < 4
+    STATE["pending"] = 0
+    return pending
 
 
 def _app():

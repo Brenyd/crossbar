@@ -128,6 +128,27 @@ function bindingItems(kind) {
   };
 }
 
+async function showDiagnostics() {
+  const d = await api.get('/api/diagnostics');
+  const p = d.pads;
+  const when = (t) => `${Math.max(0, Math.round(Date.now() / 1000 - t))}s ago`;
+  const lines = [
+    `Controllers in use: ${p.devices.length ? p.devices.join(', ') : 'none'}`,
+    p.unreadable.length ? `Found but NOT readable: ${p.unreadable.join(', ')}` : '',
+    !p.available ? 'python-evdev missing — controllers only work in the menu' : '',
+    `Web-app controls (/dev/uinput): ${d.uinput ? 'OK' : 'no access'}${p.uinput_error ? ' — ' + p.uinput_error : ''}`,
+    `Window in front: ${d.focused ? (d.focused.app || '?') + ' — ' + (d.focused.title || '') : 'not in the Crossbar session'}`,
+    `Menu window found: ${d.xmb_window ? 'yes' : 'no'} · Quick Menu screenshots: ${d.grim ? 'yes' : 'no (grim missing)'}`,
+    `Groups: ${d.user_groups.join(' ')}`,
+    '',
+    'Last buttons (newest first):',
+    ...(d.recent_input.length ? d.recent_input.slice(0, 6).map((e) => `  ${e.token} → ${e.action || '—'} → ${e.to}  (${when(e.t)})`) : ['  none yet — press something, then open this again']),
+    '',
+    'Full report: Ctrl+Alt+T, then run crossbar-doctor',
+  ].filter((x) => x !== '');
+  message(lines.join('\n'), 'Controller Diagnostics');
+}
+
 const CONTROLS_FOLDER = {
   key: 'controls', label: 'Controller & Keyboard', icon: 'game', sub: 'Button and key mapping',
   children: async () => {
@@ -137,7 +158,9 @@ const CONTROLS_FOLDER = {
       { key: 'devices', label: 'Connected Controllers', icon: 'game',
         sub: pads.length ? pads.join(', ') : (c.pads.available ? 'None connected' : 'Read by the browser'),
         action: () => message(pads.length ? pads.join('\n') : 'No controller detected.\nUSB and Bluetooth pads appear here once connected.', 'Controllers') },
+      ...(c.pads.error ? [{ key: 'warn', label: 'Controller Not Readable', icon: 'info', sub: c.pads.error, action: showDiagnostics }] : []),
       { key: 'pad', label: 'Controller Buttons', icon: 'game', sub: 'Choose what each button does', children: bindingItems('gamepad') },
+      { key: 'diag', label: 'Controller Diagnostics', icon: 'info', sub: 'What Crossbar sees, and the last buttons pressed', action: showDiagnostics },
       { key: 'kbd', label: 'Keyboard Keys', icon: 'browser', sub: 'Choose what each key does', children: bindingItems('keyboard') },
       { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with B / ○ instead of A / ✕ (or back again)',
         action: async () => savedControls(await api.post('/api/controls', { swap: true }), 'Select and Back swapped') },
@@ -281,7 +304,7 @@ const SETTINGS_FOLDERS = [
         } },
         ...(st.live ? [{ key: 'install', label: 'Install to Disk', icon: 'download', sub: 'Erases a disk and installs Crossbar permanently',
           action: async () => { if (await confirmBox('Open the installer?\nYou will pick the disk and confirm before anything is erased.')) call(() => api.post('/api/installer')); } }] : []),
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.3', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.3', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.4', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.4', 'About') },
       ];
     },
   },
