@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import compat, controls, files, iptv, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import compat, controls, files, glyphs, iptv, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -46,6 +46,7 @@ REAL = {p.id: p for p in (Steam(), GOG(), Epic())}
 DEMO = {pid: Demo(pid) for pid in REAL}
 JOBS = JobManager()
 PADS = Gamepads(on_home=quick.home_pressed)
+glyphs.PAD_NAMES = lambda: PADS.status().get("devices") or []
 quick.OVERLAY["hook"] = PADS.set_overlay
 FORCE_DEMO = False
 
@@ -110,6 +111,7 @@ def state():
         "gamescope": cfg.get("gamescope", False),
         "steam_bigpicture": cfg.get("steam_bigpicture", True),
         "free_memory_in_games": cfg.get("free_memory_in_games", True),
+        "glyphs": glyphs.current(),
         "desktop_available": session.desktop_available(),
         "boot_mode": session.boot_mode(),
         "gamescope_available": bool(util.which("gamescope")),
@@ -279,7 +281,10 @@ def r_login(pid, b):
 
 
 def r_settings(b):
-    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games"}
+    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games", "glyphs"}
+
+    if "glyphs" in b and b["glyphs"] not in ("auto", *glyphs.STYLES):
+        raise ValueError("glyphs must be auto, xbox, playstation or nintendo")
 
     def apply(c):
         for k, v in b.items():
@@ -288,6 +293,8 @@ def r_settings(b):
             elif k == "video" and isinstance(v, dict):
                 c["video"].update({kk: vv for kk, vv in v.items() if kk in ("resume", "subtitles")})
     util.update_config(apply)
+    if "glyphs" in b:
+        player.write_glyphs()          # a playing video picks the new style up within seconds
     return state()
 
 
@@ -351,6 +358,7 @@ GET = {
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
+    "/api/audio/apps": lambda q: system.app_streams(),
     "/api/audio/devices": lambda q: system.audio_devices(),
     "/api/network": lambda q: system.network_status(),
     "/api/wifi": lambda q: system.wifi_networks(),
@@ -434,6 +442,9 @@ def route_post(path, b):
         return r_settings(b)
     if head == "party":
         return r_party(parts[1], b)
+    if head == "audio" and len(parts) > 1 and parts[1] == "app":
+        system.set_app_volume(b["ids"], b.get("delta"), b.get("mute"))
+        return {"apps": system.app_streams()}
     if head == "audio":
         system.set_audio(b["target"], b.get("delta"), b.get("mute"))
         return system.audio()

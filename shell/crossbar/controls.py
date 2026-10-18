@@ -163,4 +163,22 @@ def describe():
     c = load()
     return {**c, "actions": [{"id": a, "name": n} for a, n in ACTIONS],
             "guide_home": "BTN_MODE" in c["gamepad"]["home"],
-            "labels": {t: pad_label(t) for toks in c["gamepad"].values() for t in toks}}
+            "labels": _labels(c)}
+
+
+def _labels(c):
+    """Button names in the chosen glyph style (Xbox / PlayStation / Nintendo)."""
+    from . import glyphs
+    toks = {t for toks in c["gamepad"].values() for t in toks}
+    try:
+        g = glyphs.current()
+        xpad = glyphs.xpad_layout(glyphs.PAD_NAMES())
+        out = {}
+        for t in toks:
+            if t.startswith(("ABS_X", "ABS_Y", "ABS_RX", "ABS_RY", "ABS_HAT", "BTN_DPAD")):
+                out[t] = pad_label(t)
+            else:
+                out[t] = glyphs.label(t, g["style"], xpad)
+        return out
+    except Exception:
+        return {t: pad_label(t) for t in toks}

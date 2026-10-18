@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.9.1
+# Crossbar — prototype 0.9.2
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -169,6 +169,15 @@ The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that giv
 console user access to controllers and `/dev/uinput`. On an existing install, copy that rule
 in and reboot. In a VM, pass the controller through as a USB device.
 
+## Button glyphs
+
+**Settings › Controller & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
+Xbox (A B X Y), PlayStation (✕ ○ □ △) or Nintendo (B A Y X). Every hint uses them — the menu, the
+Quick Menu, the video player's panel and the remapping screen — and they follow your button mapping,
+so a remapped action shows the button you actually press. Glyphs follow the button's *position*
+(the bottom button is ✕ / A / B), so on a Nintendo pad confirm is **B**; turn on
+**Swap Select and Back** if you'd rather confirm with A like on a Switch.
+
 ## Quick Menu
 
 Press **Select + Start** (or **Home**) during a game, video or app. The Quick Menu slides in
@@ -184,6 +193,9 @@ Keyboard can give it to Crossbar instead). It has:
 - **Switch App** — every open app and game, plus Crossbar: A switches to it, Y opens
   **Switch To / Close / Force Close** (force close ends a frozen app right away)
 - **Controller & Keyboard**, **Settings**
+- **App Volume** — every app playing sound right now (Spotify, a game, Discord, a video, YouTube…)
+  with its own level: ◀ ▶ changes it, A mutes it, plus the master volume. Also in
+  Settings › Sound › App Volume.
 - **Power…** — its own page that opens with **Cancel** selected: Restart Crossbar, Restart
   Computer, Turn Off Computer. A stray A press can't turn the machine off.
 

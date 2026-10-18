@@ -67,31 +67,39 @@ const QuickMenu = {
       const ctl = (action) => async () => { await api.post('/api/music/control', { action }); after(); };
       rows.push({ key: 'media', icon: 'music', art: thumb(m.path), label: m.title,
         sub: `${m.artist ? m.artist + ' · ' : ''}${m.paused ? 'Paused' : 'Playing'} · ${fmtTime(m.position)} / ${fmtTime(m.duration)}`,
-        bar: m.duration ? m.position / m.duration : null, hint: '◀ ▶ skip · A play/pause',
+        bar: m.duration ? m.position / m.duration : null, hint: '◀ ▶ skip · {ok} play/pause',
         ok: ctl('toggle'), adjust: (dir) => ctl(dir > 0 ? 'next' : 'prev')() });
     } else if (sp) {
       const ctl = (action) => async () => { await call(() => api.post('/api/spotify/control', { action })); after(); };
       rows.push({ key: 'media', icon: 'spotify', art: sp.art, label: sp.name,
         sub: `Spotify · ${sp.artist}${sp.here ? '' : ` · on ${sp.device}`} · ${sp.playing ? 'Playing' : 'Paused'}`,
-        bar: sp.duration ? sp.position / sp.duration : null, hint: '◀ ▶ skip · A play/pause',
+        bar: sp.duration ? sp.position / sp.duration : null, hint: '◀ ▶ skip · {ok} play/pause',
         ok: ctl('toggle'), adjust: (dir) => ctl(dir > 0 ? 'next' : 'prev')() });
     }
 
     const out = d.audio?.output || {};
     if (out.volume != null) {
       rows.push({ key: 'vol', icon: 'sound', label: 'Volume', sub: out.muted ? 'Muted' : `${out.volume}%`,
-        bar: out.muted ? 0 : Math.min(1, out.volume / 100), hint: '◀ ▶ adjust · A mute',
+        bar: out.muted ? 0 : Math.min(1, out.volume / 100), hint: '◀ ▶ adjust · {ok} mute',
         ok: async () => { await api.post('/api/audio', { target: 'output', mute: true }); after(); },
         adjust: async (dir) => { await api.post('/api/audio', { target: 'output', delta: dir * 5 }); after(); } });
     }
     if (d.outputs?.length > 1) {
-      rows.push({ key: 'out', icon: 'sound', label: 'Sound Output', sub: d.output?.name || 'Default', hint: 'A switch',
+      rows.push({ key: 'out', icon: 'sound', label: 'Sound Output', sub: d.output?.name || 'Default', hint: '{ok} switch',
         ok: async () => { const r = await call(() => api.post('/api/quick/output')); if (r?.name) toast(`Sound output: ${r.name}`, 'sound'); after(); } });
     }
     const mic = d.audio?.mic || {};
     if (mic.volume != null) {
-      rows.push({ key: 'mic', icon: 'mic', label: 'Microphone', sub: mic.muted ? 'Muted' : `${mic.volume}%`, hint: 'A mute',
+      rows.push({ key: 'mic', icon: 'mic', label: 'Microphone', sub: mic.muted ? 'Muted' : `${mic.volume}%`, hint: '{ok} mute',
         ok: async () => { await api.post('/api/audio', { target: 'mic', mute: true }); after(); } });
+    }
+    // per-app volume: one row per app playing sound (◀ ▶ volume, A mute)
+    for (const ap of d.apps_audio || []) {
+      const change = async (body) => { await api.post('/api/audio/app', { ids: ap.ids, ...body }); after(); };
+      rows.push({ key: `app:${ap.key}`, icon: 'sound', label: ap.name,
+        sub: `${ap.muted ? 'Muted' : `${ap.volume}%`}${ap.sub ? ' · ' + ap.sub : ''}`,
+        bar: ap.muted ? 0 : Math.min(1, ap.volume / 100), hint: '◀ ▶ volume · {ok} mute',
+        ok: () => change({ mute: !ap.muted }), adjust: (dir) => change({ delta: dir > 0 ? 5 : -5 }) });
     }
     rows.push({ key: 'pad', icon: 'game', label: 'Controller & Keyboard', sub: 'Button mapping', ok: () => this.goSettings('controls') });
     rows.push({ key: 'net', icon: 'wifi', label: 'Network', sub: 'Wi-Fi and connection', ok: () => this.goSettings('network') });
@@ -115,7 +123,7 @@ const QuickMenu = {
           <div class="q-sub">${esc(r.sub || '')}</div>
           ${r.bar != null ? `<div class="q-bar"><i style="width:${(r.bar * 100).toFixed(1)}%"></i></div>` : ''}
         </div>
-        ${r.hint && i === this.sel ? `<div class="q-hint">${esc(r.hint)}</div>` : ''}
+        ${r.hint && i === this.sel ? `<div class="q-hint">${esc(gl(r.hint))}</div>` : ''}
       </div>`).join('');
     $('#quick .q-row.on')?.scrollIntoView({ block: 'nearest' });
   },

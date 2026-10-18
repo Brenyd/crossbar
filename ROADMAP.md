@@ -40,6 +40,10 @@
 - [x] Update Crossbar restarts in place instead of exiting the session
 - [x] install-cachyos.sh: install on CachyOS/Arch (PS5), boot straight into Crossbar, Switch to Desktop / Return to Crossbar
 
+## 0.9.2
+- [x] Per-app volume in the Quick Menu (and Settings › Sound › App Volume)
+- [x] Button glyphs: Automatic / Xbox / PlayStation / Nintendo, everywhere incl. video playback and remapping
+
 ## Next
 - **On-screen keyboard** — controller typing for every text field in Crossbar; for other apps a Wayland
   virtual-keyboard (wvkbd); Steam's own keyboard keeps working inside Steam.

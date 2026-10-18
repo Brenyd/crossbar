@@ -33,6 +33,7 @@ from gi.repository import Gtk4LayerShell as LayerShell  # noqa: E402
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from crossbar.overlay_model import Model  # noqa: E402
+from crossbar import glyphs  # noqa: E402
 
 BASE = "http://127.0.0.1:7777"
 # keyboard: browser key names (the shared mapping) -> GDK names
@@ -166,11 +167,15 @@ class Overlay(Gtk.Application):
             self.win.set_visible(False)
         return False
 
+    def g(self, text):
+        """Controller glyphs ({ok} -> A / ✕ / B) in the style chosen in Settings."""
+        return glyphs.render(text, self.model.data.get("glyphs"))
+
     def render(self):
         m = self.model
         self.title.set_text(m.title())
-        self.foot.set_text(f"A  Select      ◀ ▶  Adjust      B  Back to {m.back_to()}")
-        self.notice.set_text(m.notice)
+        self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  Back to {m.back_to()}"))
+        self.notice.set_text(self.g(m.notice))
         child = self.rows.get_first_child()
         while child:
             nxt = child.get_next_sibling()
@@ -188,12 +193,12 @@ class Overlay(Gtk.Application):
             row.append(img)
             col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
             col.set_hexpand(True)
-            lab = Gtk.Label(label=r["label"], xalign=0)
+            lab = Gtk.Label(label=self.g(r["label"]), xalign=0)
             lab.add_css_class("label")
             lab.set_ellipsize(Pango.EllipsizeMode.END)
             col.append(lab)
             if r.get("sub"):
-                sub = Gtk.Label(label=r["sub"], xalign=0)
+                sub = Gtk.Label(label=self.g(r["sub"]), xalign=0)
                 sub.add_css_class("sub")
                 sub.set_ellipsize(Pango.EllipsizeMode.END)
                 col.append(sub)
@@ -204,7 +209,7 @@ class Overlay(Gtk.Application):
                 col.append(bar)
             row.append(col)
             if r.get("hint") and i == m.sel:
-                hint = Gtk.Label(label=r["hint"])
+                hint = Gtk.Label(label=self.g(r["hint"]))
                 hint.add_css_class("hint")
                 row.append(hint)
             self.rows.append(row)

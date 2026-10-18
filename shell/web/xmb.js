@@ -57,11 +57,26 @@ const Sfx = (() => {
   };
 })();
 
+// ---------------------------------------------------------------- controller glyphs
+// Hints are written with action tokens ("{ok} Select"); they're shown with the glyph of the
+// button mapped to that action, in the style picked in Settings (Xbox / PlayStation / Nintendo).
+const DIR_GLYPH = { up: '▲', down: '▼', left: '◀', right: '▶' };
+function gl(text) {
+  return String(text ?? '').replace(/\{(ok|back|menu|home|prev|next|toggle|up|down|left|right)\}/g,
+    (m, a) => S.state?.glyphs?.actions?.[a] || DIR_GLYPH[a] || ({ ok: 'A', back: 'B', menu: 'Y', prev: 'LB', next: 'RB' })[a] || a);
+}
+const glb = (a) => { const g = gl(`{${a}}`); return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}" data-g="${esc(g)}">${esc(g)}</b>`; };
+function applyGlyphs() {   // the few hints that live in the page itself
+  $('#viewer .v-hint').innerHTML = `<b>◀ ▶</b>Browse ${glb('ok')}Slideshow ${glb('back')}Back ${glb('menu')}Hide info`;
+  $('.q-foot').innerHTML = `${glb('ok')}Select <b>◀ ▶</b>Adjust ${glb('back')}Resume`;
+  if (typeof hint === 'function' && S.state) hint();
+}
+
 // ---------------------------------------------------------------- toasts
 function toast(text, ico = 'info') {
   const el = document.createElement('div');
   el.className = 'toast';
-  el.innerHTML = `<div class="ico">${icon(ico)}</div><div>${esc(text)}</div>`;
+  el.innerHTML = `<div class="ico">${icon(ico)}</div><div>${esc(gl(text))}</div>`;
   $('#toasts').prepend(el);
   setTimeout(() => el.classList.add('out'), 4200);
   setTimeout(() => el.remove(), 5000);
@@ -77,7 +92,7 @@ const Dialog = {
   ask({ title = '', body = '', buttons = ['OK'], fields = [], def = 0, timeout = 0, timeoutButton = null }) {
     this.open = true; this.sel = def; this.buttons = buttons;
     $('.dlg-title').textContent = title;
-    $('.dlg-body').textContent = body;
+    $('.dlg-body').textContent = gl(body);
     $('.dlg-body').classList.toggle('long', String(body).split('\n').length > 5);
     clearInterval(this.timer);
     if (timeout) {  // e.g. "Keep this resolution?" reverts by itself
@@ -128,7 +143,7 @@ const Options = {
   },
   render() {
     const el = $('.opt-list');
-    el.innerHTML = this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}">${esc(o.label)}</div>`).join('');
+    el.innerHTML = this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}">${esc(gl(o.label))}</div>`).join('');
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
     const TOP = 380, MIN = 140, MAX = 960;
@@ -384,8 +399,8 @@ function itemEl(it) {
     const h = hashHue(it.artTitle || it.label);
     slot = `<div class="art${it.artShape === 'poster' ? ' poster' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
   } else slot = `<div class="ico">${icon(it.icon)}</div>`;
-  el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(it.label)}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
-    <div class="sub">${esc(it.sub || '')}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
+  el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
+    <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
   if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
   return el;
 }
@@ -453,9 +468,9 @@ function render() {
 function hint() {
   const it = list()[sel()];
   const parts = [];
-  if (it && (it.action || it.children)) parts.push('<b>A</b>Enter');
-  if (S.stack.length) parts.push('<b>B</b>Back');
-  if (it?.options?.length) parts.push('<b>Y</b>Options');
+  if (it && (it.action || it.children)) parts.push(`${glb('ok')}Enter`);
+  if (S.stack.length) parts.push(`${glb('back')}Back`);
+  if (it?.options?.length) parts.push(`${glb('menu')}Options`);
   $('#hint').innerHTML = parts.join(' ');
 }
 
@@ -693,6 +708,7 @@ async function mediaKey(action) {
 // ---------------------------------------------------------------- polling
 function applyState() {
   Waves.setTheme(S.state.theme);
+  applyGlyphs();
   $('#demo-badge').hidden = !S.state.demo;
 }
 async function loadState() {

@@ -56,7 +56,7 @@ function addChannelFolder() {
         children: async () => {
           const chans = await api.get(`/api/discord/channels?guild_id=${encodeURIComponent(g.id)}`);
           if (!chans.length) return [{ key: 'none', label: 'No voice channels', icon: 'info' }];
-          return chans.map((c) => ({ key: `c:${c.id}`, label: c.name, icon: 'voice', sub: 'A: add to Social',
+          return chans.map((c) => ({ key: `c:${c.id}`, label: c.name, icon: 'voice', sub: '{ok} add to Social',
             action: async () => { await call(() => api.post('/api/discord/save', { id: c.id, name: c.name, guild: g.name, guild_id: g.id }), `Added ${c.name}`); } }));
         },
       }));
@@ -86,7 +86,7 @@ async function socialItems() {
       const here = cur && cur.id === c.id;
       items.push({
         key: `dc:${c.id}`, label: c.name, icon: 'voice', badge: here ? 'JOINED' : '',
-        sub: [c.guild, here ? 'A: leave' : memberLine(c.members)].filter(Boolean).join(' · '),
+        sub: [c.guild, here ? '{ok} leave' : memberLine(c.members)].filter(Boolean).join(' · '),
         action: () => joinVoice(c, cur),
         options: [{ label: here ? 'Leave' : 'Join', action: () => joinVoice(c, cur) },
                   { label: 'Remove from Social', action: () => discordAction('remove', { id: c.id }, `Removed ${c.name}`) }],

@@ -169,6 +169,20 @@ def pause_music():
 
 
 # ---- video ---------------------------------------------------------------
+GLYPH_FILE = os.path.join(RUNTIME, "crossbar-glyphs.json")
+
+
+def write_glyphs():
+    """Button glyphs for the video panel (crossbar-osc.lua reads this file)."""
+    from . import glyphs
+    try:
+        with open(GLYPH_FILE, "w") as f:
+            json.dump(glyphs.current(), f)
+    except OSError:
+        pass
+    return GLYPH_FILE
+
+
 def play_video(paths, index=0, mpv_gamepad=False, entries=None, user_agent=None):
     """Play local files (paths) or streams (entries = [(title, url)], e.g. IPTV)."""
     if entries:
@@ -198,6 +212,7 @@ def play_video(paths, index=0, mpv_gamepad=False, entries=None, user_agent=None)
         "--sub-auto=fuzzy", f"--sid={'no' if cfg.get('subtitles') == 'off' else 'auto'}",
         "--hwdec=auto-safe", "--cursor-autohide=1000",
         f"--script-opts=crossbar-controls={os.path.join(util.CONFIG_DIR, 'controls.json')},"
+        f"crossbar-glyphs={write_glyphs()},"
         f"crossbar-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--input-gamepad={'yes' if mpv_gamepad else 'no'}",
         f"--playlist={m3u}", f"--playlist-start={int(index)}",

@@ -56,7 +56,7 @@ async function iptvItems(kind, cat) {
   const make = (it) => ({
     key: `i:${it.id}`, label: kind === 'live' && it.num ? `${it.num}  ${it.name}` : it.name,
     ...(it.icon ? { art: it.icon, artTitle: it.name, ...(kind === 'live' ? {} : { artShape: 'poster' }) } : { icon: kind === 'live' ? 'tv' : 'video' }),
-    sub: kind === 'live' ? 'A: watch · L1/R1 change channel' : (it.rating ? `★ ${it.rating}` : ''),
+    sub: kind === 'live' ? '{ok} watch · {prev}/{next} change channel' : (it.rating ? `★ ${it.rating}` : ''),
     action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name),
     options: kind === 'live' ? [{ label: 'Watch', action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name) },
       { label: 'Hide This Channel', action: async () => { await call(() => api.post('/api/iptv/hide', { id: it.id, on: true }), `Hid ${it.name}`); reloadFolder(); } }] : undefined,
@@ -83,7 +83,7 @@ function categoryToggles(kind) {
     sub: `${(S.state.iptv?.shown || {})[kind] || 0} shown — choose which appear in ${kind === 'live' ? 'TV & Video Services' : 'Video'}`,
     children: async () => {
       const cats = await api.get(`/api/iptv/categories?${qs({ kind })}`);
-      return cats.map((c) => ({ key: `t:${c.id}`, label: c.name, icon: c.shown ? 'check' : 'folder', sub: c.shown ? 'Shown — A to hide' : 'Hidden — A to show',
+      return cats.map((c) => ({ key: `t:${c.id}`, label: c.name, icon: c.shown ? 'check' : 'folder', sub: c.shown ? 'Shown — {ok} to hide' : 'Hidden — {ok} to show',
         action: async () => { await api.post('/api/iptv/show', { kind, cat: c.id, on: !c.shown }); await loadState(); reloadFolder(); },
         ...(kind === 'live' && c.shown ? { options: [{ label: 'Choose Channels…', action: () => openFolder(channelToggles(c)) }] } : {}) }));
     },
@@ -93,7 +93,7 @@ function categoryToggles(kind) {
 function channelToggles(cat) {
   return { key: `ch-${cat.id}`, label: cat.name, icon: 'tv',
     children: async () => (await api.get(`/api/iptv/items?${qs({ kind: 'live', cat: cat.id, all: 1 })}`)).map((it) => ({
-      key: `c:${it.id}`, label: it.name, icon: it.hidden ? 'tv' : 'check', sub: it.hidden ? 'Hidden — A to show' : 'Shown — A to hide',
+      key: `c:${it.id}`, label: it.name, icon: it.hidden ? 'tv' : 'check', sub: it.hidden ? 'Hidden — {ok} to show' : 'Shown — {ok} to hide',
       action: async () => { await api.post('/api/iptv/hide', { id: it.id, on: !it.hidden }); reloadFolder(); } })) };
 }
 

@@ -169,6 +169,15 @@ const CONTROLS_FOLDER = {
         sub: pads.length ? pads.join(', ') : (c.pads.browser_pads?.length ? `${c.pads.browser_pads.join(', ')} (menu only — see Diagnostics)` : 'None connected'),
         action: () => message(pads.length ? pads.join('\n') : 'No controller detected.\nUSB and Bluetooth pads appear here once connected.', 'Controllers') },
       ...(c.pads.error ? [{ key: 'warn', label: 'Controller Not Readable', icon: 'info', sub: c.pads.error, action: showDiagnostics }] : []),
+      { key: 'glyphs', label: 'Button Glyphs', icon: 'game',
+        sub: (() => { const g = S.state.glyphs || {}; const n = { xbox: 'Xbox', playstation: 'PlayStation', nintendo: 'Nintendo' };
+          return g.setting === 'auto' || !g.setting ? `Automatic — ${n[g.style] || 'Xbox'} (from the connected controller)` : n[g.setting]; })(),
+        action: () => {
+          const cur = S.state.glyphs?.setting || 'auto';
+          const opts = [['auto', 'Automatic (match the controller)'], ['xbox', 'Xbox — A B X Y'], ['playstation', 'PlayStation — ✕ ○ □ △'], ['nintendo', 'Nintendo — B A Y X']];
+          Options.show(opts.map(([v, l]) => ({ label: `${check(cur === v)}${l}`, action: async () => { await setSetting({ glyphs: v }); await loadState(); reloadFolder(); } })),
+            Math.max(0, opts.findIndex(([v]) => v === cur)));
+        } },
       { key: 'pad', label: 'Controller Buttons', icon: 'game', sub: 'Choose what each button does', children: bindingItems('gamepad') },
       { key: 'diag', label: 'Controller Diagnostics', icon: 'info', sub: 'What Crossbar sees, and the last buttons pressed', action: showDiagnostics },
       { key: 'kbd', label: 'Keyboard Keys', icon: 'browser', sub: 'Choose what each key does', children: bindingItems('keyboard') },
@@ -176,7 +185,7 @@ const CONTROLS_FOLDER = {
         sub: c.guide_home ? 'On — Steam\'s overlay won\'t get that button' : 'Off — left free for Steam (Quick Menu: Select + Start)',
         action: async () => savedControls(await api.post('/api/controls/guide', { on: !c.guide_home }),
           c.guide_home ? 'Guide/PS left to Steam' : 'Guide/PS opens the Quick Menu') },
-      { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with B / ○ instead of A / ✕ (or back again)',
+      { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with the right face button instead of the bottom one (or back again)',
         action: async () => savedControls(await api.post('/api/controls', { swap: true }), 'Select and Back swapped') },
       { key: 'reset', label: 'Reset All to Defaults', icon: 'refresh', sub: 'Controller and keyboard',
         action: async () => { if (await confirmBox('Reset all buttons and keys to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'all' }), 'Controls reset'); } },
@@ -319,6 +328,27 @@ const NAS_ITEM = {
   },
 };
 
+// Per-app volume: every app playing sound right now. ◀ ▶ adjusts, A mutes, Y for set levels.
+const APP_VOLUME_FOLDER = {
+  key: 'appvol', label: 'App Volume', icon: 'sound', sub: 'Volume for each app playing sound (also in the Quick Menu)',
+  children: async () => {
+    const apps = await api.get('/api/audio/apps').catch(() => []);
+    if (!apps.length) return [{ key: 'none', label: 'Nothing is playing sound', icon: 'info', sub: 'Apps show up here while they play audio' }];
+    const set = async (a, body) => { await call(() => api.post('/api/audio/app', { ids: a.ids, ...body })); reloadFolder(); };
+    return apps.map((a) => ({
+      key: `app:${a.key}`, label: a.name, icon: 'sound',
+      sub: `${a.muted ? 'Muted' : `${a.volume}%`}${a.sub ? ' · ' + a.sub : ''}`, progress: a.muted ? 0 : Math.min(1, a.volume / 100),
+      action: () => set(a, { mute: !a.muted }),
+      options: [
+        { label: a.muted ? 'Unmute' : 'Mute', action: () => set(a, { mute: !a.muted }) },
+        { label: 'Louder (+10%)', action: () => set(a, { delta: 10 }) },
+        { label: 'Quieter (−10%)', action: () => set(a, { delta: -10 }) },
+        ...[100, 75, 50, 25].map((v) => ({ label: `Set to ${v}%`, action: () => set(a, { delta: v - a.volume }) })),
+      ],
+    }));
+  },
+};
+
 const SETTINGS_FOLDERS = [
   {
     key: 'display', label: 'Display Settings', icon: 'display', sub: 'Resolution, refresh rate, scale',
@@ -365,6 +395,7 @@ const SETTINGS_FOLDERS = [
         deviceFolder('inputs'),
         { key: 'ovol', label: 'Output Volume', icon: 'sound', sub: vol(a.output), action: () => Options.show(volumeOptions('output')) },
         { key: 'mvol', label: 'Microphone Volume', icon: 'mic', sub: vol(a.mic), action: () => Options.show(volumeOptions('mic')) },
+        APP_VOLUME_FOLDER,
         { key: 'sfx', label: 'Menu Sounds', icon: 'music', sub: S.state.sounds ? 'On' : 'Off',
           action: async () => { await setSetting({ sounds: !S.state.sounds }); reloadFolder(); } },
       ];
@@ -444,7 +475,7 @@ const SETTINGS_FOLDERS = [
       for (const d of bt.devices) {
         const act = (a, ok) => async () => { await call(() => api.post(`/api/bluetooth/${a}`, { mac: d.mac }), ok); reloadFolder(); };
         items.push({ key: `bt:${d.mac}`, label: d.name, icon: d.connected ? 'check' : d.kind,
-          sub: d.connected ? 'Connected' : d.paired ? 'Paired — A to connect' : 'Not paired — A to pair',
+          sub: d.connected ? 'Connected' : d.paired ? 'Paired — {ok} to connect' : 'Not paired — {ok} to pair',
           action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? act('connect', `Connected ${d.name}`)
             : async () => { toast(`Pairing ${d.name}…`, 'game'); await call(() => api.post('/api/bluetooth/pair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 3000); },
           options: [{ label: d.connected ? 'Disconnect' : 'Connect', action: d.connected ? act('disconnect') : act('connect') },
@@ -525,7 +556,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.9.1', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.9.1', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.9.2', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.9.2', 'About') },
       ];
     },
   },

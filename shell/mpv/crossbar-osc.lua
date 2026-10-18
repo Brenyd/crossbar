@@ -64,6 +64,25 @@ local function rect(x, y, w, h, color, alpha)
     color, alpha, x, y, x + w, y, x + w, y + h, x, y + h)
 end
 
+-- Button glyphs (Xbox / PlayStation / Nintendo) written by Crossbar when playback starts.
+local GLYPHS = { ok = "A", back = "B", menu = "Y", prev = "LB", next = "RB", home = "View+Menu" }
+local glyphs_checked = -10
+local function glyph(action)
+  local now = mp.get_time()
+  if now - glyphs_checked > 3 then        -- re-read now and then: the style can change in Settings
+    glyphs_checked = now
+    local path = mp.get_opt("crossbar-glyphs")
+    local f = path and io.open(path, "r")
+    if f then
+      local ok, utils = pcall(require, "mp.utils")
+      local data = ok and utils.parse_json(f:read("*a")) or nil
+      f:close()
+      if data and data.actions then for k, v in pairs(data.actions) do GLYPHS[k] = v end end
+    end
+  end
+  return GLYPHS[action] or action
+end
+
 local function draw()
   if not visible then
     ov:remove()
@@ -122,7 +141,8 @@ local function draw()
   ev[#ev + 1] = string.format("{\\an8\\pos(960,1008)\\fnNoto Sans\\fs32\\bord0\\shad1\\1c&HFFFFFF&}%s%s",
     esc(b.label), esc(extra))
   ev[#ev + 1] = "{\\an2\\pos(960,1072)\\fnNoto Sans\\fs22\\bord0\\shad0\\1c&HBBBBBB&}" ..
-    "Left/Right  choose     A  select     B  hide     Up/Down  volume     L1/R1  skip     Guide  Quick Menu"
+    esc("◀ ▶  choose     " .. glyph("ok") .. "  select     " .. glyph("back") .. "  hide     ▲ ▼  volume     " ..
+        glyph("prev") .. "/" .. glyph("next") .. "  skip     " .. glyph("home") .. "  Quick Menu")
 
   if mp.get_time() < vol_until then
     local vol = mp.get_property_native("volume") or 0

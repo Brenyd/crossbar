@@ -25,7 +25,7 @@ class Model:
         self.api = api
         self.data = {}
         self.armed = None          # "close" while waiting for the confirming second press
-        self.page = "main"         # main | apps | app | power
+        self.page = "main"         # main | apps | app | power | mixer
         self.app = None            # the app picked in the switcher
         self.sel = 0
         self.rows = []
@@ -52,6 +52,8 @@ class Model:
             return self.app["title"]
         if self.page == "power":
             return "Power"
+        if self.page == "mixer":
+            return "App Volume"
         app = self.data.get("app")
         return app["title"] if app else "Crossbar"
 
@@ -62,6 +64,8 @@ class Model:
         return k.lower() if k else "menu"
 
     def go(self, page, app=None):
+        if page != "main" and self.page == "main" and self.rows and self.sel < len(self.rows):
+            self._from = self.rows[self.sel]["key"]       # so Back returns to that row
         self.page, self.app, self.sel, self.armed = page, app, 0, None
         self.rebuild()
 
@@ -72,14 +76,47 @@ class Model:
             return self.build_app()
         if self.page == "power":
             return self.build_power()
+        if self.page == "mixer":
+            return self.build_mixer(d)
         return self.build_main(d)
+
+    def build_mixer(self, d):
+        api, rows = self.api, []
+        apps = d.get("apps_audio") or []
+
+        def change(a, **kw):
+            r = api.post("/api/audio/app", {"ids": a["ids"], **kw}) or {}
+            if "apps" in r:                       # update right away, no full refresh needed
+                self.data["apps_audio"] = r["apps"]
+                self.rebuild()
+        for a in apps:
+            rows.append({"key": f"mix:{a['key']}", "icon": "audio-volume-high-symbolic" if not a["muted"] else "audio-volume-muted-symbolic",
+                         "label": a["name"],
+                         "sub": ("Muted" if a["muted"] else f"{a['volume']}%") + (f" · {a['sub']}" if a.get("sub") else ""),
+                         "bar": 0 if a["muted"] else min(1, a["volume"] / 100), "hint": "◀ ▶ volume · {ok} mute",
+                         "ok": lambda a=a: change(a, mute=not a["muted"]),
+                         "adjust": lambda d_, a=a: change(a, delta=5 if d_ > 0 else -5)})
+        if not rows:
+            rows.append({"key": "mix:none", "icon": "audio-volume-muted-symbolic", "label": "Nothing is playing sound",
+                         "sub": "Apps show up here while they play audio", "ok": lambda: self.go("main")})
+        out = (d.get("audio") or {}).get("output") or {}
+        if out.get("volume") is not None:
+            def vol(delta):
+                api.post("/api/audio", {"target": "output", "delta": delta})
+                self.refresh()
+            rows.append({"key": "mix:master", "icon": "audio-speakers-symbolic", "label": "Everything (master volume)",
+                         "sub": "Muted" if out.get("muted") else f"{out['volume']}%",
+                         "bar": 0 if out.get("muted") else min(1, out["volume"] / 100), "hint": "◀ ▶ adjust",
+                         "ok": lambda: (api.post("/api/audio", {"target": "output", "mute": True}), self.refresh()),
+                         "adjust": lambda d_: vol(5 if d_ > 0 else -5)})
+        return rows
 
     def build_apps(self, d):
         rows = [{"key": "xmb", "icon": "go-home-symbolic", "label": "Crossbar", "sub": "The menu",
                  "ok": lambda: self.api.post("/api/overlay/switch", {"con_id": None})}]
         for w in d.get("windows") or []:
             rows.append({"key": f"w{w['con_id']}", "icon": "video-x-generic-symbolic" if w.get("video") else "applications-games-symbolic",
-                         "label": w["title"], "sub": w["app"], "hint": "A switch · Y close",
+                         "label": w["title"], "sub": w["app"], "hint": "{ok} switch · {menu} close",
                          "ok": lambda w=w: self.api.post("/api/overlay/switch", {"con_id": w["con_id"]}),
                          "menu": lambda w=w: self.go("app", w)})
         return rows
@@ -126,7 +163,7 @@ class Model:
                          "sub": app["title"], "ok": lambda: self.close(True)})
             armed = self.armed == "close"
             rows.append({"key": "close", "icon": "window-close-symbolic", "danger": True,
-                         "label": "Press A again to close" if armed else f"Close {what}",
+                         "label": "Press {ok} again to close" if armed else f"Close {what}",
                          "sub": (app["title"] + ("" if app.get("video") else " — unsaved progress may be lost")) if armed else app["title"],
                          "ok": self._close_app})
         rows.append({"key": "home", "icon": "go-home-symbolic", "label": "Go to Home",
@@ -141,7 +178,7 @@ class Model:
                          "sub": f"{(m.get('artist') + ' · ') if m.get('artist') else ''}{'Paused' if m.get('paused') else 'Playing'}"
                                 f" · {fmt(m.get('position'))} / {fmt(m.get('duration'))}",
                          "bar": (m["position"] / m["duration"]) if m.get("duration") else None,
-                         "hint": "◀ ▶ skip · A play/pause", "ok": ctl("toggle"),
+                         "hint": "◀ ▶ skip · {ok} play/pause", "ok": ctl("toggle"),
                          "adjust": lambda d_: ctl("next" if d_ > 0 else "prev")()})
         elif sp:
             def sctl(a):
@@ -150,7 +187,7 @@ class Model:
                          "sub": f"Spotify · {sp.get('artist', '')}{'' if sp.get('here') else ' · on ' + str(sp.get('device'))}"
                                 f" · {'Playing' if sp.get('playing') else 'Paused'}",
                          "bar": (sp["position"] / sp["duration"]) if sp.get("duration") else None,
-                         "hint": "◀ ▶ skip · A play/pause", "ok": sctl("toggle"),
+                         "hint": "◀ ▶ skip · {ok} play/pause", "ok": sctl("toggle"),
                          "adjust": lambda d_: sctl("next" if d_ > 0 else "prev")()})
 
         voice = d.get("voice")
@@ -158,7 +195,7 @@ class Model:
             ch = voice["channel"]
             rows.append({"key": "voice", "icon": "call-start-symbolic", "label": f"Voice: {ch.get('name')}",
                          "sub": f"{len(ch.get('members', []))} in channel · {'Muted' if voice.get('mute') else 'Mic on'}",
-                         "hint": "A mute · ◀ leave",
+                         "hint": "{ok} mute · ◀ leave",
                          "ok": lambda: (api.post("/api/discord/mute", {}), self.refresh()),
                          "adjust": lambda d_: (api.post("/api/discord/leave", {}), self.refresh()) if d_ < 0 else None})
 
@@ -169,17 +206,21 @@ class Model:
                 self.refresh()
             rows.append({"key": "vol", "icon": "audio-volume-high-symbolic", "label": "Volume",
                          "sub": "Muted" if out.get("muted") else f"{out['volume']}%",
-                         "bar": 0 if out.get("muted") else min(1, out["volume"] / 100), "hint": "◀ ▶ adjust · A mute",
+                         "bar": 0 if out.get("muted") else min(1, out["volume"] / 100), "hint": "◀ ▶ adjust · {ok} mute",
                          "ok": lambda: (api.post("/api/audio", {"target": "output", "mute": True}), self.refresh()),
                          "adjust": lambda d_: vol(5 if d_ > 0 else -5)})
+        n = len(d.get("apps_audio") or [])
+        rows.append({"key": "mixer", "icon": "multimedia-volume-control-symbolic", "label": "App Volume",
+                     "sub": f"{n} app{'s' if n != 1 else ''} playing sound" if n else "Nothing playing right now",
+                     "ok": lambda: self.go("mixer")})
         if len(d.get("outputs") or []) > 1:
             rows.append({"key": "out", "icon": "audio-speakers-symbolic", "label": "Sound Output",
-                         "sub": (d.get("output") or {}).get("name") or "Default", "hint": "A switch",
+                         "sub": (d.get("output") or {}).get("name") or "Default", "hint": "{ok} switch",
                          "ok": self._next_output})
         mic = (d.get("audio") or {}).get("mic") or {}
         if mic.get("volume") is not None:
             rows.append({"key": "mic", "icon": "audio-input-microphone-symbolic", "label": "Microphone",
-                         "sub": "Muted" if mic.get("muted") else f"{mic['volume']}%", "hint": "A mute",
+                         "sub": "Muted" if mic.get("muted") else f"{mic['volume']}%", "hint": "{ok} mute",
                          "ok": lambda: (api.post("/api/audio", {"target": "mic", "mute": True}), self.refresh())})
         wins = d.get("windows") or []
         rows.append({"key": "apps", "icon": "view-app-grid-symbolic", "label": "Switch App",
@@ -238,7 +279,11 @@ class Model:
                 self.armed = None
                 self.rebuild()
             elif self.page != "main" and a == "back":
-                self.go("apps" if self.page == "app" else "main")
+                back = "apps" if self.page == "app" else "main"
+                self.go(back)
+                if back == "main":            # land on the row we came from
+                    keys = [r["key"] for r in self.rows]
+                    self.sel = next((i for i, k in enumerate(keys) if k == self._from), self.sel) if getattr(self, "_from", None) else self.sel
             else:
                 self.close(True)
         elif a in ("toggle", "prev", "next"):

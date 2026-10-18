@@ -326,6 +326,101 @@ def audio_devices():
     return out
 
 
+# ---- per-app volume (PipeWire playback streams) ------------------------------
+def _cmdline(pid):
+    try:
+        return open(f"/proc/{int(pid)}/cmdline", "rb").read().replace(b"\0", b" ").decode(errors="replace")
+    except (OSError, ValueError, TypeError):
+        return ""
+
+
+def _stream_app(props):
+    """A friendly name for whoever owns a playback stream, and a key to group its streams."""
+    from . import player
+    pid = props.get("application.process.id")
+    binary = (props.get("application.process.binary") or "").lower()
+    name = props.get("application.name") or binary or "App"
+    cmd = _cmdline(pid)
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        pid = None
+    for proc, label in ((getattr(player, "MUSIC", None), "Music"), (getattr(player, "VIDEO", None), "Video")):
+        p = getattr(proc, "proc", None)
+        if pid and p is not None and getattr(p, "pid", None) == pid:
+            return label, f"crossbar-{label.lower()}"
+    if "librespot" in binary or "librespot" in name.lower():
+        return "Spotify", "spotify"
+    if "crossbar/shell-browser" in cmd:
+        return "Crossbar Menu Sounds", "crossbar-menu"
+    m = re.search(r"--app=https?://(?:www\.)?([^/\s]+)", cmd)
+    if m:                       # web apps (YouTube, Twitch…) opened from TV & Video Services
+        host = m.group(1)
+        known = {"youtube.com": "YouTube", "tv.youtube.com": "YouTube", "twitch.tv": "Twitch", "netflix.com": "Netflix"}
+        return known.get(host, host.split(".")[-2].capitalize() if "." in host else host), f"web-{host}"
+    if binary.startswith("steam") or "steam_app" in cmd or "proton" in cmd or "wine" in binary:
+        label = props.get("application.name") or "Game"
+        if label.lower() in ("steam", "wine", "wine64-preloader", "proton"):
+            label = "Game"
+        return label, f"app-{pid or label}"
+    pretty = {"chromium": "Browser", "firefox": "Firefox", "discord": "Discord", "vesktop": "Discord", "mumble": "Mumble"}
+    return pretty.get(binary, name[:1].upper() + name[1:]), f"bin-{binary or name}"
+
+
+def app_streams(dump=None):
+    """Apps currently playing sound: [{"key","name","sub","ids","volume","muted"}]."""
+    if dump is None:
+        if not util.which("pw-dump"):
+            return []
+        try:
+            dump = json.loads(subprocess.run(["pw-dump"], capture_output=True, text=True, timeout=5).stdout or "[]")
+        except (ValueError, subprocess.TimeoutExpired):
+            return []
+    apps = {}
+    for o in dump:
+        if o.get("type") != "PipeWire:Interface:Node":
+            continue
+        info = o.get("info") or {}
+        props = info.get("props") or {}
+        if props.get("media.class") != "Stream/Output/Audio":
+            continue
+        name, key = _stream_app(props)
+        vol, muted = None, False
+        for prm in ((info.get("params") or {}).get("Props") or []):
+            if "channelVolumes" in prm:
+                cv = prm["channelVolumes"] or [1.0]
+                vol = round((max(cv) ** (1 / 3)) * 100)     # wpctl / pavucontrol show the cubic scale
+                muted = bool(prm.get("mute"))
+        a = apps.setdefault(key, {"key": key, "name": name, "ids": [], "volume": vol, "muted": muted, "media": []})
+        a["ids"].append(o["id"])
+        if vol is not None and (a["volume"] is None or vol > a["volume"]):
+            a["volume"] = vol
+        a["muted"] = a["muted"] and muted if a["media"] else muted
+        if props.get("media.name"):
+            a["media"].append(props["media.name"])
+    out = []
+    for a in apps.values():
+        media = [m for m in a.pop("media") if m.lower() not in ("playback", "audio stream", "audiostream")]
+        a["sub"] = media[0] if media else ""
+        if a["volume"] is None:
+            a["volume"] = 100
+        out.append(a)
+    order = {"crossbar-music": 0, "spotify": 1, "crossbar-video": 2}
+    return sorted(out, key=lambda a: (order.get(a["key"], 5), a["key"] == "crossbar-menu", a["name"].lower()))
+
+
+def set_app_volume(ids, delta=None, mute=None):
+    if not util.which("wpctl"):
+        raise RuntimeError("Audio control needs PipeWire (wpctl)")
+    for i in ids:
+        i = str(int(i))
+        if delta:
+            subprocess.run(["wpctl", "set-volume", "-l", "1.0", i, f"{abs(int(delta))}%{'+' if delta > 0 else '-'}"],
+                           capture_output=True)
+        if mute is not None:
+            subprocess.run(["wpctl", "set-mute", i, "1" if mute else "0"], capture_output=True)
+
+
 def set_audio_device(node_id):
     if not util.which("wpctl"):
         raise RuntimeError("Audio control needs PipeWire (wpctl)")

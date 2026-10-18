@@ -10,7 +10,7 @@ import subprocess
 import threading
 import time
 
-from . import player, system, util
+from . import glyphs, player, system, util
 from .events import HUB
 from .spotify import SPOTIFY
 
@@ -207,6 +207,8 @@ def info():
         "music": player.music_state(),
         "spotify": sp,
         "audio": system.audio(),
+        "apps_audio": system.app_streams(),
+        "glyphs": glyphs.current(),
         "output": next((d for d in devices["outputs"] if d["default"]), None),
         "outputs": devices["outputs"],
         "shot": os.path.exists(SHOT),

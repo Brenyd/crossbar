@@ -179,3 +179,10 @@ body.infolder #cats { opacity: 0; }
 #launch .l-spin { width: 64px; height: 64px; border-radius: 50%; border: 3px solid rgba(255,255,255,.2); border-top-color: #fff;
                   animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* controller glyphs: PlayStation symbols in their colours */
+.glyph.g-playstation[data-g="✕"] { color: #8fb4ff; }
+.glyph.g-playstation[data-g="○"] { color: #ff8a8a; }
+.glyph.g-playstation[data-g="□"] { color: #f4a3dc; }
+.glyph.g-playstation[data-g="△"] { color: #6fe3b8; }
+.q-foot b, #viewer .v-hint b.glyph { font-weight: 600; }
