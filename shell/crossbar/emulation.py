@@ -146,16 +146,32 @@ def install(job, emu):
         subprocess.run(["flatpak", "remote-add", "--user", "--if-not-exists", "flathub", FLATHUB],
                        capture_output=True, text=True, timeout=120)
         job.set(0.15, f"Installing {e['name']} (this can take a few minutes)…")
-        r = subprocess.run(["flatpak", "install", "--user", "-y", "--noninteractive", "flathub", e["id"]],
-                           capture_output=True, text=True, timeout=3600)
-        if r.returncode:
-            raise RuntimeError((r.stderr or r.stdout).strip()[-200:] or "flatpak install failed")
+        p = subprocess.Popen(["flatpak", "install", "--user", "-y", "--noninteractive", "flathub", e["id"]],
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, start_new_session=True)
+
+        def stop():                       # flatpak cleans up its own partial download
+            import signal
+            try:
+                os.killpg(p.pid, signal.SIGINT)
+                p.wait(timeout=10)
+            except (ProcessLookupError, subprocess.TimeoutExpired):
+                try:
+                    os.killpg(p.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        job.cancel_with(stop)
+        out = p.communicate(timeout=3600)[0] or ""
+        job.check()
+        if p.returncode:
+            raise RuntimeError(out.strip()[-200:] or "flatpak install failed")
         # let it read your games and BIOS folder (Flatpaks are sandboxed)
         subprocess.run(["flatpak", "override", "--user", f"--filesystem={root()}", e["id"]], capture_output=True)
     else:
         os.makedirs(os.path.dirname(_appimage(e)), exist_ok=True)
         job.set(0.1, f"Downloading {e['name']}…")
-        util.download(e["url"], _appimage(e), lambda f: job.set(0.1 + 0.8 * f, f"Downloading {e['name']} {int(f * 100)}%"))
+        job.cancel_with(lambda: None)            # stops at the next chunk; the partial file is deleted
+        util.download(e["url"], _appimage(e), on_bytes=lambda d, t: job.set_bytes(d, t, e["name"]))
+        job.cancellable = False
         os.chmod(_appimage(e), 0o755)
     job.set(0.95, "Setting it up…")
     try:

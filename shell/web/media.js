@@ -261,8 +261,8 @@ CATS.push(
       }));
       if (S.state.iptv?.linked) items.unshift(iptvTopFolder('live'));
       else items.push({ key: 'iptv-in', label: 'IPTV', icon: 'tv', sub: 'Sign in with Xtream Codes to watch live TV here', action: () => openIptvSettings('live') });
-      items.push({ key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Full web browser',
-        action: () => call(() => api.post('/api/browser', {}), 'Opening the browser — Select + Start for the Quick Menu') });
+      items.push({ key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Made for the controller · Y in the browser for its menu',
+        action: () => call(() => api.post('/api/browser/open', {}), 'Opening the browser — Y for its menu, Select + Start for the Quick Menu') });
       items.push({ key: 'add', label: 'Add Service…', icon: 'add', sub: 'Jellyfin, Plex, Crunchyroll — any web app', action: async () => {
         const r = await Dialog.ask({ title: 'Add Service', buttons: ['Add', 'Cancel'],
           fields: [{ key: 'name', label: 'Name' }, { key: 'url', label: 'Address (e.g. http://192.168.1.10:8096 for Jellyfin)' }] });

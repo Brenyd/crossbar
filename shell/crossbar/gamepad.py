@@ -34,6 +34,12 @@ from .events import HUB
 REPEAT_DELAY, REPEAT_RATE = 0.38, 0.085
 INPUTD_SOCK = "/run/crossbar/input.sock"
 
+# Extra buttons in the browser (not mappable actions): right stick scrolls, triggers page,
+# a stick click toggles the pointer.
+BROWSER_RAW = {"ABS_RY+": "scroll_down", "ABS_RY-": "scroll_up", "ABS_RX+": "scroll_right", "ABS_RX-": "scroll_left",
+               "ABS_Z+": "page_up", "ABS_RZ+": "page_down", "BTN_TL2": "page_up", "BTN_TR2": "page_down",
+               "BTN_THUMBL": "pointer", "BTN_THUMBR": "pointer"}
+
 WEB_KEYS = {
     "up": "KEY_UP", "down": "KEY_DOWN", "left": "KEY_LEFT", "right": "KEY_RIGHT",
     "ok": "KEY_ENTER", "back": "KEY_ESC", "menu": "KEY_TAB",
@@ -69,6 +75,8 @@ class Gamepads:
         self._sock_lock = threading.Lock()
         self._uinput = None
         self.uinput_error = ""
+        self.browser_pid = lambda: None       # set by the server: Crossbar's browser process
+        self.on_browser = None                # set by the server: browser.act(action, repeat)
         self.reload()
 
     # ---- mapping -----------------------------------------------------------
@@ -121,6 +129,8 @@ class Gamepads:
             t = "xmb"
         elif f["app"] == player.VIDEO_APP_ID:
             t = "video"
+        elif f.get("pid") and f.get("pid") == self.browser_pid():
+            t = "browser"                 # Crossbar's browser: driven over DevTools
         elif system.is_web_app(f):
             t = "web"
         elif not f.get("con_id"):
@@ -164,6 +174,8 @@ class Gamepads:
                 player.video_input(action)
         elif target == "web":
             self._web_key(action)
+        elif target == "browser" and self.on_browser:
+            self.on_browser(action, repeat)
 
     def pad_recent(self):
         """True when the controller was used more recently than a real keyboard/mouse."""
@@ -178,8 +190,24 @@ class Gamepads:
         self.last_pad = time.time()
         self.log.appendleft({"t": time.time(), "token": token, "action": action, "to": target})
         self._send(action, target)
-        if action in controls.DIRECTIONS and target in ("xmb", "video", "web", "overlay", "osk"):
+        if action in controls.DIRECTIONS and target in ("xmb", "video", "web", "overlay", "osk", "browser"):
             self._held[action] = time.time() + REPEAT_DELAY
+
+    def _raw(self, token, pressed):
+        """Buttons/axes no action uses: extras in the browser."""
+        action = BROWSER_RAW.get(token)
+        if not action:
+            return
+        if not pressed:
+            self._held.pop(action, None)
+            return
+        if self._target() != "browser":
+            return
+        self.last_pad = time.time()
+        self.log.appendleft({"t": time.time(), "token": token, "action": action, "to": "browser"})
+        self._send(action, "browser")
+        if action.startswith("scroll_"):
+            self._held[action] = time.time() + 0.12
 
     def _release(self, action):
         self._held.pop(action, None)
@@ -317,6 +345,8 @@ class Gamepads:
                 self._release(a)
             return
         actions = self._keymap.get(code, [])
+        if not actions and value in (0, 1) and token in BROWSER_RAW:
+            return self._raw(token, value == 1)
         if value == 1 and not actions:
             self.log.appendleft({"t": time.time(), "token": token, "action": None, "to": "unmapped"})
         for a in actions:
@@ -345,6 +375,8 @@ class Gamepads:
         if prev:
             for a in self._absmap.get((code, prev), []):
                 self._release(a)
+            if not self._absmap.get((code, prev)):
+                self._raw(f"{name}{'+' if prev > 0 else '-'}", False)
         if direction:
             token = f"{name}{'+' if direction > 0 else '-'}"
             if self._capture:
@@ -353,6 +385,8 @@ class Gamepads:
                 return
             for a in self._absmap.get((code, direction), []):
                 self._press(a, token)
+            if not self._absmap.get((code, direction)):
+                self._raw(token, True)
 
     def _handle(self, d, ev):
         """Direct-mode adapter (also used by tests)."""
@@ -368,7 +402,11 @@ class Gamepads:
         for action, due in list(self._held.items()):
             if now >= due:
                 self._held[action] = now + REPEAT_RATE
-                self._send(action, self._target(), repeat=True)
+                target = self._target()
+                if action.startswith("scroll_") and target != "browser":
+                    self._held.pop(action, None)
+                    continue
+                self._send(action, target, repeat=True)
 
     # ---- source 1: crossbar-inputd -------------------------------------------
     def _cmd(self, msg):

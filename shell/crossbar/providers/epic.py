@@ -16,6 +16,15 @@ from .gog import run_login_helper
 
 LOGIN_URL = "https://legendary.gl/epiclogin"
 PROGRESS = re.compile(r"Progress: ([\d.]+)%.*?ETA: ([\d:]+)")
+DL_SIZE = re.compile(r"Download size: ([\d.]+) ([KMG]i?B)")
+DOWNLOADED = re.compile(r"Downloaded: ([\d.]+) ([KMG]i?B)")
+SPEED = re.compile(r"\+ Download\s*-\s*([\d.]+) ([KMG]i?B)/s")
+INSTALL_PATH = re.compile(r"Install path: (.+)$")
+UNITS = {"KiB": 1 << 10, "MiB": 1 << 20, "GiB": 1 << 30, "KB": 1000, "MB": 1000 ** 2, "GB": 1000 ** 3}
+
+
+def _bytes(num, unit):
+    return float(num) * UNITS.get(unit, 1)
 
 
 def _art(meta):
@@ -80,15 +89,62 @@ class Epic(Provider):
     def install(self, job, app):
         base = os.path.join(util.GAMES_DIR, "epic")
         os.makedirs(base, exist_ok=True)
+        was_installed = app in self._installed_map()      # an update: never delete the game on cancel
+        before = set(os.listdir(base))
         p = subprocess.Popen(["legendary", "-y", "install", app, "--base-path", base],
-                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        tail = []
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                             start_new_session=True)
+        st = {"path": None}
+
+        def stop():
+            import signal
+            for sig, wait in ((signal.SIGINT, 6), (signal.SIGTERM, 4), (signal.SIGKILL, 2)):
+                try:
+                    os.killpg(p.pid, sig)
+                except ProcessLookupError:
+                    break
+                try:
+                    p.wait(timeout=wait)
+                    break
+                except subprocess.TimeoutExpired:
+                    continue
+            if was_installed:
+                return
+            # delete what this download wrote: the game folder and legendary's resume file
+            import shutil
+            new = [os.path.join(base, d) for d in set(os.listdir(base)) - before]
+            if st["path"] and os.path.realpath(st["path"]).startswith(os.path.realpath(base) + os.sep):
+                new.append(st["path"])
+            for d in set(new):
+                shutil.rmtree(d, ignore_errors=True)
+            cfg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+            for ext in (".resume", ".repair"):
+                try:
+                    os.remove(os.path.join(cfg, "legendary", "tmp", app + ext))
+                except OSError:
+                    pass
+        job.cancel_with(stop)
+        tail, total, done, speed = [], 0, 0, 0
         for line in p.stdout:
             tail = (tail + [line.strip()])[-5:]
-            m = PROGRESS.search(line)
-            if m:
-                job.set(float(m.group(1)) / 100, f"{m.group(1)}% · ETA {m.group(2)}")
+            if (m := INSTALL_PATH.search(line)):
+                st["path"] = m.group(1).strip()
+            elif (m := DL_SIZE.search(line)):
+                total = _bytes(*m.groups())
+            elif (m := DOWNLOADED.search(line)):
+                done = _bytes(*m.groups())
+                if total:
+                    job.set_bytes(done, total)
+                    if speed:
+                        job.speed = speed               # legendary's own measured speed
+                        job.eta = (total - done) / speed
+            elif (m := SPEED.search(line)):
+                speed = _bytes(*m.groups())
+            elif (m := PROGRESS.search(line)) and not total:
+                job.set(float(m.group(1)) / 100, f"{m.group(1)}% · {m.group(2)} left")
         if p.wait():
+            if job.cancelled():
+                return
             raise RuntimeError(tail[-1] if tail else "legendary install failed")
         self._cache = (0, [])
 

@@ -25,7 +25,8 @@ function emulatorsFolder() {
           sub: job ? `Installing… ${job.message}` : (e.systems.length > 1 ? `${e.about} · ${e.systems.slice(0, 4).join(', ')}${e.systems.length > 4 ? '…' : ''}` : e.about),
           progress: job ? job.progress : null,
           action: () => (e.installed ? emuOptions(e) : emuInstall(e)),
-          options: e.installed ? emuOptionList(e) : [{ label: 'Install', action: () => emuInstall(e) }],
+          options: job && job.cancellable ? [{ label: 'Cancel Install', action: () => cancelJob(job) }]
+            : e.installed ? emuOptionList(e) : [{ label: 'Install', action: () => emuInstall(e) }],
         });
       }
       return items;

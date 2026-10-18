@@ -225,13 +225,15 @@ class Overlay(Gtk.Application):
         self.hud.set_visible(True)
         return False
 
-    def show(self, on):
+    def show(self, on, page=None):
         if on == self.visible:
             return False
         self.visible = on
         if on:
             self.model.reset()
             self.model.refresh()
+            if page:
+                self.model.open_on(page)
             self.render()
             LayerShell.set_keyboard_mode(self.win, LayerShell.KeyboardMode.EXCLUSIVE)
             self.win.present()
@@ -351,7 +353,7 @@ class Overlay(Gtk.Application):
                             continue
                         ev = json.loads(line[5:])
                         if ev.get("type") == "overlay":
-                            GLib.idle_add(self.show, bool(ev.get("visible")))
+                            GLib.idle_add(self.show, bool(ev.get("visible")), ev.get("page"))
                         elif ev.get("type") == "input" and ev.get("to") == "overlay":
                             GLib.idle_add(self.act, ev["action"])
                         elif ev.get("type") == "input" and ev.get("to") == "osk":

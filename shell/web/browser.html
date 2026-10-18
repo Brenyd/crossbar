@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Start</title>
+<style>
+  :root { color-scheme: dark; --bg: #0d0f14; --tile: #1a1e27; --tile-on: #263044; --text: #eef1f6; --dim: #9aa3b2; --accent: #3ea6ff; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: radial-gradient(ellipse at 50% -20%, #1d2a44 0, var(--bg) 60%) fixed; color: var(--text);
+               font: 18px/1.4 'Noto Sans', 'Inter', system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 8vh 32px 48px; }
+  form { display: flex; gap: 12px; margin-bottom: 40px; }
+  input { flex: 1; font: inherit; font-size: 26px; padding: 18px 24px; border-radius: 16px; border: 2px solid #2c3444;
+          background: #141821; color: var(--text); outline: none; }
+  input:focus { border-color: var(--accent); }
+  button { font: inherit; font-size: 20px; padding: 0 28px; border-radius: 16px; border: 0; background: var(--accent); color: #04121f; font-weight: 600; }
+  h2 { font-size: 15px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 0 0 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+  a.tile { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 12px; border-radius: 18px; background: var(--tile);
+           color: var(--text); text-decoration: none; text-align: center; overflow: hidden; }
+  a.tile:focus, a.tile:hover { background: var(--tile-on); }
+  .icon { width: 56px; height: 56px; border-radius: 14px; display: grid; place-items: center; font-size: 26px; font-weight: 700; color: #fff; }
+  .icon img { width: 40px; height: 40px; }
+  .name { font-size: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+  .help { margin-top: 44px; color: var(--dim); font-size: 16px; display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  .help b { color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <form id="f" autocomplete="off">
+    <input id="q" type="search" placeholder="Search or type an address" aria-label="Search or type an address" autocapitalize="off" spellcheck="false">
+    <button type="submit">Go</button>
+  </form>
+  <h2>Bookmarks</h2>
+  <div class="grid" id="marks"></div>
+  <div class="help">
+    <span><b>D-pad</b> move</span><span><b>A</b> open · type</span><span><b>B</b> back</span>
+    <span><b>L1 / R1</b> tabs</span><span><b>Right stick</b> scroll</span><span><b>L3</b> pointer</span>
+    <span><b>Start</b> search</span><span><b>Y</b> browser menu</span>
+  </div>
+</main>
+<script>
+'use strict';
+const SEARCH = 'https://duckduckgo.com/?q=';
+function toUrl(t) {
+  t = t.trim();
+  if (!t) return null;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t) || t.startsWith('about:')) return t;
+  if (!/\s/.test(t) && /^(localhost|[\w-]+(\.[\w-]+)+|\d+\.\d+\.\d+\.\d+)(:\d+)?(\/.*)?$/.test(t)) return 'https://' + t;
+  return SEARCH + encodeURIComponent(t);
+}
+document.getElementById('f').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const u = toUrl(document.getElementById('q').value);
+  if (u) location.href = u;
+});
+const hue = (s) => [...s].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 360, 7);
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+fetch('/api/browser/bookmarks').then((r) => r.json()).then((d) => {
+  document.getElementById('marks').innerHTML = (d.bookmarks || []).map((b) => {
+    return `<a class="tile" href="${esc(b.url)}"><span class="icon" style="background:hsl(${hue(b.name)} 45% 32%)">${esc((b.name || '?')[0].toUpperCase())}</span>
+      <span class="name">${esc(b.name)}</span></a>`;
+  }).join('');
+}).catch(() => {});
+if (location.hash === '#search') { const q = document.getElementById('q'); q.focus(); }
+else document.getElementById('q').focus();
+</script>
+</body>
+</html>

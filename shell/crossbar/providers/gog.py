@@ -138,15 +138,23 @@ class GOG(Provider):
             files = inst.get("files", [])
             total = sum(f.get("size", 0) for f in files) or 1
             done, paths = 0, []
+            job.cancel_with(lambda: None)        # downloads stop at the next chunk; the cache is removed below
             for f in files:
+                job.check()
                 link = self._api(f["downlink"])["downlink"]
                 name = os.path.basename(urllib.parse.urlparse(link).path) or f"part{len(paths)}"
                 path = os.path.join(cache, name)
                 size = f.get("size", 0)
-                util.download(link, path, lambda x, d=done, sz=size: job.set(
-                    0.85 * (d + x * sz) / total, f"Downloading {int(100 * (d + x * sz) / total)}%"))
+
+                def on_bytes(n, t, d=done):
+                    job.set_bytes(d + n, total, "Downloading")
+                    job.progress = 0.85 * job.progress     # the last 15% is unpacking
+                util.download(link, path, on_bytes=on_bytes)
                 done += size
                 paths.append(path)
+            job.check()
+            job.cancellable = False                # unpacking can't stop half-way cleanly
+            job.speed, job.eta = 0.0, None
             job.set(0.88, "Installing…")
             tmp = tempfile.mkdtemp(dir=cache)
             if platform == "linux":

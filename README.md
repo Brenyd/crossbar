@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.11.2
+# Crossbar — prototype 0.12
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -12,6 +12,13 @@ anything mpv can, with a controller-friendly control panel.
 ![Game category](docs/game.png)
 
 ![Music category](docs/music.png)
+
+### What's new in 0.12
+
+| | |
+|---|---|
+| ![Browser](docs/browser.png) | ![Downloads](docs/downloads.png) |
+| **A browser made for the controller** — D-pad jumps between links, A opens, the keyboard types straight into the page, sized for a TV | **Downloads you can stop** — speed and time left; Y › Cancel Download deletes what was downloaded. Plus **Steam Big Picture** in Game |
 
 ### What's new in 0.11
 
@@ -355,6 +362,35 @@ shift, L1/R1 move the cursor, Start is Done. Touch a real keyboard or mouse and 
 In other apps it opens by itself in apps that support Wayland's text-input (GTK, Qt, and Crossbar's
 own web windows like Discord and TV apps), typing any character; anywhere else use **Quick Menu ›
 Keyboard**. It stays away from Steam, which has its own.
+
+## Internet browser
+
+**TV & Video › Internet Browser** is Chromium, full screen, driven by Crossbar so the controller
+works on any site:
+
+| Button | In the browser |
+|---|---|
+| D-pad / left stick | jump between links, buttons and fields (a big blue highlight shows where you are) |
+| A | open it · on a text box, the on-screen keyboard, which types straight into the page |
+| B | back |
+| L1 / R1 | previous / next tab |
+| Right stick · L2 / R2 | scroll · page up / down |
+| L3 | pointer mode, for sites that need a cursor (A clicks) |
+| Start | search or type an address |
+| Y | the browser menu: address, back/forward, reload, tabs, bookmark this page, pointer, size, close |
+
+Everything is drawn big enough to read from the couch: 125% at 1080p and 250% at 4K by default.
+Change it with Y › Size (◀ ▶) or **Settings › Media › Browser**; the browser reopens with your tabs.
+The start page has your bookmarks (add with Y › Bookmark This Page, remove in Settings › Media › Browser).
+TV services (YouTube TV, Jellyfin, your own) still open as full-screen apps.
+
+## Downloads
+
+Downloads show their speed and time left (from Steam's, legendary's and GOG's own numbers). To stop one,
+highlight it and press **A** (or **Y › Cancel Download**): it stops and what was downloaded is deleted.
+- **GOG**, **Epic** and emulators: stopped and cleaned up by Crossbar (an Epic *update* is only stopped;
+  the installed game is never deleted).
+- **Steam**: new installs only; Steam itself removes the partial game (it may ask you to confirm).
 
 ## Artwork (SteamGridDB)
 

@@ -449,63 +449,111 @@ class DiscordWeb:
         self.start()
         return {**(self.js(self.DEBUG_JS % self.STORES_JS, timeout=15) or {}), "via": self.cache.get("friends_via")}
 
-    def _call_button(self, tries=20):
-        for _ in range(tries):                      # the DM opens, then its header has the call button
-            time.sleep(0.3)
-            if self.js(r"""(() => { const b = [...document.querySelectorAll('[aria-label]')]
-                         .find(x => /^start (voice )?call$/i.test(x.getAttribute('aria-label')));
-                         if (!b) return false; b.click(); return true; })()"""):
-                return True
+    # The call button in a DM's header. Its label has been "Start Voice Call"; match loosely
+    # (never the video one), so small wording changes don't break calling.
+    CALL_BTN_JS = r"""(() => {
+      const ok = (l) => /call/i.test(l) && !/video|end|leave|disconnect|ring|settings|missed/i.test(l);
+      const all = [...document.querySelectorAll('[aria-label]')].filter((x) => ok(x.getAttribute('aria-label') || ''));
+      const b = all.find((x) => /^start (a )?(voice )?call$/i.test(x.getAttribute('aria-label'))) ||
+                all.find((x) => /voice call/i.test(x.getAttribute('aria-label'))) ||
+                all.find((x) => /^call$/i.test(x.getAttribute('aria-label')));
+      if (!b) return false;
+      b.click(); return true;
+    })()"""
+    HEADER_LABELS_JS = r"""(() => {
+      const box = document.querySelector('section[class*="title"], [class*="toolbar"]') || document;
+      return [...box.querySelectorAll('[aria-label]')].map((x) => x.getAttribute('aria-label')).filter(Boolean).slice(0, 15);
+    })()"""
+    DM_READY_JS = r"""(() => /^\/channels\/@me\/\d+/.test(location.pathname) &&
+      !!document.querySelector('[role="textbox"], form [contenteditable="true"], [data-slate-editor="true"]'))()"""
+
+    def _wait(self, expr, seconds):
+        end = time.time() + seconds
+        while time.time() < end:
+            try:
+                if self.js(expr, timeout=6):
+                    return True
+            except DiscordError:
+                self.session = None              # mid-navigation: attach again
+            time.sleep(0.4)
         return False
 
+    def _press_call_shortcut(self):
+        """Discord's own shortcut for "start a call in this DM": Ctrl + ' (sent as real key presses)."""
+        key = {"key": "'", "code": "Quote", "windowsVirtualKeyCode": 222, "nativeVirtualKeyCode": 222, "modifiers": 2}
+        self._cmd("Input.dispatchKeyEvent", {"type": "rawKeyDown", **key})
+        self._cmd("Input.dispatchKeyEvent", {"type": "keyUp", **key})
+
+    def _in_call(self, seconds=8):
+        end = time.time() + seconds
+        while time.time() < end:
+            time.sleep(0.4)
+            st = self.status()
+            if st.get("voice"):
+                return st
+        return None
+
+    def _open_dm(self, uid):
+        """Open the DM with a friend, the way clicking it would. True once its chat has loaded."""
+        if uid.isdigit():
+            cid = self.js(f"""(() => {{ const S = {self.STORES_JS};
+                const C = S && S.ChannelStore;
+                try {{ return C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; }} catch (e) {{ return null; }} }})()""", timeout=15)
+            if cid:
+                path = f"/channels/@me/{cid}"
+                # 1) its entry in the Direct Messages list (a real link, handled by Discord's router)
+                self.js(r"""(() => { const h = document.querySelector('[data-list-item-id="guildsnav___home"]'); if (h) h.click(); return true; })()""")
+                time.sleep(0.6)
+                if self.js(f"""(() => {{ const a = document.querySelector('a[href="{path}"]'); if (!a) return false; a.click(); return true; }})()"""):
+                    if self._wait(self.DM_READY_JS, 8):
+                        return True
+                # 2) the router, told the address changed
+                self.js(f"""(() => {{ history.pushState(null, '', '{path}'); dispatchEvent(new PopStateEvent('popstate', {{ state: null }})); return true; }})()""")
+                if self._wait(self.DM_READY_JS, 6):
+                    return True
+                # 3) load the page there (slow, but always works)
+                try:
+                    self.js(f"location.assign('{path}'); true", timeout=5)
+                except DiscordError:
+                    pass
+                self.session = None
+                if self._wait(self.DM_READY_JS, 45):
+                    return True
+        # no DM yet: click the friend on Home › Friends › Online, which opens one
+        self.js(self.GO_FRIENDS_JS, timeout=15)
+        if uid.isdigit():
+            find = f"""r.getAttribute('data-list-item-id') === 'people-list___{uid}' || !!r.querySelector('img[src*="/avatars/{uid}/"]')"""
+        else:
+            find = f"""(r.innerText || '').split('\\n')[0].trim() === {json.dumps(uid[5:])}"""
+        for _ in range(20):
+            if self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
+                             if (!r) return false; r.click(); return true; }})()"""):
+                return self._wait(self.DM_READY_JS, 10)
+            time.sleep(0.25)
+        raise DiscordError("Couldn't find that friend in Discord's Friends list")
+
     def call(self, user_id):
-        """Open the DM with a friend and press Start Voice Call (voice runs in the hidden window)."""
+        """Open the DM with a friend and start a voice call (voice runs in the hidden window)."""
         uid = str(user_id)
         if not re.fullmatch(r"\d+|name:.{1,100}", uid):
             raise ValueError("user id")
         self.start()
-        opened = False
-        if uid.isdigit():
-            # the DM channel Discord already knows for this friend: go there like a link click
-            path = self.js(f"""(() => {{ const S = {self.STORES_JS};
-                const C = S && S.ChannelStore; let cid = null;
-                try {{ cid = C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; }} catch (e) {{ cid = null; }}
-                if (!cid) return null;
-                const path = '/channels/@me/' + cid;
-                if (location.pathname !== path) {{ history.pushState(null, '', path); dispatchEvent(new PopStateEvent('popstate', {{ state: null }})); }}
-                return path; }})()""", timeout=15)
-            if path:
-                opened = self._call_button(12)
-                if not opened:                       # the router ignored it: load the page directly
-                    self.js(f"location.assign({json.dumps(path)}); true")
-                    time.sleep(4)
-                    self.session = None
-                    opened = self._call_button(30)
-        if not opened:
-            # no DM yet: click the friend on Home › Friends › Online, which opens one
-            self.js(self.GO_FRIENDS_JS, timeout=15)
-            if uid.isdigit():
-                find = f"""r.getAttribute('data-list-item-id') === 'people-list___{uid}' || !!r.querySelector('img[src*="/avatars/{uid}/"]')"""
-            else:
-                find = f"""(r.innerText || '').split('\\n')[0].trim() === {json.dumps(uid[5:])}"""
-            ok = False
-            for _ in range(20):
-                ok = self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
-                                 if (!r) return false; r.click(); return true; }})()""")
-                if ok:
-                    break
-                time.sleep(0.25)
-            if not ok:
-                raise DiscordError("Couldn't find that friend in Discord's Friends list")
-            opened = self._call_button()
-        if not opened:
-            raise DiscordError("Couldn't find Discord's Start Voice Call button")
-        for _ in range(30):                         # in a call once Disconnect shows up
-            time.sleep(0.25)
-            st = self.status()
-            if st.get("voice"):
-                return st
-        return self.status()
+        if not self._open_dm(uid):
+            raise DiscordError("Discord didn't open the chat with that friend")
+        time.sleep(0.5)
+        for _ in range(15):                      # the header's buttons render a moment after the chat
+            if self.js(self.CALL_BTN_JS):
+                st = self._in_call()
+                if st:
+                    return st
+                break
+            time.sleep(0.4)
+        self._press_call_shortcut()              # no button found (or it didn't start a call)
+        st = self._in_call(10)
+        if st:
+            return st
+        labels = ", ".join(self.js(self.HEADER_LABELS_JS) or []) or "none"
+        raise DiscordError(f"Couldn't start the call: no call button found (header buttons: {labels})")
 
     def sign_out_local(self):
         """Forget the Discord sign-in on this console (deletes the window's profile)."""

@@ -18,7 +18,8 @@ def kind_of(app):
     return "App" if "chrom" in (app.get("app") or "").lower() else "Game"
 
 
-PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings"}
+PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", "browser": "Browser", "tabs": "Tabs"}
+BROWSER_SIZES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0]
 FPS_MODES = ["off", "fps", "graph", "full"]
 FPS_NAMES = {"off": "Off", "fps": "FPS", "graph": "FPS + frame time", "full": "FPS, frame time, CPU/GPU"}
 CORNERS = ["top-right", "top-left", "bottom-left", "bottom-right"]
@@ -88,7 +89,61 @@ class Model:
             return self.build_perf(d)
         if self.page == "settings":
             return self.build_settings()
+        if self.page == "browser":
+            return self.build_browser(d)
+        if self.page == "tabs":
+            return self.build_tabs(d)
         return self.build_main(d)
+
+    # ---- the browser (Y in the browser opens this page directly) ---------------------------------
+    def build_browser(self, d):
+        api, b = self.api, d.get("browser") or {}
+        if not b.get("running"):
+            return [{"key": "open", "icon": "web-browser-symbolic", "label": "Open the Browser", "sub": "",
+                     "ok": lambda: (api.post("/api/browser/open", {}), self.close(False))}]
+
+        def do(what, body=None, close=True):
+            api.post(f"/api/browser/{what}", body or {})
+            if close:
+                self.close(True)
+            else:
+                self.refresh()
+        size = b.get("size") or 1.0
+        si = min(range(len(BROWSER_SIZES)), key=lambda i: abs(BROWSER_SIZES[i] - size))
+        url = (b.get("url") or "").replace("http://127.0.0.1:7777/browser.html", "Start page")
+        n = len(b.get("tabs") or [])
+        return [
+            {"key": "search", "icon": "system-search-symbolic", "label": "Search or Type Address", "sub": url[:80],
+             "ok": lambda: do("search")},
+            {"key": "back", "icon": "go-previous-symbolic", "label": "Back", "sub": "", "ok": lambda: do("history", {"delta": -1})},
+            {"key": "fwd", "icon": "go-next-symbolic", "label": "Forward", "sub": "", "ok": lambda: do("history", {"delta": 1})},
+            {"key": "reload", "icon": "view-refresh-symbolic", "label": "Reload", "sub": "", "ok": lambda: do("reload")},
+            {"key": "tabs", "icon": "view-paged-symbolic", "label": "Tabs", "sub": f"{n} open · L1 / R1 switch while browsing",
+             "ok": lambda: self.go("tabs")},
+            {"key": "mark", "icon": "starred-symbolic", "label": "Bookmark This Page", "sub": "Shows on the start page",
+             "ok": lambda: (api.post("/api/browser/bookmark", {}), setattr(self, "notice", "Bookmarked"), self.refresh())},
+            {"key": "pointer", "icon": "input-mouse-symbolic", "label": "Pointer: " + ("On" if b.get("pointer") else "Off"),
+             "sub": "A cursor for sites that need one (also L3)", "ok": lambda: do("pointer", {"on": not b.get("pointer")})},
+            {"key": "size", "icon": "zoom-in-symbolic", "label": f"Size: {int(size * 100)}%" + (" (automatic)" if b.get("size_auto") else ""),
+             "sub": "◀ ▶ bigger / smaller · {ok} automatic — the browser reopens with your tabs", "hint": "◀ ▶ size",
+             "ok": lambda: do("size", {"value": "auto"}),
+             "adjust": lambda d_: do("size", {"value": BROWSER_SIZES[max(0, min(len(BROWSER_SIZES) - 1, si + (1 if d_ > 0 else -1)))]}, close=False)},
+            {"key": "close-b", "icon": "window-close-symbolic", "label": "Close Browser", "sub": "", "danger": True,
+             "ok": lambda: (api.post("/api/browser/close", {}), self.close(False))},
+        ]
+
+    def build_tabs(self, d):
+        api, b = self.api, d.get("browser") or {}
+        rows = []
+        for t in b.get("tabs") or []:
+            here = t["id"] == b.get("current")
+            rows.append({"key": f"t:{t['id']}", "icon": "web-browser-symbolic", "label": (t["title"] or t["url"])[:70],
+                         "sub": ("Showing · " if here else "") + t["url"][:80], "hint": "{ok} show · {menu} close",
+                         "ok": lambda t=t: (api.post("/api/browser/tab", {"id": t["id"]}), self.close(True)),
+                         "menu": lambda t=t: (api.post("/api/browser/close-tab", {"id": t["id"]}), self.refresh())})
+        rows.append({"key": "new", "icon": "tab-new-symbolic", "label": "New Tab", "sub": "Opens the start page",
+                     "ok": lambda: (api.post("/api/browser/new-tab", {}), self.close(True))})
+        return rows
 
     def build_sound(self, d):
         api, rows = self.api, []
@@ -190,6 +245,9 @@ class Model:
                          "label": "Press {ok} again to close" if armed else f"Close {what}",
                          "sub": (app["title"] + ("" if app.get("video") else " — unsaved progress may be lost")) if armed else app["title"],
                          "ok": self._close_app})
+        if (d.get("browser") or {}).get("focused"):
+            rows.append({"key": "browser", "icon": "web-browser-symbolic", "label": "Browser",
+                         "sub": "Address, tabs, bookmarks, size", "ok": lambda: self.go("browser")})
         rows.append({"key": "home", "icon": "go-home-symbolic", "label": "Go to Home",
                      "sub": f"{app['title']} stays open" if app else "The Crossbar menu",
                      "ok": lambda: api.post("/api/overlay/home", {})})
@@ -341,6 +399,12 @@ class Model:
 
     def reset(self):
         self.sel, self.armed, self.notice, self.page, self.app = 0, None, "", "main", None
+        self.direct = None
+
+    def open_on(self, page):
+        """Opened straight on a page (the browser's Y): Back then closes instead of going to main."""
+        self.go(page)
+        self.direct = page
 
     # ---- input ----------------------------------------------------------------
     def handle(self, a):
@@ -364,8 +428,10 @@ class Model:
             if self.armed and a == "back":
                 self.armed = None
                 self.rebuild()
+            elif a == "back" and self.page == getattr(self, "direct", None):
+                self.close(True)
             elif self.page != "main" and a == "back":
-                back = "apps" if self.page == "app" else "main"
+                back = "apps" if self.page == "app" else "browser" if self.page == "tabs" else "main"
                 self.go(back)
                 if back == "main":            # land on the row we came from
                     keys = [r["key"] for r in self.rows]

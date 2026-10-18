@@ -217,6 +217,14 @@ const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'st
 function prov(id) { return S.state.providers.find((p) => p.id === id); }
 
 // ---------------------------------------------------------------- item builders
+// "Cancel Download" for a running download: stops it and deletes what was downloaded so far
+async function cancelJob(j) {
+  const steam = j.provider === 'steam';
+  if (!(await confirmBox(`Cancel downloading ${j.title}?\nWhat's downloaded so far is deleted.${steam ? '\nSteam may ask you to confirm removing it.' : ''}`, 'Cancel Download'))) return;
+  if (await call(() => api.post('/api/jobs/cancel', { id: j.id }))) { toast(`Cancelled ${j.title}`, 'download'); setTimeout(pollJobs, 600); }
+}
+function jobOptions(j) { return j && j.cancellable ? [{ label: 'Cancel Download', action: () => cancelJob(j) }] : []; }
+
 function gameItem(g, inStore) {
   const job = S.jobs.find((j) => j.kind === 'install' && j.provider === g.provider && j.game_id === g.id && j.status === 'running');
   const it = {
@@ -232,6 +240,9 @@ function gameItem(g, inStore) {
   } else if (!job) {
     it.action = () => install(g);
     options.push({ label: 'Download', action: () => install(g) });
+  } else {
+    it.action = () => (job.cancellable ? cancelJob(job) : toast(`${g.title}: ${job.message}`, 'download'));
+    options.push(...jobOptions(job));
   }
   if (typeof changeArtwork !== 'undefined' && g.provider !== 'demo') {
     options.push({ label: 'Change Artwork…', action: () => changeArtwork({ key: `${g.provider}:${g.id}`, title: g.title, custom: !!g.art_custom,
@@ -319,6 +330,10 @@ const CATS = [   // more categories are added by media.js and settings.js
     async load() {
       const items = [];
       if (typeof TROPHIES_FOLDER !== 'undefined') items.push(TROPHIES_FOLDER);   // always first
+      if (S.state.providers?.some((p) => p.id === 'steam')) {
+        items.push({ key: 'bpm', label: 'Steam Big Picture', icon: 'game', sub: 'Steam\'s console mode: your whole Steam library, store and friends',
+          action: async () => { const r = await call(() => api.post('/api/steam/bigpicture')); if (r?.demo) toast('Demo mode: Steam isn\'t started', 'info'); } });
+      }
       // only games and emulators here; other apps (Discord, browsers) are in the Quick Menu's Switch App
       for (const w of (S.state.windows || []).filter((x) => x.game)) {
         items.push({ key: `win:${w.con_id}`, label: `Return to ${w.title}`, icon: 'window', sub: 'Running',
@@ -327,7 +342,8 @@ const CATS = [   // more categories are added by media.js and settings.js
                     { label: 'Quit', action: async () => { await api.post('/api/window/close', { con_id: w.con_id }); setTimeout(loadState, 800); } }] });
       }
       for (const j of S.jobs.filter((j) => j.kind === 'install' && j.status === 'running')) {
-        items.push({ key: `job:${j.id}`, label: j.title, icon: 'download', sub: `Downloading… ${j.message}`, progress: j.progress, badge: STORE_NAMES[j.provider] });
+        items.push({ key: `job:${j.id}`, label: j.title, icon: 'download', sub: `Downloading… ${j.message}`, progress: j.progress, badge: STORE_NAMES[j.provider],
+          ...(j.cancellable ? { action: () => cancelJob(j), options: jobOptions(j) } : {}) });
       }
       if (typeof EMULATION_FOLDER !== 'undefined') items.push(EMULATION_FOLDER);
       const games = await api.get('/api/installed');
@@ -805,6 +821,7 @@ async function pollJobs() {
     if (j.status === 'running' || seenDone.has(j.id)) continue;
     seenDone.add(j.id); finished = true;
     if (j.status === 'error') { Sfx.err(); toast(`${j.title}: ${j.message}`, 'info'); }
+    else if (j.status === 'cancelled') continue;          // its own toast already said so
     else if (j.kind === 'install') toast(`Download complete: ${j.title}`, 'download');
     else if (j.kind === 'login') toast(`Signed in to ${j.title}`, 'link');
     else if (j.kind === 'wifi') toast(`Connected to ${j.title}`, 'wifi');

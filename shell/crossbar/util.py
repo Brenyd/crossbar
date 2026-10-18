@@ -82,22 +82,34 @@ def http_json(url, headers=None, data=None, timeout=20):
         return json.loads(r.read().decode())
 
 
-def download(url, dest, progress, headers=None, chunk=1 << 20):
-    """Stream url to dest, calling progress(fraction)."""
+def download(url, dest, progress=None, headers=None, chunk=1 << 18, on_bytes=None):
+    """Stream url to dest, calling progress(fraction) and/or on_bytes(done, total).
+
+    Either callback may raise (e.g. the job was cancelled): the partial file is deleted."""
     req = urllib.request.Request(url, headers={"User-Agent": "Crossbar/0.1", **(headers or {})})
     os.makedirs(os.path.dirname(dest), exist_ok=True)
-    with urllib.request.urlopen(req, timeout=60) as r, open(dest + ".part", "wb") as f:
-        total = int(r.headers.get("Content-Length") or 0)
-        done = 0
-        while True:
-            buf = r.read(chunk)
-            if not buf:
-                break
-            f.write(buf)
-            done += len(buf)
-            if total:
-                progress(done / total)
-    os.replace(dest + ".part", dest)
+    part = dest + ".part"
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r, open(part, "wb") as f:
+            total = int(r.headers.get("Content-Length") or 0)
+            done = 0
+            while True:
+                buf = r.read(chunk)
+                if not buf:
+                    break
+                f.write(buf)
+                done += len(buf)
+                if total and progress:
+                    progress(done / total)
+                if on_bytes:
+                    on_bytes(done, total)
+        os.replace(part, dest)
+    except BaseException:
+        try:
+            os.remove(part)
+        except OSError:
+            pass
+        raise
 
 
 def parse_vdf(text):

@@ -76,6 +76,12 @@
 - [x] Game › Return to… lists only games and emulators; other apps stay in the Quick Menu's Switch App
 - [x] Trophies: GOG / Epic entries removed
 
+## 0.12
+- [x] Game › Steam Big Picture
+- [x] Downloads: speed and time left; Cancel Download (stops and deletes what was downloaded)
+- [x] Controller-friendly browser: link-to-link navigation, keyboard typing into pages, tabs, pointer mode, bookmarks, TV-sized
+- [x] Discord: calling friends opens the DM properly; looser call-button match plus Discord's Ctrl+' shortcut
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

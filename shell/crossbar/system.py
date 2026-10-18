@@ -105,7 +105,7 @@ def focused():
     while stack:
         n = stack.pop()
         if n.get("focused") and n.get("type") in ("con", "floating_con"):
-            return {"con_id": n["id"], "title": n.get("name") or "",
+            return {"con_id": n["id"], "title": n.get("name") or "", "pid": n.get("pid"),
                     "app": n.get("app_id") or (n.get("window_properties") or {}).get("class") or "",
                     "marks": n.get("marks", [])}
         stack += n.get("nodes", []) + n.get("floating_nodes", [])
@@ -539,13 +539,14 @@ def wifi_connect(ssid, password=""):
 
 
 # ---- apps in their own window (TV services, browser) ------------------------
-def screen_size():
-    """Current resolution of the main display (falls back to 1920x1080)."""
+def screen_size(physical=False):
+    """Current resolution of the main display (falls back to 1920x1080).
+    physical: real pixels, not divided by sway's scale."""
     raw = _swaymsg("-t", "get_outputs", "-r")
     try:
         for o in json.loads(raw or "[]"):
             if o.get("active") and o.get("current_mode"):
-                scale = o.get("scale") or 1
+                scale = 1 if physical else (o.get("scale") or 1)
                 return int(o["current_mode"]["width"] / scale), int(o["current_mode"]["height"] / scale)
     except (ValueError, KeyError):
         pass

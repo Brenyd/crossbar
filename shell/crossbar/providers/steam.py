@@ -125,10 +125,15 @@ class Steam(Provider):
     def install(self, job, appid):
         if not util.which("steam"):
             raise RuntimeError("Steam client is not installed")
+        fresh = appid not in self._manifests()        # a new install, not an update
         util.spawn(["steam", f"steam://install/{appid}"])
         job.set(0, "Waiting for Steam…")
+        if fresh:
+            # Steam's own uninstall removes the partly downloaded game (Steam may ask to confirm)
+            job.cancel_with(lambda: util.spawn(["steam", f"steam://uninstall/{appid}"]))
         deadline = time.time() + 600
         while True:
+            job.check()
             st = self._manifests().get(appid)
             if st:
                 flags = int(st.get("StateFlags", "0") or 0)
@@ -137,7 +142,7 @@ class Steam(Provider):
                 if flags & 4 and not flags & (1024 | 2):  # installed, no update pending
                     return
                 if total:
-                    job.set(done / total, f"{done >> 20} / {total >> 20} MB")
+                    job.set_bytes(done, total)
                 deadline = time.time() + 3600
             elif time.time() > deadline:
                 raise RuntimeError("Steam didn't start the download (is the client signed in?)")

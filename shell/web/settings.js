@@ -364,6 +364,29 @@ const APP_VOLUME_FOLDER = {
   },
 };
 
+// Settings › Media › Browser: how big it draws, bookmarks on its start page
+const BROWSER_SETTINGS = {
+  key: 'browser', label: 'Browser', icon: 'browser', sub: 'Size on screen, bookmarks',
+  children: async () => {
+    const d = await api.get('/api/browser/bookmarks');
+    const sizes = ['auto', 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.5, 4];
+    const pct = (v) => `${Math.round(v * 100)}%`;
+    return [
+      { key: 'size', label: 'Size', icon: 'display', sub: `${pct(d.size)} — bigger reads better from the couch`,
+        children: async () => sizes.map((v) => ({ key: `s:${v}`, label: v === 'auto' ? 'Automatic (made for this screen)' : pct(v), icon: 'display',
+          sub: v === 'auto' ? '125% at 1080p, 250% at 4K' : '',
+          action: async () => { if (await call(() => api.post('/api/browser/size', { value: v }), 'Browser size saved')) reloadFolder(); } })) },
+      { key: 'marks', label: 'Bookmarks', icon: 'folder', sub: `${d.bookmarks.length} on the start page · add more with Y › Bookmark This Page`,
+        children: async () => {
+          const r = await api.get('/api/browser/bookmarks');
+          if (!r.bookmarks.length) return [{ key: 'none', label: 'No bookmarks', icon: 'info', sub: 'In the browser: Y › Bookmark This Page' }];
+          return r.bookmarks.map((b) => ({ key: `b:${b.url}`, label: b.name, icon: 'browser', sub: `${b.url} · {ok} remove`,
+            action: async () => { if (await confirmBox(`Remove ${b.name} from bookmarks?`)) { await api.post('/api/browser/unbookmark', { url: b.url }); reloadFolder(); } } }));
+        } },
+    ];
+  },
+};
+
 const SETTINGS_FOLDERS = [
   {
     key: 'display', label: 'Display', icon: 'display', sub: 'Resolution, refresh rate, scale',
@@ -437,6 +460,7 @@ const SETTINGS_FOLDERS = [
         { key: 'music', label: 'Music Folder', icon: 'music', sub: m.music, action: () => pickFolder('music') },
         { key: 'video', label: 'Video Folder', icon: 'video', sub: m.video, action: () => pickFolder('video') },
         { key: 'photo', label: 'Photo Folder', icon: 'photo', sub: m.photo, action: () => pickFolder('photo') },
+        BROWSER_SETTINGS,
         iptvSettingsFolder(),
         { key: 'resume', label: 'Resume Videos', icon: 'play', sub: v.resume ? 'On — continue where you left off' : 'Off — always start from the beginning',
           action: () => setVideo({ resume: !v.resume }) },
@@ -572,7 +596,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.11.2', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.11.2', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.12', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.12', 'About') },
       ];
     },
   },

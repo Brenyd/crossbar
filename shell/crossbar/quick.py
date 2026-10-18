@@ -46,7 +46,8 @@ def _app_from(f):
             "video": video, "was_playing": video and not player.VIDEO.get("pause", True)}
 
 
-def open_overlay():
+def open_overlay(page=None):
+    """page: open straight on that Quick Menu page (e.g. "browser" from the browser's Y)."""
     STATE["app"] = _app_from(system.focused())
     if STATE["app"] and STATE["app"]["video"]:
         player.pause_video()
@@ -54,7 +55,7 @@ def open_overlay():
     seq = OVERLAY["seq"]
     if OVERLAY["hook"]:
         OVERLAY["hook"](True)
-    HUB.publish({"type": "overlay", "visible": True})
+    HUB.publish({"type": "overlay", "visible": True, **({"page": page} if page else {})})
 
     def confirm():
         # The overlay says "I'm on screen" when it shows. If it doesn't, the controller
@@ -203,7 +204,15 @@ def info():
                          "mute": st.get("mute"), "deaf": st.get("deaf")}
     except Exception:
         pass
+    browser = None
+    try:
+        from .browser import BROWSER
+        if BROWSER.running():
+            browser = BROWSER.info()
+    except Exception:
+        pass
     return {
+        "browser": browser,
         "windows": open_windows(),
         "voice": voice,
         "app": _app(),

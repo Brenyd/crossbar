@@ -36,6 +36,7 @@ from crossbar.providers.gog import GOG  # noqa: E402
 from crossbar.providers.steam import Steam  # noqa: E402
 from crossbar.spotify import SPOTIFY  # noqa: E402
 from crossbar.discordweb import DISCORD  # noqa: E402
+from crossbar.browser import BROWSER  # noqa: E402
 
 WEB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 try:
@@ -48,6 +49,39 @@ JOBS = JobManager()
 PADS = Gamepads(on_home=quick.home_pressed)
 glyphs.PAD_NAMES = lambda: PADS.status().get("devices") or []
 quick.OVERLAY["hook"] = PADS.set_overlay
+
+
+# ---- the browser: controller presses run in order on one worker (DevTools calls take a moment)
+_browser_q = __import__("queue").Queue(maxsize=40)
+
+
+def _browser_worker():
+    while True:
+        action, repeat = _browser_q.get()
+        if action == "menu":                       # Y: the Browser page of the Quick Menu
+            quick.open_overlay(page="browser")
+            continue
+        BROWSER.act(action, repeat)
+
+
+def _browser_input(action, repeat):
+    if repeat and _browser_q.qsize() > 3:
+        return                                     # don't let held-stick moves pile up
+    try:
+        _browser_q.put_nowait((action, repeat))
+    except Exception:
+        pass
+
+
+def _browser_keyboard():
+    PADS.set_osk(True)
+    HUB.publish({"type": "osk", "open": True})
+
+
+PADS.browser_pid = lambda: BROWSER.proc.pid if BROWSER.running() else None
+PADS.on_browser = _browser_input
+BROWSER.on_keyboard = _browser_keyboard
+threading.Thread(target=_browser_worker, daemon=True).start()
 FORCE_DEMO = False
 
 
@@ -194,6 +228,73 @@ def _safe_gr(g):
         return False
 
 
+def r_browser(what, b):
+    """Crossbar's browser (crossbar/browser.py) and its Quick Menu page."""
+    if what == "open":
+        BROWSER.start([b["url"]] if b.get("url") else None)
+        return {"ok": True}
+    if what == "size":
+        return BROWSER.set_size(b.get("value", "auto"))
+    if what == "bookmark":
+        return {"bookmarks": BROWSER.add_bookmark(b.get("name"), b.get("url"))}
+    if what == "unbookmark":
+        return {"bookmarks": BROWSER.remove_bookmark(b["url"])}
+    if not BROWSER.running():
+        raise RuntimeError("The browser isn't open")
+    if what == "navigate":
+        return {"url": BROWSER.navigate(b.get("text", ""))}
+    if what == "search":
+        threading.Thread(target=BROWSER.search, daemon=True).start()
+    elif what == "history":
+        BROWSER.history(int(b.get("delta", -1)))
+    elif what == "reload":
+        BROWSER.reload()
+    elif what == "tab":
+        BROWSER.switch(b["id"])
+    elif what == "new-tab":
+        BROWSER.open_tab(b.get("url") or "http://127.0.0.1:7777/browser.html")
+    elif what == "close-tab":
+        BROWSER.close_tab(b.get("id"))
+    elif what == "pointer":
+        BROWSER.set_pointer(bool(b.get("on")))
+    elif what == "close":
+        BROWSER.close()
+    else:
+        raise KeyError(what)
+    return BROWSER.info()
+
+
+def r_bigpicture():
+    """Game › Steam Big Picture: Steam's own console UI, full screen. The Quick Menu's Go to
+    Home (or closing Big Picture) comes back; Steam is tucked away when the menu is in front."""
+    from crossbar.providers import steam as steam_mod
+    if demo_on():
+        return {"demo": True}
+    if not util.which("steam"):
+        raise RuntimeError("Steam isn't installed")
+
+    def run():
+        try:
+            HUB.publish({"type": "launching", "title": "Steam Big Picture", "sub": "Starting…"})
+            if not steam_mod.steam_running():
+                steam_mod.start_steam(True)
+                steam_mod.wait_ready(True, lambda m: HUB.publish({"type": "launching", "title": "Steam Big Picture", "sub": m}))
+            else:
+                system.hold_launch(30)
+                util.spawn(["steam", "steam://open/bigpicture"])
+            for _ in range(40):                 # bring it in front once its window is there
+                vis = [w for w in system.all_windows() if system.is_steam_client(w)]
+                if vis:
+                    system.bring_to_front(vis[-1]["con_id"])
+                    break
+                time.sleep(0.5)
+            HUB.publish({"type": "launched", "title": "Steam Big Picture"})
+        except Exception as e:
+            HUB.publish({"type": "launch-timeout", "title": "Steam Big Picture", "error": str(e)})
+    threading.Thread(target=run, daemon=True).start()
+    return {"ok": True}
+
+
 def r_install(b):
     p = provider(b["provider"])
     return JOBS.start("install", b.get("title", b["id"]), lambda j: p.install(j, b["id"]), p.id, b["id"]).as_dict()
@@ -331,6 +432,8 @@ GET = {
     "/api/discord/guilds": lambda q: DISCORD.guilds(),
     "/api/discord/friends": lambda q: DISCORD.friends(),
     "/api/discord/debug": lambda q: DISCORD.debug(),
+    "/api/browser/info": lambda q: BROWSER.info(),
+    "/api/browser/bookmarks": lambda q: {"bookmarks": BROWSER.bookmarks(), "size": __import__("crossbar.browser", fromlist=["size"]).size()},
     "/api/friends/steam": lambda q: friends.steam_friends(),
     "/api/discord/channels": lambda q: DISCORD.voice_channels(q["guild_id"]),
     "/api/quick/pending": lambda q: {"open": quick.take_pending()},
@@ -440,6 +543,10 @@ def route_post(path, b):
         return r_install(b)
     if head == "uninstall":
         return r_uninstall(b)
+    if head == "steam" and len(parts) > 1 and parts[1] == "bigpicture":
+        return r_bigpicture()
+    if head == "jobs" and len(parts) > 1 and parts[1] == "cancel":
+        return JOBS.cancel(b["id"])
     if head == "launch":
         return r_launch(b)
     if head == "login":
@@ -629,6 +736,8 @@ def route_post(path, b):
             f = system.focused() or {}
             if system.is_xmb(f) or "xmb" in f.get("marks", []):
                 return {"typed": 0}        # never press keys into the menu behind the keyboard
+            if BROWSER.running() and f.get("pid") == BROWSER.proc.pid:
+                return {"typed": BROWSER.type_text(b.get("text", ""), b.get("special"))}   # straight into the page
             return {"typed": PADS.type_keys(b.get("text", ""), b.get("special"))}
         raise KeyError(what)
     if head == "ps5":
@@ -763,8 +872,7 @@ def route_post(path, b):
     if head == "tv":
         return r_tv(parts[1], b)
     if head == "browser":
-        system.open_web(b.get("url") or "https://duckduckgo.com", "browser", app=False)
-        return {"ok": True}
+        return r_browser(parts[1] if len(parts) > 1 else "open", b)
     if head == "report":
         if not util.which("crossbar-doctor"):
             raise RuntimeError("crossbar-doctor isn't installed (it comes with the Crossbar ISO)")
