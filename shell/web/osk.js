@@ -28,6 +28,7 @@ const Osk = {
   show(input, onDone = null) {
     if (!input) return;
     this.input = input; this.onDone = onDone; this.open = true;
+    api.post('/api/osk/show', { on: false }).catch(() => {});   // never two keyboards: close the system one
     this.layer = 'abc'; this.shift = false; this.caps = false; this.r = 1; this.c = 0;
     input.focus();
     try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* password fields */ }

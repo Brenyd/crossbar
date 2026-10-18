@@ -378,5 +378,33 @@ class Overlay(Gtk.Application):
                 GLib.idle_add(self.render)
 
 
+def single_instance():
+    """Only one overlay may run: two would draw two Quick Menus / keyboards and act on every
+    press twice. A newer overlay (a restart) replaces an older one that's still around."""
+    import fcntl
+    import signal
+    path = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or "/tmp", "crossbar-overlay.lock")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    for _ in range(30):
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            try:
+                old = int(os.pread(fd, 32, 0).decode().strip() or 0)
+                if old and old != os.getpid():
+                    os.kill(old, signal.SIGTERM)
+            except (ValueError, ProcessLookupError, PermissionError):
+                pass
+            time.sleep(0.2)
+    else:
+        print("overlay: another overlay is still running; exiting", flush=True)
+        sys.exit(0)
+    os.ftruncate(fd, 0)
+    os.pwrite(fd, str(os.getpid()).encode(), 0)
+    return fd                         # kept open (and locked) for the life of the process
+
+
 if __name__ == "__main__":
+    _lock = single_instance()
     Overlay().run(None)

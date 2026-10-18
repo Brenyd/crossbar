@@ -158,6 +158,39 @@ def steam_game(appid):
     return {"title": data.get("gameName") or str(appid), "achievements": out}
 
 
+STATES = {1: "Online", 2: "Busy", 3: "Away", 4: "Snooze", 5: "Looking to trade", 6: "Looking to play"}
+
+
+def steam_friends():
+    """Steam friends who are online now, the ones in a game first: [{id, name, status, game, avatar}].
+
+    Uses the same Steam Web API key as Trophies. Needs your profile's Friends List to be public."""
+    key, sid = _steam()
+    q = urllib.parse.urlencode({"key": key, "steamid": sid, "relationship": "friend"})
+    try:
+        ids = [f["steamid"] for f in _get(f"{STEAM_API}ISteamUser/GetFriendList/v1/?{q}", ttl=600)
+               .get("friendslist", {}).get("friends", [])]
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise RuntimeError("Steam won't share your friends list: set Friends List to Public in your Steam privacy settings") from None
+        raise
+    people = []
+    for i in range(0, len(ids), 100):                  # GetPlayerSummaries takes 100 at a time
+        q2 = urllib.parse.urlencode({"key": key, "steamids": ",".join(ids[i:i + 100])})
+        people += _get(f"{STEAM_API}ISteamUser/GetPlayerSummaries/v2/?{q2}", ttl=45).get("response", {}).get("players", [])
+    out = []
+    for p in people:
+        state = p.get("personastate") or 0
+        game = p.get("gameextrainfo") or ""
+        if not state and not game:
+            continue                                     # offline
+        out.append({"id": p.get("steamid"), "name": p.get("personaname") or "?", "game": game,
+                    "status": f"Playing {game}" if game else STATES.get(state, "Online"),
+                    "away": state in (3, 4), "avatar": p.get("avatarfull") or p.get("avatarmedium")})
+    out.sort(key=lambda f: (not f["game"], f["away"], f["name"].lower()))
+    return out
+
+
 def steam_setup(key, steamid=""):
     key = (key or "").strip()
     if not re.fullmatch(r"[0-9A-Fa-f]{32}", key):

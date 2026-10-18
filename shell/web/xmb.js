@@ -319,7 +319,8 @@ const CATS = [   // more categories are added by media.js and settings.js
     async load() {
       const items = [];
       if (typeof TROPHIES_FOLDER !== 'undefined') items.push(TROPHIES_FOLDER);   // always first
-      for (const w of S.state.windows || []) {
+      // only games and emulators here; other apps (Discord, browsers) are in the Quick Menu's Switch App
+      for (const w of (S.state.windows || []).filter((x) => x.game)) {
         items.push({ key: `win:${w.con_id}`, label: `Return to ${w.title}`, icon: 'window', sub: 'Running',
           action: () => api.post('/api/window/focus', { con_id: w.con_id }),
           options: [{ label: 'Return', action: () => api.post('/api/window/focus', { con_id: w.con_id }) },
@@ -593,6 +594,7 @@ const KeyCapture = { active: null };   // set by Settings while waiting for "pre
 // Actions from the controller/keyboard -> what the XMB does with them.
 const ACTION = { menu: 'opt' };
 function act(action) {
+  if (Osk.open) return Osk.handle(action);            // the keyboard has the controller while it's up
   if (action === 'home') return QuickMenu.toggle();
   if ((action === 'prev' || action === 'next' || action === 'toggle') && !Dialog.open) return mediaKey(action);
   handle(ACTION[action] || action);
@@ -731,7 +733,14 @@ function connectEvents() {
     if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
     if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
-    if (ev.type === 'input' && ev.to === 'overlay') return;      // meant for the overlay window
+    // meant for the overlay window or the system keyboard on top: the menu underneath must not act on it
+    if (ev.type === 'input' && (ev.to === 'overlay' || ev.to === 'osk')) return;
+    if (ev.type === 'osk-xmb') {                         // "Keyboard" asked for while the menu is in front
+      const el = document.activeElement;
+      if (el && el.tagName === 'INPUT' && !Osk.open) Osk.show(el);
+      else if (!Osk.open) toast('Pick a text box first: the keyboard opens there', 'info');
+      return;
+    }
     if (ev.type === 'physical-input') { S.lastInput = 'kbd'; if (Osk.open) Osk.hide(false); return; }
     if (ev.type === 'input') {
       S.lastInput = 'pad';

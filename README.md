@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.11
+# Crossbar — prototype 0.11.1
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -294,10 +294,17 @@ After that it just works, every boot. If playing from Crossbar fails, use **Sett
 Settings › Restart Spotify Speaker**; the speaker's log is `~/.cache/crossbar/librespot.log`. Developer-mode apps allow up to 5 accounts; playlists
 you don't own can be played but their track list can't be shown (a Spotify restriction).
 
-## Social: Discord voice channels
+## Social: friends and Discord voice
 
-**Social** lists your Discord voice channels: A joins (or leaves), with Mute / Deafen while you're
-in one, and the Quick Menu shows the call too (A mutes, ◀ leaves). No developer app or setup.
+![Social](docs/social.png)
+
+- **Friends › Steam** — who's online and what they're playing (needs the same free Steam Web API key
+  as Trophies, and your Steam Friends List set to Public).
+- **Friends › Discord** — friends online now; **A calls them** on Discord (voice runs in Crossbar's
+  hidden Discord window, so you can keep playing).
+- **Party** — the Discord voice channels you chose: A joins (or leaves).
+- While you're in a call or channel it sits at the top of Social with Mute / Deafen, and the Quick
+  Menu shows it too (A mutes, ◀ leaves). No developer app or setup.
 
 How it works: Crossbar runs Discord's own web client (discord.com/app) in a window it keeps hidden,
 and drives it the way you would, by clicking the voice channel, Disconnect, Mute and Deafen,
@@ -306,8 +313,9 @@ Things are found by their accessibility labels, not screen positions, so Discord
 rarely break it; if one does, an action reports "couldn't find" and **Open Discord** still works.
 
 1. **Social › Sign In to Discord**: Discord shows a QR code; scan it with the Discord app on your phone.
-2. **Settings › Accounts › Discord › Voice Channels in Social** › a server: every voice channel is
-   hidden until you turn it on here (A shows / hides it), so Social only lists the ones you use.
+2. **Settings › Accounts › Discord › Voice Channels in Social** (or Social › Party › Choose Voice
+   Channels) › a server: every voice channel is hidden until you turn it on (A shows / hides it),
+   so Party only lists the ones you use.
 3. **Open Discord** shows the full client (text chat, friends) with controller keys and the
    on-screen keyboard; the Quick Menu brings you back.
 
@@ -338,7 +346,7 @@ these into RetroArch, Dolphin, PCSX2, DuckStation and PPSSPP's own settings.
 **Game › Trophies**: **RetroAchievements** by console (your points and rank, each game's progress,
 every badge) once you add your Web API key (retroachievements.org › Settings › Keys), and **Steam**
 achievements per game with a free Steam Web API key (steamcommunity.com/dev/apikey; your profile's
-Game details must be public). GOG and Epic don't share achievements with other apps.
+Game details must be public). GOG and Epic aren't listed: they don't share achievements with other apps.
 
 ## On-screen keyboard
 

@@ -303,6 +303,77 @@ class DiscordWeb:
     def toggle_deaf(self):
         return self._click_label("^(Deafen|Undeafen)$", "Deafen")
 
+    # ---- friends (Home › Friends › Online) ------------------------------------------------
+    # Rows are people-list___<user id>; their text is the display name, then the status
+    # line ("Online", "Idle", "Playing Minecraft", a custom status…). The list is virtualised,
+    # so it's read while scrolling through it.
+    FRIENDS_JS = r"""(async () => {
+      const wait = (ms) => new Promise(r => setTimeout(r, ms));
+      const home = document.querySelector('[data-list-item-id="guildsnav___home"]');
+      if (!home) return null;
+      if (!location.pathname.startsWith('/channels/@me') || /\/channels\/@me\/\d/.test(location.pathname)) {
+        home.click(); await wait(500);
+        const link = document.querySelector('a[href="/channels/@me"]'); if (link) { link.click(); await wait(500); }
+      }
+      const tab = [...document.querySelectorAll('[role="tab"]')].find(t => /^online$/i.test((t.textContent || '').trim()));
+      if (tab && tab.getAttribute('aria-selected') !== 'true') { tab.click(); await wait(500); }
+      const out = new Map();
+      const grab = () => document.querySelectorAll('[data-list-item-id^="people-list___"]').forEach(e => {
+        const id = e.getAttribute('data-list-item-id').split('___')[1];
+        const lines = (e.innerText || '').split('\n').map(x => x.trim()).filter(Boolean);
+        const avatar = e.querySelector('img[src*="avatars"], img[class*="avatar"]');
+        if (/^\d+$/.test(id) && lines.length) out.set(id, { id, name: lines[0], status: lines.length > 1 ? lines[lines.length - 1] : '',
+          avatar: avatar ? avatar.src : null });
+      });
+      grab();
+      let list = document.querySelector('[data-list-item-id^="people-list___"]');
+      while (list && list.scrollHeight <= list.clientHeight + 4) list = list.parentElement;
+      for (let i = 0; list && i < 40 && list.scrollTop + list.clientHeight < list.scrollHeight - 4; i++) {
+        list.scrollTop += list.clientHeight * 0.8; await wait(150); grab();
+      }
+      if (list) list.scrollTop = 0;
+      return [...out.values()];
+    })()"""
+
+    def friends(self):
+        """Friends who are online now: [{id, name, status, avatar}]."""
+        self.start()
+        for _ in range(3):
+            r = self.js(self.FRIENDS_JS, timeout=20)
+            if r is not None:
+                return r
+            time.sleep(1)                       # still loading after a cold start
+        raise DiscordError("Sign in to Discord first (Social › Sign In to Discord)")
+
+    def call(self, user_id):
+        """Open the DM with a friend and press Start Voice Call (voice runs in the hidden window)."""
+        if not re.fullmatch(r"\d+", str(user_id)):
+            raise ValueError("user id")
+        self.friends()                              # on the Friends › Online page, row rendered
+        ok = False
+        for _ in range(20):
+            ok = self.js(f"""(() => {{ const e = document.querySelector('[data-list-item-id="people-list___{user_id}"]');
+                             if (!e) return false; e.click(); return true; }})()""")
+            if ok:
+                break
+            time.sleep(0.25)
+        if not ok:
+            raise DiscordError("That friend isn't online in Discord's list anymore")
+        for _ in range(20):                         # the DM opens, then its header has the call button
+            time.sleep(0.3)
+            if self.js(r"""(() => { const b = [...document.querySelectorAll('[aria-label]')]
+                         .find(x => /^start voice call$/i.test(x.getAttribute('aria-label')));
+                         if (!b) return false; b.click(); return true; })()"""):
+                break
+        else:
+            raise DiscordError("Couldn't find Discord's Start Voice Call button")
+        for _ in range(30):                         # in a call once Disconnect shows up
+            time.sleep(0.25)
+            st = self.status()
+            if st.get("voice"):
+                return st
+        return self.status()
+
     def sign_out_local(self):
         """Forget the Discord sign-in on this console (deletes the window's profile)."""
         self.stop()

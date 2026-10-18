@@ -1,5 +1,5 @@
 'use strict';
-// Game › Trophies: RetroAchievements (by console) and Steam; GOG / Epic explained.
+// Game › Trophies: RetroAchievements (by console) and Steam.
 
 function achievementItems(data) {
   const list = data.achievements || [];
@@ -45,7 +45,7 @@ function raFolder(st) {
 
 async function steamSetup(st) {
   const r = await Dialog.ask({ title: 'Steam Achievements', buttons: ['Save', 'Cancel'],
-    body: 'Get a free Steam Web API key at steamcommunity.com/dev/apikey (any domain name works).\nYour Steam profile\'s Game details must be Public.',
+    body: 'Get a free Steam Web API key at steamcommunity.com/dev/apikey (any domain name works).\nUsed for achievements and Social › Friends. In Steam\'s privacy settings, Game details and Friends List must be Public.',
     fields: [{ key: 'key', label: 'Steam Web API key' }, { key: 'steamid', label: 'SteamID64 (leave empty to use this console\'s Steam)', value: '' }] });
   if (r.button !== 0) return;
   if (await call(() => api.post('/api/trophies/steam-setup', r.values), 'Steam achievements set up')) reloadFolder();
@@ -69,8 +69,6 @@ const TROPHIES_FOLDER = {
   key: 'trophies', label: 'Trophies', icon: 'trophy', sub: 'RetroAchievements and Steam achievements',
   children: async () => {
     const st = await api.get('/api/trophies');
-    return [raFolder(st), steamFolder(st),
-      { key: 'gog', label: 'GOG', icon: 'info', sub: 'Not available: GOG only shares achievements with GOG Galaxy' },
-      { key: 'epic', label: 'Epic Games', icon: 'info', sub: 'Not available: Epic only shows achievements in its own launcher' }];
+    return [raFolder(st), steamFolder(st)];
   },
 };

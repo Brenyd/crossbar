@@ -69,6 +69,13 @@
 - [x] Frame rate overlay (MangoHud) from the Quick Menu
 - [x] PS5: ps5_control built at install/update time (services left off)
 
+## 0.11.1
+- [x] Social › Friends: Steam (online, now playing) and Discord (A calls them); Social › Party for voice channels
+- [x] On-screen keyboard: never two at once, never types into the menu behind it, keeps the controller
+- [x] Only one Quick Menu overlay process can run
+- [x] Game › Return to… lists only games and emulators; other apps stay in the Quick Menu's Switch App
+- [x] Trophies: GOG / Epic entries removed
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

@@ -128,8 +128,37 @@ def bind_home_keys(keys):
             _bound_home.append(x)
 
 
+# Emulators and game runners recognised by their window's app id (in case the marker is lost)
+GAME_APPS = ("org.libretro.retroarch", "retroarch", "org.dolphinemu.dolphin-emu", "dolphin-emu", "net.pcsx2.pcsx2", "pcsx2",
+             "net.rpcs3.rpcs3", "rpcs3", "org.ppsspp.ppsspp", "ppsspp", "info.cemu.cemu", "cemu", "org.azahar_emu.azahar",
+             "azahar", "net.kuribo64.melonds", "melonds", "app.xemu.xemu", "xemu", "org.flycast.flycast", "flycast",
+             "org.scummvm.scummvm", "scummvm", "duckstation", "org.duckstation.duckstation", "gamescope")
+
+
+def _proc_env(pid):
+    try:
+        with open(f"/proc/{int(pid)}/environ", "rb") as f:
+            return dict(x.split(b"=", 1) for x in f.read().split(b"\0") if b"=" in x)
+    except (OSError, ValueError):
+        return {}
+
+
+def is_game_window(w, pid=None):
+    """A game or emulator (shown under Game › Return to…), not an app like Discord or a browser."""
+    app = (w.get("app") or "").lower()
+    if app.startswith("steam_app") or any(app == g or app.startswith(g + ".") for g in GAME_APPS):
+        return True
+    if "chrom" in app or is_steam_client(w) or app in ("crossbar-player", "mpv", "foot", "alacritty", "konsole"):
+        return False
+    env = _proc_env(pid) if pid else {}
+    if env.get(b"CROSSBAR_GAME") == b"1":
+        return True                                  # started by Crossbar as a game (Wine/Proton included)
+    gid = env.get(b"SteamGameId") or env.get(b"SteamAppId") or b"0"
+    return gid not in (b"", b"0")                    # a game Steam started
+
+
 def windows():
-    """Other apps currently open (games, Discord…), for 'Return to…' items."""
+    """Other apps currently open (games, Discord…), for 'Return to…' items. game: a game or emulator."""
     raw = _swaymsg("-t", "get_tree", "-r")
     if not raw:
         return []
@@ -138,7 +167,9 @@ def windows():
     def walk(n):
         if n.get("pid") and "xmb" not in n.get("marks", []):
             app = n.get("app_id") or (n.get("window_properties") or {}).get("class") or ""
-            out.append({"con_id": n["id"], "title": n.get("name") or app, "app": app})
+            w = {"con_id": n["id"], "title": n.get("name") or app, "app": app}
+            w["game"] = is_game_window(w, n.get("pid"))
+            out.append(w)
         for c in n.get("nodes", []) + n.get("floating_nodes", []):
             walk(c)
 

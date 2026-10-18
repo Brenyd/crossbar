@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import artwork, compat, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import artwork, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -155,6 +155,8 @@ def r_discord(action, b):
         util.update_config(lambda c: c["discord"].__setitem__(
             "channels", [x for x in c["discord"].get("channels", []) if x["id"] != str(b["id"])]))
         return discord_state()
+    if action == "call":
+        return DISCORD.call(b["id"])
     if action == "signout":
         DISCORD.sign_out_local()
         return discord_state()
@@ -327,6 +329,8 @@ GET = {
     "/api/wifi/radio": lambda q: {"on": system.wifi_radio()},
     "/api/discord/state": lambda q: discord_state(),
     "/api/discord/guilds": lambda q: DISCORD.guilds(),
+    "/api/discord/friends": lambda q: DISCORD.friends(),
+    "/api/friends/steam": lambda q: friends.steam_friends(),
     "/api/discord/channels": lambda q: DISCORD.voice_channels(q["guild_id"]),
     "/api/quick/pending": lambda q: {"open": quick.take_pending()},
     "/api/quick/overlay-state": lambda q: {"open": quick.OVERLAY["open"]},
@@ -353,6 +357,7 @@ GET = {
     "/api/trophies/ra": lambda q: {**trophies.ra_summary(), "consoles": trophies.ra_consoles()},
     "/api/trophies/ra/game": lambda q: trophies.ra_game(q["id"]),
     "/api/trophies/steam": lambda q: trophies.steam_games(),
+    "/api/steam/friends": lambda q: trophies.steam_friends(),
     "/api/trophies/steam/game": lambda q: trophies.steam_game(q["id"]),
     "/api/emulation/emulators": lambda q: emulation.emulators(),
     "/api/emulation/systems": lambda q: emulation.systems_with_games(),
@@ -607,12 +612,22 @@ def route_post(path, b):
             if on and b.get("auto") and not PADS.pad_recent():
                 return {"open": False}     # typing on a real keyboard: don't pop up
             f = system.focused() or {}
+            if on and b.get("auto") and (system.is_xmb(f) or "xmb" in f.get("marks", [])):
+                return {"open": False}     # the XMB has its own keyboard: two would type twice
             if on and b.get("auto") and (system.is_steam_client(f) or (f.get("app") or "").lower().startswith("steam_app")):
                 return {"open": False}     # Steam has its own keyboard
+            if on and (system.is_xmb(f) or "xmb" in f.get("marks", [])):
+                # The menu is in front: its own keyboard types into its text box. The system one
+                # would type keys into the menu itself (Enter / arrows picking things behind it).
+                HUB.publish({"type": "osk-xmb"})
+                return {"open": False, "xmb": True}
             PADS.set_osk(on)
             HUB.publish({"type": "osk", "open": on})
             return {"open": on}
         if what == "type":
+            f = system.focused() or {}
+            if system.is_xmb(f) or "xmb" in f.get("marks", []):
+                return {"typed": 0}        # never press keys into the menu behind the keyboard
             return {"typed": PADS.type_keys(b.get("text", ""), b.get("special"))}
         raise KeyError(what)
     if head == "ps5":
