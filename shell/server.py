@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import apps, artwork, extgames, folders, launchopts, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -231,7 +231,8 @@ def _safe_gr(g):
         return False
 
 
-BROWSE_EXT = {".zip": ".zip", ".appimage": ".appimage", "image": (".png", ".jpg", ".jpeg", ".webp", ".gif")}
+BROWSE_EXT = {".zip": ".zip", ".appimage": ".appimage", "image": (".png", ".jpg", ".jpeg", ".webp", ".gif"),
+              "vpn": (".conf", ".ovpn", ".zip"), "torrent": (".torrent",)}
 
 
 def r_apps(what, b):
@@ -263,6 +264,8 @@ def r_app_launch(key, name):
     """Start an app with the "Starting…" screen; once its window shows, bring it forward.
     (Not a game: no game mode, and it stays out of Game › Return to….)"""
     argv, env = apps.argv(key)
+    from crossbar import vpn
+    argv = vpn.wrap(argv, f"app:{key}")             # VPN › Split Tunneling (AppImages; Flatpaks make their own group)
     live = bool(os.environ.get("SWAYSOCK"))
 
     def run():
@@ -529,6 +532,22 @@ GET = {
     "/api/xmb/tags": lambda q: folders.tags(),
     "/api/xmb/hidden": lambda q: folders.hidden(),
     "/api/launchopts": lambda q: launchopts.get(q["key"]),
+    "/api/wintricks": lambda q: wintricks.status(q["key"]),
+    "/api/speedtest": lambda q: speedtest.last() or {},
+    "/api/vpn": lambda q: vpn.status(),
+    "/api/vpn/providers": lambda q: vpn.providers(),
+    "/api/vpn/regions": lambda q: vpn.regions(q.get("provider")),
+    "/api/vpn/ip": lambda q: vpn.public_ip(),
+    "/api/torrent": lambda q: torrent.summary(),
+    "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
+    "/api/torrent/files": lambda q: torrent.files(q["hash"]),
+    "/api/torrent/settings": lambda q: torrent.settings(),
+    "/api/torrent/plugins": lambda q: torrent.plugins(),
+    "/api/torrent/plugins/unofficial": lambda q: torrent.unofficial_plugins(),
+    "/api/torrent/plugins/official": lambda q: torrent.official_plugins(),
+    "/api/torrent/plugin-login": lambda q: torrent.plugin_fields(q["name"]),
+    "/api/torrent/search": lambda q: torrent.search_results(q["id"], int(q.get("offset") or 0)),
+    "/api/wintricks/all": lambda q: wintricks.all_components(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -620,6 +639,61 @@ def route_post(path, b):
         return r_install(b)
     if head == "uninstall":
         return r_uninstall(b)
+    if head == "torrent":
+        what = "/".join(parts[1:])
+        if what == "start":
+            torrent.start()
+            return torrent.summary()
+        if what == "stop":
+            return torrent.stop()
+        if what == "add":
+            return torrent.add(b.get("urls"), b.get("path"), b.get("save_path"), bool(b.get("paused")), bool(b.get("sequential")))
+        if what == "action":
+            return torrent.action(b["hashes"], b["what"], **{k: v for k, v in b.items() if k in ("files", "on", "dl", "up", "path")})
+        if what == "fileprio":
+            return torrent.set_file_priority(b["hash"], b.get("ids") or [], b.get("priority", 1))
+        if what == "settings":
+            return torrent.set_settings(**{k: v for k, v in b.items()})
+        if what == "altspeed":
+            return torrent.toggle_alt_speed()
+        if what == "plugin/install":
+            return torrent.install_plugin(b["url"])
+        if what == "plugin/action":
+            return torrent.plugin_action(b["name"], b["what"], bool(b.get("enable", True)))
+        if what == "plugin/login":
+            return torrent.set_plugin_login(b["name"], b.get("values") or {})
+        if what == "search/start":
+            return torrent.search_start(b.get("pattern"), b.get("category") or "all")
+        if what == "search/stop":
+            return torrent.search_stop(b["id"])
+        if what == "search/download":
+            return torrent.download_result(b["url"], b.get("engine"), b.get("save_path"))
+        raise KeyError(what)
+    if head == "vpn":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "setup":
+            return vpn.setup(b["provider"], b.get("protocol"), b.get("fields") or {})
+        if what == "region":
+            vpn.set_options(region=b["id"])
+            util.update_config(lambda c: c.setdefault("vpn", {}).__setitem__("region_name", str(b.get("name") or b["id"])[:80]))
+            return vpn.status()
+        if what == "options":
+            return vpn.set_options(**{k: v for k, v in b.items()})
+        if what == "connect":
+            return JOBS.start("vpn", "VPN", lambda j: vpn.connect(j), "vpn", "connect").as_dict()
+        if what == "disconnect":
+            return vpn.disconnect()
+        if what == "forget":
+            return vpn.forget(b.get("provider"))
+        if what == "import":
+            return vpn.import_files(b["provider"], b["path"])
+        raise KeyError(what)
+    if head == "speedtest":
+        return JOBS.start("speedtest", "Internet speed test", speedtest.run, "speedtest", "net").as_dict()
+    if head == "wintricks" and len(parts) > 1 and parts[1] == "install":
+        verbs = b.get("verbs") or []
+        return JOBS.start("install", f"{b.get('name') or b['key']}: {', '.join(verbs)[:60]}",
+                          lambda j: wintricks.install(j, b["key"], verbs), "wintricks", b["key"]).as_dict()
     if head == "launchopts":
         what = parts[1] if len(parts) > 1 else ""
         if what == "save":
@@ -1182,10 +1256,25 @@ def main():
             time.sleep(5)
     threading.Thread(target=keep_xmb_marked, daemon=True).start()
     system.bind_home_keys(controls.load()["keyboard"]["home"])
+    def torrent_notices():
+        """"Download finished" notices for torrents, while the engine runs."""
+        while True:
+            time.sleep(15)
+            try:
+                if torrent.prefs_local().get("notify", True):
+                    for name in torrent.finished_since_last():
+                        HUB.publish({"type": "notice", "text": f"Downloaded: {name}", "icon": "download"})
+            except Exception:
+                pass
+
     def background_start():
         display.apply_saved()
         ps5hw.apply_saved()
         SPOTIFY.ensure_receiver()
+        vpn.on_port(torrent.on_vpn_port)            # a port the VPN forwards becomes the torrent port
+        vpn.autoconnect()
+        torrent.autostart()
+        threading.Thread(target=torrent_notices, daemon=True).start()
         if util.load_config()["discord"].get("signed_in"):
             try:
                 DISCORD.start()                   # voice runs in Discord's window; keep it ready, hidden

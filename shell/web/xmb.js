@@ -199,21 +199,44 @@ const confirmSafe = async (body, title = '') => (await Dialog.ask({ title, body,
 const message = (body, title = '') => Dialog.ask({ title, body });
 
 // ---------------------------------------------------------------- options panel
+// Long Y menus are folded into a few groups, so the everyday choices stay on top
+const OPTION_GROUPS = [
+  ['Customize…', /^(Change Artwork…|Edit Tag…|Move to Folder…|Show In…|Hide|Rename…?|Change Icon…)$/],
+  ['Windows & Proton…', /^(Compatibility Tool…|Launch Options…|Windows Components…)$/],
+];
+function groupOptions(list) {
+  if (list.length <= 6) return list;
+  let out = [...list];
+  for (const [label, re] of OPTION_GROUPS) {
+    const members = out.filter((o) => !o.group && re.test(o.label));
+    if (members.length < 2) continue;
+    const at = out.indexOf(members[0]);
+    out = out.filter((o) => !members.includes(o));
+    out.splice(at, 0, { label, group: members });
+  }
+  // the one you can't take back goes last, away from the thumb
+  const risky = out.filter((o) => /^(Delete|Uninstall|Remove)/.test(o.label));
+  return [...out.filter((o) => !risky.includes(o)), ...risky];
+}
 const Options = {
   open: false, sel: 0, list: [],
   offset: 0,
-  show(list, sel = 0) {
+  show(list, sel = 0, parent = null) {
     if (!list?.length) return;
+    if (!parent) list = groupOptions(list);
+    this.parent = parent;
     this.list = list; this.sel = sel; this.offset = 0; this.open = true;
     $('#options').hidden = false; this.render(); Sfx.ok();
   },
+  up() { const p = this.parent; this.show(p.list, p.sel, p.parent); },     // Back from a group: to its menu
   render() {
     const el = $('.opt-list');
-    el.innerHTML = this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}">${esc(gl(o.label))}</div>`).join('');
+    el.innerHTML = (this.parent ? `<div class="opt-head">${esc(this.parent.list[this.parent.sel].label.replace(/…$/, ''))}</div>` : '') +
+      this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}${o.group ? ' grp' : ''}">${esc(gl(o.label))}</div>`).join('');
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
     const TOP = 380, MIN = 140, MAX = 960;
-    const row = el.children[this.sel];
+    const row = el.children[this.sel + (this.parent ? 1 : 0)];
     const y = TOP + this.offset + row.offsetTop;
     if (y < MIN) this.offset += MIN - y;
     if (y + row.offsetHeight > MAX) this.offset -= y + row.offsetHeight - MAX;
@@ -223,7 +246,11 @@ const Options = {
   },
   move(d) { this.sel = (this.sel + d + this.list.length) % this.list.length; this.render(); Sfx.move(); },
   hide() { this.open = false; $('#options').hidden = true; },
-  pick() { const o = this.list[this.sel]; this.hide(); Sfx.ok(); o.action(); },
+  pick() {
+    const o = this.list[this.sel];
+    if (o.group) { Sfx.ok(); this.show(o.group, 0, { list: this.list, sel: this.sel, parent: this.parent }); return; }
+    this.hide(); Sfx.ok(); o.action();
+  },
 };
 
 // ---------------------------------------------------------------- state
@@ -533,7 +560,8 @@ function position() {
   columnEls.forEach((el, i) => {
     const on = i === s;
     const isArt = items[i].art !== undefined;
-    const slotW = isArt ? (on ? 300 : 150) : (on ? 104 : 72);
+    const square = isArt && items[i].artShape === 'square';       // app icons: centred like icons
+    const slotW = square ? (on ? 120 : 72) : isArt ? (on ? 300 : 150) : (on ? 104 : 72);
     let y;
     if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
     else if (i === s) y = selArt ? 500 : 480;
@@ -609,6 +637,8 @@ function handle(action) {
     if (action === 'up') Options.move(-1);
     else if (action === 'down') Options.move(1);
     else if (action === 'ok') Options.pick();
+    else if (action === 'right' && Options.list[Options.sel]?.group) Options.pick();
+    else if ((action === 'back' || action === 'left') && Options.parent) { Options.up(); Sfx.back(); }
     else if (action === 'back' || action === 'opt' || action === 'left') { Options.hide(); Sfx.back(); }
     return;
   }
@@ -763,6 +793,8 @@ function connectEvents() {
       clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
     }
     if (ev.type === 'art') { refresh('game'); return; }
+    if (ev.type === 'notice') { toast(ev.text, ev.icon || 'info'); return; }        // backend notices (torrent finished…)
+    if (ev.type === 'vpn') { const f = S.stack.at(-1); if (f && /^(vpn|network)/.test(f.source.key)) reloadFolder(); return; }
     if (ev.type === 'theme') { Theme.load(); return; }
     if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }

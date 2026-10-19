@@ -227,3 +227,7 @@ body.infolder #cats { opacity: 0; }
 body.osk-open #dialog { background: rgba(0,0,0,.9); place-items: start center; }
 body.osk-open #dialog .dlg-box { padding-top: 70px; background: none; }
 body.osk-open #dialog .dlg-fields label { margin-top: 12px; }
+
+/* grouped Y menu: a group shows › and, once open, its name on top */
+.opt.grp::after { content: '  ›'; opacity: .6; }
+.opt-head { font-size: 22px; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); padding: 0 0 10px 0; }

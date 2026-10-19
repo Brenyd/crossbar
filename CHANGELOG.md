@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.1 Alpha
+- **Torrents** (Apps › Torrents): a controller client on qBittorrent's engine — search through
+  qBittorrent search plugins (official, and the community list from the qBittorrent wiki with a
+  sign-in for private sites), transfers with files / order / limits, magnet links and .torrent
+  files, binding to the VPN, and the common settings, console-sized
+- **VPN** (Settings › Network): WireGuard and OpenVPN through NetworkManager; sign-in wizards for
+  PIA (regions with latency, port forwarding), Mullvad and NordVPN; config import for Proton VPN,
+  Surfshark, Windscribe, IVPN, AirVPN, ExpressVPN and any server; split tunneling for sites and apps;
+  connect at startup
+- **Internet speed test**: download, upload, latency and jitter
+- **Windows Components** per game (Y › Windows & Proton): DLLs, fonts, runtimes and the Windows
+  version through winetricks / protontricks, into that game's own prefix (Steam, GOG, Epic, Lutris)
+- **Y menus** are grouped (Customize…, Windows & Proton…), Delete last
+- Games and apps are in **alphabetical order**; app icons are centred like the other icons
+- **Discord**: screen share no longer shows Chromium's "Choose what to share" window, and stopping
+  it from the XMB / Quick Menu now tells Discord (no more endless loading for viewers)
+
 ## 1.0.2 Alpha
 - **Launch Options** (Y › Launch Options… on Steam, Lutris, GOG, Epic and non-Steam games): environment
   variables, a launch command (`gamemoderun %command% -dx11`), the Proton / Wine version, and one-press

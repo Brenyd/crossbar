@@ -223,7 +223,8 @@ class Browser:
                 "--hide-crash-restore-bubble", "--autoplay-policy=no-user-gesture-required",
                 f"--force-device-scale-factor={size()}",             # readable on a TV
                 "--kiosk", *os.environ.get("CROSSBAR_BROWSER_ARGS", "").split(), urls[0]]
-        self.proc = subprocess.Popen(args, preexec_fn=child, pass_fds=(3, 4), stdin=subprocess.DEVNULL,
+        from . import vpn
+        self.proc = subprocess.Popen(vpn.wrap(args, "browser"), preexec_fn=child, pass_fds=(3, 4), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         os.close(to_r)
         os.close(from_w)

@@ -68,10 +68,16 @@ class DiscordWeb:
                 "--enable-wayland-ime", "--wayland-text-input-version=3",
                 # screen share: through PipeWire / the desktop portal, the whole screen picked for you
                 "--enable-features=WebRTCPipeWireCapturer", "--auto-select-desktop-capture-source=Entire screen",
+                # On Wayland Chromium's "Choose what to share" picker ignores the auto-select above (its
+                # screen list is filled by the desktop portal only after you pick). This makes it take
+                # the whole screen straight away, and the portal (chooser: none) picks the output.
+                # It also auto-allows camera and microphone, which only this Discord window can ask for.
+                "--use-fake-ui-for-media-stream",
                 f"--window-size={w},{h}", "--window-position=0,0",
                 *os.environ.get("CROSSBAR_DISCORD_ARGS", "").split(),          # tests only
                 f"--app={os.environ.get('CROSSBAR_DISCORD_URL', URL)}"]
-        self.proc = subprocess.Popen(args, preexec_fn=child, pass_fds=(3, 4), stdin=subprocess.DEVNULL,
+        from . import vpn
+        self.proc = subprocess.Popen(vpn.wrap(args, "discord"), preexec_fn=child, pass_fds=(3, 4), stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
         os.close(to_chrome_r)
         os.close(from_chrome_w)
@@ -839,13 +845,34 @@ class DiscordWeb:
     def sharing(self):
         return bool(self.js(self.SHARING_JS))
 
+    # Ending the capture the way the browser's own "Stop sharing" bar does: the tracks stop *and*
+    # announce it ("ended"), which is what Discord listens for. (track.stop() alone is silent:
+    # the picture freezes, and Discord keeps showing the stream as live, loading forever.)
+    END_CAPTURE_JS = r"""(() => {
+      const s = window.__cbShareStream;
+      if (!s) return false;
+      for (const t of s.getTracks()) { try { t.stop(); } catch (e) {} try { t.dispatchEvent(new Event('ended')); } catch (e) {} }
+      try { s.dispatchEvent(new Event('inactive')); } catch (e) {}
+      return true;
+    })()"""
+    DISCORD_STREAMING_JS = r"""(() => { try { const A = window.__cbStores && window.__cbStores.ApplicationStreamingStore;
+      return A && A.getCurrentUserActiveStream ? !!A.getCurrentUserActiveStream() : null; } catch (e) { return null; } })()"""
+
     def _stop_share(self):
-        xy, _ = self._find_control(r"^stop (streaming|sharing|stream)|stop screen ?share", "voice", hover=False)
+        stop_re = r"^stop (streaming|sharing|stream)|stop screen ?share|^stop$"
+        xy, _ = self._find_control(stop_re, "voice", hover=True)
+        if not xy:
+            xy, _ = self._find_control(stop_re, "all", hover=False)
         if xy:
             self._trusted_click(xy)
-            time.sleep(0.6)
-        if self.sharing():                       # end the capture itself: Discord stops the stream
-            self.js("(() => { const s = window.__cbShareStream; if (s) s.getTracks().forEach((t) => t.stop()); return true; })()")
+            time.sleep(0.8)
+        if self.js(self.END_CAPTURE_JS):           # whatever the button did: the capture ends, announced
+            time.sleep(0.8)
+        for _ in range(8):                          # Discord's own idea of it, when it can be read
+            live = self.js(self.DISCORD_STREAMING_JS)
+            if not live:
+                break
+            time.sleep(0.4)
         return {"sharing": False}
 
     def install_share_hook(self):

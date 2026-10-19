@@ -520,7 +520,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'network', label: 'Network', icon: 'network', sub: 'Wi-Fi, connection status',
+    key: 'network', label: 'Network', icon: 'network', sub: 'Wi-Fi, VPN, speed test, network drives',
     children: async () => {
       const n = await api.get('/api/network').catch(() => ({ available: false, devices: [] }));
       if (!n.available) return [{ key: 'na', label: 'Network settings need NetworkManager', icon: 'info' }];
@@ -547,6 +547,11 @@ const SETTINGS_FOLDERS = [
             } });
         }
       }
+      items.push(VPN_ITEM);
+      const last = await api.get('/api/speedtest').catch(() => ({}));
+      items.push({ key: 'speed', label: 'Internet Speed Test', icon: 'download',
+        sub: last && last.download != null ? `Last: ↓ ${last.download} Mbps · ↑ ${last.upload} Mbps · ${last.ping} ms` : 'Download, upload and latency',
+        action: runSpeedTest });
       items.push(NAS_ITEM);
       return items;
     },
@@ -646,7 +651,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.0.2 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.0.2 Alpha', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.1 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.1 Alpha', 'About') },
       ];
     },
   },
@@ -754,3 +759,29 @@ async function checkComponents() {
 
 boot();
 setTimeout(checkComponents, 12000);
+
+
+// ---- Settings › Network › Internet Speed Test: live numbers while it runs ----------------------------
+async function runSpeedTest() {
+  const j = await call(() => api.post('/api/speedtest'));
+  if (!j) return;
+  let open = true;
+  Dialog.ask({ title: 'Internet Speed Test', body: 'Finding the nearest server…', buttons: ['Close'] }).then(() => { open = false; });
+  const v = (x, unit) => (x == null ? '…' : `${x.toFixed ? x.toFixed(1) : x} ${unit}`);
+  while (open) {
+    await new Promise((r) => setTimeout(r, 400));
+    const cur = (await api.get('/api/jobs').catch(() => [])).find((x) => x.id === j.id);
+    if (!cur || !open) break;
+    const r = cur.result || {};
+    const lines = [
+      `Download   ${v(r.download ?? r.download_live, 'Mbps')}`,
+      `Upload   ${v(r.upload ?? r.upload_live, 'Mbps')}`,
+      `Latency   ${v(r.ping, 'ms')}${r.jitter != null ? `   (jitter ${r.jitter} ms)` : ''}`,
+      r.server ? `Server: Cloudflare ${r.server}${r.ip ? ` · seen as ${r.ip}` : ''}` : '',
+      cur.status === 'running' ? `\n${cur.message}` : cur.status === 'error' ? `\n${cur.message}` : '\nDone',
+    ];
+    $('.dlg-body').textContent = lines.filter((x) => x !== '').join('\n');
+    if (cur.status !== 'running') break;
+  }
+  if (S.stack.length) reloadFolder();
+}

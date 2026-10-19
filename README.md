@@ -1,9 +1,9 @@
-# Crossbar — 1.0 Alpha
+# Crossbar — 1.1 Alpha
 
 **A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
 cross-media bar — categories across, items down, flowing waves behind — and runs everything from a
 controller: your Steam, GOG, Epic, Lutris and emulated games, apps, music, video, live TV, the web,
-Discord voice and friends. It's built on Arch (CachyOS works great), installs next to your existing
+Discord voice and friends, torrents and a VPN. It's built on Arch (CachyOS works great), installs next to your existing
 desktop, and never touches your kernel or graphics drivers.
 
 > **Alpha:** everything below works, and it's been used daily on a PC and a PS5 — but expect rough
@@ -16,6 +16,7 @@ desktop, and never touches your kernel or graphics drivers.
 | ![Apps](docs/apps.png) **Apps** — Flatpaks and AppImages, plus what's open now | ![Flathub](docs/flathub.png) **Install Apps** — Flathub browser and AppImage installer | ![Themes](docs/themes.png) **Themes** — four built in, [make your own](docs/THEMES.md) |
 | ![ROMs](docs/roms-tags.png) **Emulation** — EmuDeck-style, 27 systems incl. Switch (Eden) | ![Tools](docs/compat-tools.png) **Proton & Wine tools** — ProtonUp-Qt's list, in Settings | ![Browser](docs/browser.png) **Browser** — made for the controller, sized for a TV |
 | ![Social](docs/social.png) **Social** — Discord voice, calls, screen share; Steam friends | ![Downloads](docs/downloads.png) **Downloads** — live speed and time left, cancel | ![Live TV](docs/iptv-live-tv.png) **IPTV** — live TV, movies and shows |
+| ![Torrents](docs/transfers.png) **Torrents** — search with qBittorrent's plugins, download, seed | ![VPN](docs/vpn.png) **VPN** — PIA, Mullvad, NordVPN, Proton…, port forwarding, split tunneling | ![Windows Components](docs/wincomp.png) **Windows Components** — winetricks / protontricks per game |
 
 ### What's in it
 
@@ -23,13 +24,20 @@ desktop, and never touches your kernel or graphics drivers.
   Steam's **non-Steam games**, ROMs from 27 systems, each with a tag you can rename ([STEAM], [SNES],
   [LUTRIS]…). Steam Big Picture one press away. Trophies from RetroAchievements and Steam.
 - **Windows games** run through Proton (umu-launcher) with a per-game tool picker and a built-in
-  download manager for GE-Proton, Proton-CachyOS, Wine-GE, DXVK and more.
+  download manager for GE-Proton, Proton-CachyOS, Wine-GE, DXVK and more. Per game (Steam and Lutris
+  too): launch options, environment variables, Proton / Wine version, and Windows components
+  (DLLs, fonts, runtimes) through winetricks / protontricks.
 - **Emulation** that reads an EmuDeck folder as-is: emulators install in one press (RetroArch,
   Dolphin, PCSX2, RPCS3, Eden…), BIOS and Switch keys are checked for you.
 - **Quick Menu** over any game or app (Select + Start): resume/close, volume per app, frame rate
   overlay, on-screen keyboard, Discord call controls, app switcher, power.
 - **Apps, browser, media** — Flathub and AppImages, a controller-first web browser, music (files
   and Spotify), video, photos, IPTV, network drives.
+- **Torrents** — a TV-sized client on qBittorrent's engine: search through qBittorrent search plugins
+  (official and the community list, with sign-in for private sites), bind to the VPN, the settings
+  that matter.
+- **Network** — VPN set up from the controller (WireGuard or OpenVPN; sign-in wizards for PIA,
+  Mullvad and NordVPN, config import for the rest), port forwarding, split tunneling, a speed test.
 - **Yours** — themes, your own folders in any category, artwork from SteamGridDB or your own
   pictures, remappable buttons with Xbox / PlayStation / Nintendo glyphs.
 - **PS5** — temperatures, fan, front light, boost; boots alongside gaming mode and Plasma.
@@ -419,6 +427,43 @@ Uninstall). Emulators installed from Game › Emulation stay there.
   `~/Applications`, made runnable, and its name and icon are read from inside it. Pick a category
   the same way.
 
+## Torrents
+
+**Apps › Torrents** is a torrent client made for the controller and the TV, running qBittorrent's
+engine (qbittorrent-nox) in the background, reachable only from this machine.
+- **Search** goes through your **search plugins**: Search Plugins › Get Official Plugins, or
+  **Get Community Plugins** (the list on the [qBittorrent wiki](https://github.com/qbittorrent/search-plugins/wiki/Unofficial-search-plugins),
+  public and private sites). Plugins for private sites ask for your account when they're installed
+  (Y › Sign In… later); it's written into the plugin's own settings. Community plugins are code
+  written by other people: only install ones you trust.
+- **Downloading / Finished & Seeding / All**: live progress, speed and time left. A or Y on one:
+  pause, files (skip or prioritise), download in order (watch while it downloads), force start,
+  speed limit, recheck, remove (with or without the files).
+- **Add a Torrent**: a magnet link or a `.torrent` file (Downloads, USB stick…).
+- **Settings**: download folder; **Network & VPN** (only use the VPN — no VPN, no torrent traffic —,
+  a network interface, the VPN's forwarded port as the listening port, UPnP); speed limits and slow
+  mode; queue; seeding limits; connections, encryption, DHT / PeX / LSD, anonymous mode; adding
+  paused; notifications; keep seeding in the background.
+
+## VPN and speed test
+
+**Settings › Network & Bluetooth › Network › VPN** connects with WireGuard or OpenVPN itself
+(through NetworkManager) — no VPN company's app.
+- **Private Internet Access**: sign in with your username and password; every region with its
+  latency; WireGuard or OpenVPN; **port forwarding** (kept alive every 15 minutes, and handed to
+  the torrent client). Follows PIA's own [manual-connections](https://github.com/pia-foss/manual-connections) scripts.
+- **Mullvad** (account number) and **NordVPN** (access token): sign in, pick a city or country.
+- **Proton VPN, Surfshark, Windscribe, IVPN, AirVPN, ExpressVPN, your own server**: import the
+  WireGuard `.conf` / OpenVPN `.ovpn` files from your account page (a folder or `.zip` of them gives
+  you several locations). Proton's port forwarding (NAT-PMP) works too.
+- **Split Tunneling**: sites and addresses that skip the VPN, and apps that skip it (Steam and its
+  games, other games, Discord, the browser, AppImages). Your local network always stays reachable.
+- **Connect at Startup**, **Check My Address**. Passwords, tokens and keys stay in a file only you
+  can read.
+
+**Internet Speed Test** (same menu) measures download, upload, latency and jitter against
+Cloudflare's nearest server — through the VPN when it's on.
+
 ## Folders
 
 Make your own folders in any category (Game, Apps, Music…): highlight anything, **Y › Move to
@@ -507,7 +552,7 @@ The Settings column groups related sections: **Display & Sound**, **Network & Bl
 |---|---|
 | Display | Resolution, refresh rate, scale per screen; new modes auto-revert after 15 s unless you choose Keep. Screens that report no modes get common sizes as custom modes, rate shown as Auto |
 | Sound | Output device, input (mic) device, volumes, menu sounds |
-| Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; network drives (SMB/NFS) |
+| Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; VPN; speed test; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
 | Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, frame rate overlay, demo library |

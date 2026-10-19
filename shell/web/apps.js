@@ -109,6 +109,8 @@ function decorate(items) {
     if (!opts.some((o) => o.label === 'Edit Tag…')) opts.push({ label: 'Edit Tag…', action: () => editTag(out) });
     if (LAUNCHOPTS.test(it.key) && !opts.some((o) => o.label === 'Launch Options…'))
       opts.push({ label: 'Launch Options…', action: () => openFolder(launchOptionsFolder(out)) });
+    if (LAUNCHOPTS.test(it.key) && !opts.some((o) => o.label === 'Windows Components…'))
+      opts.push({ label: 'Windows Components…', action: () => openFolder(windowsComponentsFolder(out)) });
     if (!opts.some((o) => o.label === 'Hide')) opts.push({ label: 'Hide', action: () => setHidden(out.key, out.label, true) });
     out.options = opts;
     return out;
@@ -159,6 +161,10 @@ CATS.push({
     for (const j of S.jobs.filter((j) => j.kind === 'install' && j.provider === 'flatpak' && j.status === 'running')) {
       items.push({ key: `job:${j.id}`, label: j.title, icon: 'download', sub: `Installing… ${j.message}`, progress: j.progress, badge: 'FLATPAK',
         ...(j.cancellable ? { action: () => cancelJob(j), options: jobOptions(j) } : {}) });
+    }
+    if (typeof torrentsItem === 'function') {           // Torrents, with live speeds while it runs
+      S.torrent = await api.get('/api/torrent').catch(() => S.torrent);
+      items.push(torrentsItem());
     }
     items.push(...appsIn('apps'));
     items.push({ key: 'install-apps', label: 'Install Apps', icon: 'download', sub: 'Flatpaks from Flathub, or an AppImage you have', children: async () => INSTALL_APPS.children() });
@@ -302,9 +308,21 @@ function withFolderOptions(cat, it) {
 }
 
 // after a category loads: apps placed in it, then your folders (holding the items you put in them)
+// games and apps in A–Z order (whatever store they're from); pinned rows (Trophies, Return to…,
+// open apps, Install Apps…) stay where they are
+const SORTABLE = /^(app:|steam:|gog:|epic:|demo:|lutris:|shortcut:|emu:|rom:)/;
+function alphabetical(items) {
+  const first = items.findIndex((i) => i && i.key && SORTABLE.test(i.key) && i.progress == null);
+  if (first < 0) return items;
+  const isS = (i) => i && i.key && SORTABLE.test(i.key) && i.progress == null;    // downloads keep their place
+  const sorted = items.filter(isS).sort((a, b) => String(a.label).localeCompare(String(b.label), undefined, { numeric: true, sensitivity: 'base' }));
+  const head = items.slice(0, first).filter((i) => !isS(i)), tail = items.slice(first).filter((i) => !isS(i));
+  return [...head, ...sorted, ...tail];
+}
 function applyExtras(cat, items) {
   if (cat !== 'apps' && cat !== 'settings') items = [...items, ...appsIn(cat)];
   items = decorate(items);
+  if (cat === 'game' || cat === 'apps') items = alphabetical(items);
   if (!FOLDER_CATS.includes(cat)) return items;
   const fs = S.folders.filter((f) => f.cat === cat);
   const inside = new Set(fs.flatMap((f) => f.items));
@@ -403,6 +421,46 @@ function launchOptionsFolder(it) {
         action: async () => { if (await confirmBox(`Reset ${name}'s launch options?`)) { const r = await call(() => api.post('/api/launchopts/reset', { key })); if (r) { toast('Launch options reset', 'settings'); reloadFolder(); } } } });
       if (o.kind === 'steam') items.push({ key: 'how', label: 'About Steam Games', icon: 'info', sub: 'Saved in Steam, so Steam shows the same settings',
         action: () => message('These are the same launch options and Proton version you\'d set in Steam › Properties.\nSteam only reads them when it starts, and writes its own copy back when it quits, so Crossbar saves them and puts them in place the next time you start this game from the XMB (Steam closes and reopens once). Apply Now does it straight away.', 'Launch Options') });
+      return items;
+    },
+  };
+}
+
+// ---- Y › Windows & Proton › Windows Components… : winetricks / protontricks for one game's prefix ----------
+function windowsComponentsFolder(it) {
+  const key = it.key, name = it.label;
+  const install = async (verbs, label) => {
+    if (!(await confirmBox(`Install ${label} for ${name}?\nIt goes into this game's own Windows folder only.`))) return;
+    if (await call(() => api.post('/api/wintricks/install', { key, verbs, name }), `Installing ${label}… (see Downloads)`)) pollJobs();
+  };
+  const row = (c) => ({ key: `wt:${c.id}`, label: c.name, icon: c.installed ? 'check' : 'download',
+    sub: c.installed ? 'Installed' + (c.about ? ` · ${c.about}` : '') : (c.about || c.id), badge: c.id.toUpperCase(),
+    action: () => install([c.id], c.name),
+    options: [{ label: c.installed ? 'Install Again' : 'Install', action: () => install([c.id], c.name) }] });
+  return {
+    key: `wt:${key}`, label: 'Windows Components', icon: 'download', sub: name,
+    children: async () => {
+      const st = await api.get(`/api/wintricks?key=${encodeURIComponent(key)}`);
+      const items = [];
+      if (!st.available) items.push({ key: 'missing', label: 'winetricks isn\'t installed', icon: 'info', sub: 'Settings › System › Update Crossbar installs it' });
+      items.push(...st.groups.map((g) => ({ key: `g:${g.name}`, label: g.name, icon: 'folder',
+        sub: `${g.items.filter((c) => c.installed).length} of ${g.items.length} installed`, children: async () => g.items.map(row) })));
+      items.push({ key: 'search', label: 'Search All Components…', icon: 'search', sub: 'Everything winetricks has (DLLs, fonts, apps, settings)',
+        action: async () => {
+          const r = await Dialog.ask({ title: 'Search Components', buttons: ['Search', 'Cancel'], fields: [{ key: 'q', label: 'Name, e.g. directplay or d3dx' }] });
+          const q = r.button === 0 ? r.values.q.trim().toLowerCase() : '';
+          if (!q) return;
+          const all = await call(() => api.get('/api/wintricks/all'));
+          if (!all) return;
+          const hits = all.filter((c) => c.id.includes(q) || c.name.toLowerCase().includes(q)).slice(0, 80);
+          openFolder({ key: `wts:${q}`, label: `“${q}”`, icon: 'search', children: async () => hits.length
+            ? hits.map((c) => row({ ...c, about: `${c.group} · ${c.name}`, name: c.id, installed: st.installed.includes(c.id) }))
+            : [{ key: 'none', label: 'Nothing found', icon: 'info', sub: 'Try a shorter word' }] });
+        } });
+      items.push({ key: 'have', label: 'Installed in This Game', icon: 'info', sub: st.installed.length ? st.installed.slice(-6).join(', ') : 'Nothing yet',
+        action: () => message(st.installed.length ? st.installed.join('\n') : 'Nothing installed with winetricks yet.', name) });
+      items.push({ key: 'how', label: 'How This Works', icon: 'info', sub: `${st.how} · ${st.prefix}`,
+        action: () => message(`Components are installed into ${name}'s own Windows folder (its Wine / Proton prefix), never system-wide.\nUsing: ${st.how}\nFolder: ${st.prefix}\nIf a game breaks, removing its prefix (or Steam › Properties › Verify) starts it fresh.`, 'Windows Components') });
       return items;
     },
   };

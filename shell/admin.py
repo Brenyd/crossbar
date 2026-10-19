@@ -8,6 +8,7 @@
     pkexec /usr/lib/crossbar/admin.py ps5-fan-target < {"value": 40..95}
     pkexec /usr/lib/crossbar/admin.py ps5-led        < {"name": "<preset>" | "off"}
     pkexec /usr/lib/crossbar/admin.py ps5-control    < {"args": ["--fan", "on|off|max"] | ["--boost", "on|off"]}
+    pkexec /usr/lib/crossbar/admin.py vpn-split      < {"enable", "dev", "gateway", "exclude": [cidr], "cgroup"}
 
 Network drives go in /etc/fstab with a marker comment (# crossbar-nas:<name>),
 always mount under /mnt/nas/<name>, use x-systemd.automount + nofail so a
@@ -400,11 +401,82 @@ def boot_session(req):
     print(json.dumps({"ok": True, "session": session}))
 
 
+# ---- VPN split tunneling ------------------------------------------------------------------------------
+# Traffic to excluded addresses, and from apps started in the "skip the VPN" slice (marked by
+# nftables from their cgroup), is routed with table 2000: the normal internet connection's
+# default route. Marked packets are masqueraded onto that connection (their source address was
+# picked for the tunnel). Undone completely by {"enable": false} (and before every change).
+SPLIT_TABLE, SPLIT_MARK, SPLIT_PREF = "2000", "0x2000", 1000
+
+
+def _run(*cmd, inp=None):
+    return subprocess.run(list(cmd), input=inp, capture_output=True, text=True)
+
+
+def split_clear():
+    for pref in (SPLIT_PREF, SPLIT_PREF + 1):
+        for _ in range(300):
+            if _run("ip", "-4", "rule", "del", "pref", str(pref)).returncode:
+                break
+    _run("ip", "-4", "route", "flush", "table", SPLIT_TABLE)
+    _run("nft", "delete", "table", "inet", "crossbar_split")
+
+
+def vpn_split(req):
+    import ipaddress
+    split_clear()
+    if not req.get("enable"):
+        print(json.dumps({"ok": True}))
+        return
+    dev = clean(req.get("dev"), "Network device", r"[A-Za-z0-9_.-]{1,15}", maxlen=15)
+    try:
+        gw = str(ipaddress.IPv4Address(req.get("gateway") or ""))
+    except ValueError:
+        fail("Gateway isn't an IPv4 address")
+    nets = []
+    for x in (req.get("exclude") or [])[:256]:
+        try:
+            n = ipaddress.ip_network(str(x), strict=False)
+        except ValueError:
+            fail(f"Not an address: {x}")
+        if n.version == 4:
+            nets.append(str(n))
+    cg = req.get("cgroup")
+    if cg is not None and not re.fullmatch(r"user\.slice/user-\d+\.slice/user@\d+\.service/cbnovpn\.slice", str(cg)):
+        fail("Bad app group")
+    r = _run("ip", "-4", "route", "add", "default", "via", gw, "dev", dev, "table", SPLIT_TABLE)
+    if r.returncode:
+        fail(f"Couldn't add the bypass route: {r.stderr.strip()}")
+    for n in nets:
+        _run("ip", "-4", "rule", "add", "to", n, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
+    if cg:
+        _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
+        rules = f"""table inet crossbar_split {{
+  chain out {{
+    type route hook output priority mangle; policy accept;
+    socket cgroupv2 level 4 "{cg}" meta mark set {SPLIT_MARK}
+  }}
+  chain post {{
+    type nat hook postrouting priority srcnat; policy accept;
+    meta mark {SPLIT_MARK} oifname "{dev}" masquerade
+  }}
+}}
+"""
+        r = _run("nft", "-f", "-", inp=rules)
+        if r.returncode:
+            split_clear()
+            fail(f"Couldn't set up app split tunneling: {r.stderr.strip()[-200:]}")
+        for k in ("all", dev):                    # replies come back on the normal connection: loose check
+            _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
+    print(json.dumps({"ok": True, "excluded": len(nets), "apps": bool(cg)}))
+
+
 if __name__ == "__main__":
     if os.geteuid() != 0:
         fail("crossbar-admin must run as root (via pkexec)")
     actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
-               "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control}
+               "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control,
+               "vpn-split": vpn_split}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

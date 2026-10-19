@@ -73,3 +73,9 @@ discord
 mumble
 # VM niceties
 spice-vdagent
+# Torrents, VPN, Windows components (1.1)
+qbittorrent-nox
+wireguard-tools
+networkmanager-openvpn
+winetricks
+protontricks

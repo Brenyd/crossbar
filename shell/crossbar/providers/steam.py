@@ -233,7 +233,8 @@ def start_steam(bpm=True):
     os.makedirs(os.path.dirname(STEAM_LOG), exist_ok=True)
     log = open(STEAM_LOG, "w")
     from .. import perf
-    subprocess.Popen(["steam", "-gamepadui"] if bpm else ["steam", "-silent"], stdin=subprocess.DEVNULL,
+    from .. import vpn
+    subprocess.Popen(vpn.wrap(["steam", "-gamepadui"] if bpm else ["steam", "-silent"], "steam"), stdin=subprocess.DEVNULL,
                      env={**os.environ, **perf.env()},          # Steam passes MangoHud on to its games
                      stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
 
@@ -298,8 +299,9 @@ def wait_ready(bpm, progress, quick=False, timeout=20 * 60):
 def steam_cmd(*args):
     """Run steam with arguments. If that starts Steam, it starts with the frame-rate overlay's
     setting (MangoHud), which Steam then hands to every game it runs."""
-    from .. import perf
-    return util.spawn(["steam", *args], env=perf.env())
+    from .. import perf, vpn
+    argv = ["steam", *args] if steam_running() else vpn.wrap(["steam", *args], "steam")
+    return util.spawn(argv, env=perf.env())
 
 
 def steam_has_overlay():

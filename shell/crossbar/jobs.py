@@ -44,6 +44,7 @@ class Job:
         self.speed = 0.0            # bytes per second (smoothed)
         self.eta = None             # seconds left
         self.cancellable = False
+        self.result = None                 # a job can hand back a result (speed test, …)
         self._cancel = threading.Event()
         self._cleanup = []          # run when cancelled (kill a process, delete partial files)
         self._last = None           # (time, bytes) of the previous byte update
@@ -94,7 +95,7 @@ class Job:
     def as_dict(self):
         return {k: getattr(self, k) for k in
                 ("id", "kind", "title", "provider", "game_id", "progress", "status", "message", "started", "finished",
-                 "done_bytes", "total_bytes", "speed", "eta", "cancellable")}
+                 "done_bytes", "total_bytes", "speed", "eta", "cancellable", "result")}
 
 
 class JobManager:

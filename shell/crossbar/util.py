@@ -202,6 +202,9 @@ def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5, game=True):
         env = {**perf.env(), **(env or {}), "CROSSBAR_GAME": "1"}   # frame-rate overlay; marks its windows as a game
     else:
         env = dict(env or {})
+    if game:
+        from . import vpn
+        argv = vpn.wrap(argv, "games")                 # VPN › Split Tunneling › Games skip the VPN
     p = subprocess.Popen(argv, cwd=cwd, env={**os.environ, **env}, stdin=subprocess.DEVNULL,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     log.close()
