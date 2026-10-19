@@ -141,8 +141,16 @@ class Spotify:
         req = urllib.request.Request("https://accounts.spotify.com/api/token",
                                      data=urllib.parse.urlencode(data).encode(),
                                      headers={"Content-Type": "application/x-www-form-urlencoded"})
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return json.loads(r.read())
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return json.loads(r.read())
+        except urllib.error.HTTPError as e:
+            if e.code in (400, 401):
+                err = SpotifyError("Spotify: the sign-in has expired: use Set Up Spotify again")
+            else:
+                err = SpotifyError(f"Spotify's sign-in server had a problem ({e.code}): try again in a moment")
+            err.code = e.code
+            raise err from None
 
     def _save(self, tok):
         old = self._load() or {}
@@ -172,6 +180,22 @@ class Spotify:
         return tok["access_token"]
 
     def api(self, method, path, body=None, **params):
+        # Spotify's Web API throws the odd 500/502/503; one quiet retry hides most of them.
+        # POSTs (next / previous) aren't retried: doing those twice would skip two tracks.
+        tries = 1 if method == "POST" else 2
+        for attempt in range(tries):
+            try:
+                return self._api_once(method, path, body, params)
+            except SpotifyError as e:
+                if e.code < 500 or attempt == tries - 1:
+                    raise
+                time.sleep(1.2)
+            except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+                if attempt == tries - 1:
+                    raise util.friendly_net_error(API, e) from None
+                time.sleep(1.2)
+
+    def _api_once(self, method, path, body, params):
         url = API + path + ("?" + urllib.parse.urlencode(params) if params else "")
         data = json.dumps(body).encode() if body is not None else (b"" if method in ("PUT", "POST") else None)
         req = urllib.request.Request(url, data=data, method=method, headers={
@@ -189,10 +213,30 @@ class Spotify:
             except Exception:
                 msg = ""
             if e.code == 403 and "premium" in msg.lower():
-                msg = "Spotify Premium is required for playback control"
-            err = SpotifyError(f"Spotify: {msg or e.reason} ({e.code})")
+                text = "Spotify Premium is required for playback control"
+            elif e.code >= 500:
+                text = f"Spotify's servers had a problem ({e.code}): try again in a moment"
+            elif e.code == 429:
+                text = "Spotify is asking Crossbar to slow down: try again in a minute"
+            else:
+                text = f"{msg or e.reason} ({e.code})"
+            err = SpotifyError(f"Spotify: {text}")
             err.code = e.code
             raise err from None
+
+    def speaker_problem(self):
+        """The last thing librespot complained about, if it's an error (for explaining failed playback)."""
+        try:
+            with open(LOG, "rb") as f:
+                f.seek(0, 2)
+                f.seek(max(0, f.tell() - 6000))
+                lines = f.read().decode("utf-8", "replace").splitlines()
+        except OSError:
+            return None
+        for ln in reversed(lines[-40:]):
+            if re.search(r"\b(ERROR|error|Unavailable|503|500|could not)\b", ln):
+                return re.sub(r"^\[[^\]]*\]\s*", "", ln).strip()[:160]
+        return None
 
     # ---- combined sign-in --------------------------------------------------
     def login(self, job):
@@ -281,6 +325,18 @@ class Spotify:
         raise RuntimeError("The Crossbar speaker isn't showing up in Spotify — see ~/.cache/crossbar/librespot.log")
 
     def play(self, context_uri=None, uris=None, offset=None, shuffle=False):
+        try:
+            self._play(context_uri, uris, offset, shuffle)
+        except SpotifyError as e:
+            why = self.speaker_problem() if e.code >= 500 else None
+            if not why:
+                raise
+            err = SpotifyError(f"Spotify: the Crossbar speaker couldn't play ({why}). "
+                               "Try Restart Speaker; if it keeps happening, Spotify may be having an outage or librespot needs an update")
+            err.code = e.code
+            raise err from None
+
+    def _play(self, context_uri, uris, offset, shuffle):
         dev = self.device_id()
         body = {}
         if context_uri:
@@ -292,15 +348,26 @@ class Spotify:
         # Spotify rejects player commands sent to a device that isn't active yet,
         # so make Crossbar the active device first, then start playback, then shuffle.
         now = self.now() or {}
-        if not now.get("here"):
-            self.api("PUT", "/me/player", {"device_ids": [dev], "play": False})
-            time.sleep(0.8)
+        restarted = False
         for attempt in range(3):
             try:
+                if not now.get("here"):
+                    self.api("PUT", "/me/player", {"device_ids": [dev], "play": False})
+                    time.sleep(0.8)
                 self.api("PUT", "/me/player/play", body, device_id=dev)
                 break
             except SpotifyError as e:
-                if e.code not in (404, 502, 503) or attempt == 2:
+                if e.code < 500 and e.code != 404:
+                    raise
+                if e.code >= 500 and not restarted:
+                    # A Spotify 500 for a Connect device usually means the speaker (librespot)
+                    # lost its session: start it again once and retry.
+                    restarted = True
+                    self.restart_speaker()
+                    dev = self.device_id()
+                    now = {}
+                    continue
+                if attempt == 2:
                     raise
                 time.sleep(1.0)
         try:
@@ -309,7 +376,13 @@ class Spotify:
             pass  # shuffle is a nicety; never fail playback over it
 
     def transfer(self):
-        self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
+        try:
+            self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
+        except SpotifyError as e:
+            if e.code < 500:
+                raise
+            self.restart_speaker()
+            self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
 
     def restart_speaker(self):
         if self.receiver_running():

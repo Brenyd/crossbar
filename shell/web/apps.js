@@ -8,14 +8,16 @@ S.apps = [];
 S.ext = [];        // Lutris + Steam's non-Steam games
 S.folders = [];
 S.tags = {};
+S.hidden = {};    // key -> name: games / apps / ROMs you hid from the XMB
 
 async function loadApps() {
   const [a, x] = await Promise.all([api.get('/api/apps').catch(() => []), api.get('/api/extgames').catch(() => [])]);
   S.apps = a; S.ext = x;
 }
 async function loadFolders() {
-  const [f, t] = await Promise.all([api.get('/api/xmb/folders').catch(() => []), api.get('/api/xmb/tags').catch(() => ({}))]);
-  S.folders = f; S.tags = t;
+  const [f, t, h] = await Promise.all([api.get('/api/xmb/folders').catch(() => []), api.get('/api/xmb/tags').catch(() => ({})),
+    api.get('/api/xmb/hidden').catch(() => ({}))]);
+  S.folders = f; S.tags = t; S.hidden = h || {};
 }
 
 // Options.show as a question: resolves with the picked value (or null on Back)
@@ -93,16 +95,44 @@ async function editTag(it) {
   if (S.stack.length) reloadFolder();
 }
 const TAGGABLE = /^(steam|gog|epic|demo|rom|app|lutris|shortcut):/;
-// game-like rows get their tag (yours if you set one) and Y › Edit Tag…
+// game-like rows get their tag (yours if you set one), Y › Edit Tag… and Y › Hide;
+// the ones you hid are left out (Settings › Games & Emulation › Hidden Games & Apps brings them back)
 function decorate(items) {
-  return (items || []).map((it) => {
+  return (items || []).filter((it) => !(it && it.key && S.hidden[it.key])).map((it) => {
     if (!it || !it.key || !TAGGABLE.test(it.key)) return it;
     const own = S.tags[it.key];
     const out = { ...it, autoBadge: it.badge || '', badge: own !== undefined ? own : it.badge };
-    if (!(it.options || []).some((o) => o.label === 'Edit Tag…')) out.options = [...(it.options || []), { label: 'Edit Tag…', action: () => editTag(out) }];
+    const opts = [...(it.options || [])];
+    if (!opts.some((o) => o.label === 'Edit Tag…')) opts.push({ label: 'Edit Tag…', action: () => editTag(out) });
+    if (!opts.some((o) => o.label === 'Hide')) opts.push({ label: 'Hide', action: () => setHidden(out.key, out.label, true) });
+    out.options = opts;
     return out;
   });
 }
+async function setHidden(key, label, on) {
+  const h = await call(() => api.post('/api/xmb/folders/hide', { key, label, on }));
+  if (!h) return;
+  S.hidden = h;
+  toast(on ? `${label} hidden — Settings › Games & Emulation › Hidden Games & Apps brings it back` : `${label} is back`, 'info');
+  refreshAll();
+}
+// Settings › Games & Emulation › Hidden Games & Apps
+const HIDDEN_FOLDER = {
+  key: 'hidden', label: 'Hidden Games & Apps', icon: 'folder', sub: 'Things you hid with Y › Hide',
+  children: async () => {
+    S.hidden = await api.get('/api/xmb/hidden').catch(() => S.hidden);
+    const keys = Object.keys(S.hidden).sort((a, b) => S.hidden[a].localeCompare(S.hidden[b]));
+    if (!keys.length) return [{ key: 'none', label: 'Nothing hidden', icon: 'info', sub: 'Press Y on a game, app or ROM › Hide' }];
+    const kind = (k) => ({ app: 'App', rom: 'ROM', lutris: 'Lutris', shortcut: 'Non-Steam game', steam: 'Steam', gog: 'GOG', epic: 'Epic' })[k.split(':')[0]] || 'Game';
+    return keys.map((k) => ({ key: `hid:${k}`, label: S.hidden[k], icon: 'game', sub: `${kind(k)} · {ok} show it again`,
+      action: async () => { await setHidden(k, S.hidden[k], false); reloadFolder(); },
+      options: [{ label: 'Show Again', action: async () => { await setHidden(k, S.hidden[k], false); reloadFolder(); } },
+        { label: 'Show Everything Again', action: async () => {
+          if (!(await confirmBox(`Show all ${keys.length} hidden items again?`))) return;
+          for (const x of keys) await api.post('/api/xmb/folders/hide', { key: x, on: false }).catch(() => null);
+          S.hidden = {}; refreshAll(); reloadFolder(); } }] }));
+  },
+};
 function refreshAll() { for (const c of CATS) refresh(c.id); if (S.stack.length) reloadFolder(); }
 
 // the XMB version of the app switcher: everything open, A switches, Y closes

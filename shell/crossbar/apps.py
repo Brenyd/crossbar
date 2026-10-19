@@ -327,6 +327,30 @@ def flathub_search(q):
     return _page(_get(f"{FLATHUB_API}/search", data={"query": q, "filters": []}, ttl=300), 1)
 
 
+def _num(v):
+    try:
+        return int(str(v).split("x")[0])
+    except (TypeError, ValueError):
+        return 0
+
+
+def _best_shot(s):
+    """The biggest picture of one screenshot. Flathub has served `sizes` both as
+    {"1248x702": url} and as [{"width": "1248", "height": "702", "src": url}]."""
+    if not isinstance(s, dict):
+        return None
+    sizes = s.get("sizes")
+    cands = []
+    if isinstance(sizes, dict):
+        cands = [(_num(k), v) for k, v in sizes.items()]
+    elif isinstance(sizes, list):
+        cands = [(_num(x.get("width")), x.get("src") or x.get("url")) for x in sizes if isinstance(x, dict)]
+    if not cands and s.get("src"):
+        cands = [(0, s["src"])]
+    cands = [(w, u) for w, u in cands if str(u or "").startswith("https://")]
+    return max(cands, key=lambda c: c[0])[1] if cands else None
+
+
 def flathub_app(app_id):
     if not re.match(r"^[\w.-]+$", app_id or ""):
         raise ValueError("app")
@@ -337,10 +361,9 @@ def flathub_app(app_id):
     desc = re.sub(r"\n{3,}", "\n\n", desc).strip()
     shots = []
     for s in a.get("screenshots") or []:
-        sizes = (s or {}).get("sizes") or {}
-        best = max(sizes.items(), key=lambda kv: int(kv[0].split("x")[0]) if "x" in kv[0] else 0, default=None)
-        if best and str(best[1]).startswith("https://"):
-            shots.append(best[1])
+        url = _best_shot(s)
+        if url:
+            shots.append(url)
     installed_ids = {x["id"] for x in _flatpaks()}
     return {"id": app_id, "name": a.get("name") or app_id, "summary": a.get("summary") or "",
             "description": desc[:2500], "developer": a.get("developer_name") or "",

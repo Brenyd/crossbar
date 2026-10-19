@@ -96,3 +96,26 @@ def set_tag(key, text):
             t[key] = str(text).strip()[:20]
     util.update_config(upd)
     return tags()
+
+
+# ---- hidden: games and apps you don't want on the XMB (brought back from Settings) -----------------------
+def hidden():
+    h = util.load_config().get("xmb_hidden")
+    return h if isinstance(h, dict) else {}
+
+
+def set_hidden(key, label="", on=True):
+    """Hide (or show again) one game / app / ROM by its key; the name is kept for the Settings list."""
+    if not key or len(key) > 300:
+        raise ValueError("item")
+
+    def upd(c):
+        h = c.get("xmb_hidden")
+        if not isinstance(h, dict):
+            h = c["xmb_hidden"] = {}
+        if on:
+            h[key] = str(label or key).strip()[:120]
+        else:
+            h.pop(key, None)
+    util.update_config(upd)
+    return hidden()

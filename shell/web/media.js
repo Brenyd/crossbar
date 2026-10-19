@@ -174,7 +174,8 @@ function spotifyFolder() {
   return {
     key: 'spotify', label: 'Spotify', icon: 'spotify', live: true,
     sub: S.state.spotify.linked ? 'Your playlists and Liked Songs' : 'Set up to play Spotify here',
-    options: S.state.spotify.linked ? [{ label: 'Sign Out', action: async () => {
+    options: S.state.spotify.linked ? [{ label: 'Restart Speaker', action: () => call(() => api.post('/api/spotify/restart'), 'Spotify speaker restarted') },
+      { label: 'Sign Out', action: async () => {
       if (await confirmBox('Sign out of Spotify on this console?')) { S.state = await api.post('/api/spotify/logout'); refresh('music'); }
     } }] : [{ label: 'Set Up', action: spotifySetup }],
     children: async () => {

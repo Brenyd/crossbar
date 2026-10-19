@@ -213,7 +213,9 @@ class DiscordWeb:
         voice = { channel: chan || 'Voice channel', guild, guild_id: parts[2] || '', channel_id: parts[3] || '' };
       }
       const on = (b) => b ? (b.getAttribute('aria-checked') === 'true' || /^un/i.test(b.getAttribute('aria-label'))) : false;
-      const sharing = !![...document.querySelectorAll('[aria-label]')].find((x) => /^(stop streaming|stop sharing)/i.test(x.getAttribute('aria-label')));
+      const ss = window.__cbShareStream;
+      const sharing = !!(ss && ss.active && ss.getVideoTracks().some((t) => t.readyState === 'live')) ||
+        !![...document.querySelectorAll('[aria-label]')].find((x) => /^(stop streaming|stop sharing)/i.test(x.getAttribute('aria-label')));
       return { signedIn, login: location.pathname.startsWith('/login'), voice,
                mute: on(mute), deaf: on(deaf), sharing };
     })()"""
@@ -314,16 +316,22 @@ class DiscordWeb:
     # find them). Nothing is sent to Discord: it's what the Friends page shows, read directly,
     # so it works whatever page the window is on. Fallback: read the Friends › Online page.
     STORES_JS = r"""(() => {
-      if (window.__cbStores && window.__cbStores.RelationshipStore) return window.__cbStores;
+      const c0 = window.__cbStores;
+      if (c0 && c0.RelationshipStore && c0.ChannelStore) return c0;
       const chunk = window.webpackChunkdiscord_app;
-      if (!chunk || !chunk.push) return null;
+      if (!chunk || !chunk.push) return c0 || null;
       let req = null;
-      try { chunk.push([[Symbol('crossbar')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return null; }
-      if (!req || !req.c) return null;
-      const want = ['RelationshipStore', 'PresenceStore', 'UserStore', 'ChannelStore'];
-      const found = {};
+      try { chunk.push([[Symbol('crossbar')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return c0 || null; }
+      if (!req || !req.c) return c0 || null;
+      const want = ['RelationshipStore', 'PresenceStore', 'UserStore', 'ChannelStore', 'ApplicationStreamingStore'];
+      const found = Object.assign({}, c0 || {});
+      const has = (v, n) => { try { return typeof v[n] === 'function'; } catch (e) { return false; } };
       const check = (v) => {
-        try { if (v && typeof v.getName === 'function') { const n = v.getName(); if (want.includes(n) && !found[n]) found[n] = v; } } catch (e) { /* lazy export */ }
+        if (!v || (typeof v !== 'object' && typeof v !== 'function')) return;
+        try { if (typeof v.getName === 'function') { const n = v.getName(); if (want.includes(n) && !found[n]) found[n] = v; } } catch (e) { /* lazy export */ }
+        // by what they can do, in case a store is renamed: the one that knows your DM with someone
+        if (!found.ChannelStore && has(v, 'getDMFromUserId') && has(v, 'getChannel')) found.ChannelStore = v;
+        if (!found.RelationshipStore && has(v, 'getFriendIDs') && has(v, 'isFriend')) found.RelationshipStore = v;
       };
       for (const m of Object.values(req.c)) {
         const ex = m && m.exports;
@@ -455,23 +463,117 @@ class DiscordWeb:
         acts = self.js(f"(() => {{ const A = {self.ACTIONS_JS}; return A ? Object.keys(A) : null; }})()", timeout=15)
         return {**(self.js(self.DEBUG_JS % self.STORES_JS, timeout=15) or {}), "via": self.cache.get("friends_via"),
                 "call_functions": acts,
-                "voice_buttons": self.js(f"{self.LABELS_JS}('share|screen|stream|call|disconnect|mute|deafen')")}
+                "voice_buttons": self.js(f"{self.LABELS_JS}('share|screen|stream|call|disconnect|mute|deafen')"),
+                "voice_panel": [c.get("name") or "?" for c in (self.js(f"{self.CONTROLS_JS}('voice')") or [])][:20]}
 
-    # The call button in a DM's header. Its label has been "Start Voice Call"; match loosely
-    # (never the video one), so small wording changes don't break calling.
-    CALL_BTN_JS = r"""(() => {
-      const ok = (l) => /call/i.test(l) && !/video|end|leave|disconnect|ring|settings|missed/i.test(l);
-      const all = [...document.querySelectorAll('[aria-label]')].filter((x) => ok(x.getAttribute('aria-label') || ''));
-      const b = all.find((x) => /^start (a )?(voice )?call$/i.test(x.getAttribute('aria-label'))) ||
-                all.find((x) => /voice call/i.test(x.getAttribute('aria-label'))) ||
-                all.find((x) => /^call$/i.test(x.getAttribute('aria-label')));
-      if (!b) return false;
-      b.click(); return true;
+    # ---- finding Discord's buttons ---------------------------------------------------------
+    # Discord keeps renaming and relabelling its buttons; some (the voice panel's Camera /
+    # Share Your Screen row) now only name themselves in a hover tooltip. So a control is
+    # found by its accessible name if it has one, else by hovering it (a real mouse move)
+    # and reading the tooltip Discord shows, the way you'd find it yourself.
+    CONTROLS_JS = r"""((scope) => {
+      const visible = (x) => { const r = x.getBoundingClientRect();
+        return r.width > 2 && r.height > 2 && r.bottom > 0 && r.right > 0 && r.top < innerHeight && r.left < innerWidth; };
+      const nameOf = (x) => {
+        let n = x.getAttribute('aria-label') || '';
+        if (!n && x.getAttribute('aria-labelledby'))
+          n = x.getAttribute('aria-labelledby').split(/\s+/).map((id) => ((document.getElementById(id) || {}).textContent || '')).join(' ');
+        n = n || x.getAttribute('title') || x.getAttribute('data-tooltip') || '';
+        if (!n) { const s = x.querySelector('[aria-label]'); if (s) n = s.getAttribute('aria-label') || ''; }
+        if (!n) n = (x.innerText || '').trim().split('\n')[0];
+        return n.trim().slice(0, 60);
+      };
+      let root = document;
+      if (scope === 'voice') {
+        let box = document.querySelector('[aria-label="Disconnect"]');
+        for (let i = 0; i < 7 && box; i++) {
+          box = box.parentElement;
+          if (box && box.querySelectorAll('button, [role="button"]').length >= 4) break;
+        }
+        root = box || document;
+      } else if (scope === 'header') {
+        const t = document.querySelector('[class*="toolbar"]');
+        root = t ? (t.closest('section') || t.parentElement || t) : document;
+      }
+      return [...root.querySelectorAll('button, [role="button"]')].filter(visible).map((x) => {
+        const r = x.getBoundingClientRect();
+        return { name: nameOf(x), x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) };
+      });
+    })"""
+    TOOLTIP_JS = r"""(() => {
+      const t = [...document.querySelectorAll('[role="tooltip"], [class*="tooltipContent"], [class*="tooltip_"]')]
+        .map((x) => (x.innerText || '').trim()).filter(Boolean);
+      return t.length ? t[t.length - 1].split('\n')[0].slice(0, 60) : '';
     })()"""
-    HEADER_LABELS_JS = r"""(() => {
-      const box = document.querySelector('section[class*="title"], [class*="toolbar"]') || document;
-      return [...box.querySelectorAll('[aria-label]')].map((x) => x.getAttribute('aria-label')).filter(Boolean).slice(0, 15);
-    })()"""
+
+    def _find_control(self, pattern, scope="all", avoid=None, hover=True, limit=16):
+        """((x, y) or None, [names seen]) for the first visible button whose name matches."""
+        rx = re.compile(pattern, re.I)
+        bad = re.compile(avoid, re.I) if avoid else None
+        good = lambda n: bool(n) and bool(rx.search(n)) and not (bad and bad.search(n))   # noqa: E731
+        ctrls = self.js(f"{self.CONTROLS_JS}({json.dumps(scope)})") or []
+        seen = []
+        for c in ctrls:
+            if good(c.get("name")):
+                return (c["x"], c["y"]), seen
+            if c.get("name") and c["name"] not in seen:
+                seen.append(c["name"])
+        if hover:
+            unnamed = [c for c in ctrls if len(c.get("name") or "") < 2][:limit]
+            try:
+                for c in unnamed:
+                    self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": c["x"], "y": c["y"]})
+                    tip = ""
+                    for _ in range(4):           # tooltips appear after a short delay
+                        time.sleep(0.15)
+                        tip = self.js(self.TOOLTIP_JS) or ""
+                        if tip:
+                            break
+                    if tip and tip not in seen:
+                        seen.append(f"{tip} (tooltip)")
+                    if good(tip):
+                        return (c["x"], c["y"]), seen
+            finally:
+                try:
+                    self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": 2, "y": 2})
+                except DiscordError:
+                    pass
+            if unnamed and not any(s.endswith("(tooltip)") for s in seen):
+                seen.append(f"{len(unnamed)} unlabelled")
+        return None, seen
+
+    def _trusted_click(self, xy):
+        self._cmd("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": xy[0], "y": xy[1]})
+        for t in ("mousePressed", "mouseReleased"):
+            self._cmd("Input.dispatchMouseEvent", {"type": t, "x": xy[0], "y": xy[1], "button": "left", "clickCount": 1})
+
+    @contextlib.contextmanager
+    def _laid_out(self):
+        """While Crossbar works the page: lay it out at desktop size and treat it as focused.
+        Hidden away, the window can be small (Discord then tucks buttons like Share Your Screen
+        and Start Voice Call out of sight) and unfocused (keyboard shortcuts don't fire)."""
+        try:
+            self._cmd("Emulation.setFocusEmulationEnabled", {"enabled": True})
+            self._cmd("Emulation.setDeviceMetricsOverride", {"width": 1600, "height": 900, "deviceScaleFactor": 0, "mobile": False})
+            time.sleep(0.5)                       # let Discord re-layout
+        except DiscordError:
+            pass
+        try:
+            yield
+        finally:
+            for m, p in (("Emulation.clearDeviceMetricsOverride", {}), ("Emulation.setFocusEmulationEnabled", {"enabled": False})):
+                try:
+                    self._cmd(m, p)
+                except DiscordError:
+                    pass
+
+    # labels on the voice panel / chat header, for error messages ("what Crossbar could see")
+    LABELS_JS = r"""((re) => [...new Set([...document.querySelectorAll('[aria-label]')].map((x) => x.getAttribute('aria-label'))
+                       .filter((l) => l && new RegExp(re, 'i').test(l)))].slice(0, 12))"""
+
+    # ---- calling a friend ------------------------------------------------------------------
+    CALL_RE = r"^start (a )?(voice )?call$|voice call|^call$|^start call"
+    CALL_AVOID = r"video|end|leave|disconnect|settings|missed|decline|camera"
     DM_READY_JS = r"""(() => /^\/channels\/@me\/\d+/.test(location.pathname) &&
       !!document.querySelector('[role="textbox"], form [contenteditable="true"], [data-slate-editor="true"]'))()"""
 
@@ -501,42 +603,74 @@ class DiscordWeb:
                 return st
         return None
 
+    def _go_home(self):
+        self.js(r"""(() => { const h = document.querySelector('[data-list-item-id="guildsnav___home"]') ||
+                                       document.querySelector('a[href="/channels/@me"]');
+                             if (h) h.click(); return !!h; })()""")
+        time.sleep(0.6)
+
     def _open_dm(self, uid):
         """Open the DM with a friend, the way clicking it would. True once its chat has loaded."""
         if uid.isdigit():
-            cid = self.js(f"""(() => {{ const S = {self.STORES_JS};
+            # 1) Discord's own "open DM" (what clicking Message on a friend does)
+            r = self.js(f"""(async () => {{
+                const S = {self.STORES_JS}, A = {self.ACTIONS_JS};
                 const C = S && S.ChannelStore;
-                try {{ return C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; }} catch (e) {{ return null; }} }})()""", timeout=15)
-            if cid:
-                path = f"/channels/@me/{cid}"
-                # 1) its entry in the Direct Messages list (a real link, handled by Discord's router)
-                self.js(r"""(() => { const h = document.querySelector('[data-list-item-id="guildsnav___home"]'); if (h) h.click(); return true; })()""")
-                time.sleep(0.6)
-                if self.js(f"""(() => {{ const a = document.querySelector('a[href="{path}"]'); if (!a) return false; a.click(); return true; }})()"""):
-                    if self._wait(self.DM_READY_JS, 8):
-                        return True
-                # 2) the router, told the address changed
-                self.js(f"""(() => {{ history.pushState(null, '', '{path}'); dispatchEvent(new PopStateEvent('popstate', {{ state: null }})); return true; }})()""")
-                if self._wait(self.DM_READY_JS, 6):
+                let cid = null;
+                try {{ cid = C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; }} catch (e) {{}}
+                if (cid && A && A.transitionTo) {{ try {{ A.transitionTo('/channels/@me/' + cid); return 'nav'; }} catch (e) {{}} }}
+                const open = A && (A.openPrivateChannel || A.ensurePrivateChannel);
+                if (open) {{ try {{ const p = open('{uid}'); if (p && p.then) await p; return 'open'; }} catch (e) {{}} }}
+                return cid ? 'cid:' + cid : null;
+              }})()""", timeout=20)
+            if r in ("nav", "open") and self._wait(self.DM_READY_JS, 8):
+                return True
+            # 2) its entry in the Direct Messages list (found by the friend's avatar or id)
+            self._go_home()
+            cid = r[4:] if isinstance(r, str) and r.startswith("cid:") else ""
+            xy = self.js(f"""(() => {{
+                const links = [...document.querySelectorAll('a[href^="/channels/@me/"]')];
+                const a = links.find((x) => {json.dumps(cid)} && x.getAttribute('href') === '/channels/@me/{cid}') ||
+                          links.find((x) => x.querySelector('img[src*="/avatars/{uid}/"]'));
+                if (!a) return null;
+                a.scrollIntoView({{ block: 'center' }});
+                const b = a.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2];
+              }})()""")
+            if xy:
+                self._trusted_click(xy)
+                if self._wait(self.DM_READY_JS, 8):
                     return True
-                # 3) load the page there (slow, but always works)
+            if cid:                              # 3) load the page there (slow, but always works)
                 try:
-                    self.js(f"location.assign('{path}'); true", timeout=5)
+                    self.js(f"location.assign('/channels/@me/{cid}'); true", timeout=5)
                 except DiscordError:
                     pass
                 self.session = None
                 if self._wait(self.DM_READY_JS, 45):
                     return True
-        # no DM yet: click the friend on Home › Friends › Online, which opens one
+        # 4) click the friend on Home › Friends › Online (a real click), which opens the DM
         self.js(self.GO_FRIENDS_JS, timeout=15)
         if uid.isdigit():
             find = f"""r.getAttribute('data-list-item-id') === 'people-list___{uid}' || !!r.querySelector('img[src*="/avatars/{uid}/"]')"""
         else:
             find = f"""(r.innerText || '').split('\\n')[0].trim() === {json.dumps(uid[5:])}"""
         for _ in range(20):
-            if self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
-                             if (!r) return false; r.click(); return true; }})()"""):
-                return self._wait(self.DM_READY_JS, 10)
+            xy = self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
+                             if (!r) return null; r.scrollIntoView({{ block: 'center' }});
+                             const n = r.querySelector('[class*="name"], [class*="username"]') || r;
+                             const b = n.getBoundingClientRect(); return [b.left + Math.min(40, b.width / 2), b.top + b.height / 2]; }})()""")
+            if xy:
+                self._trusted_click(xy)
+                if self._wait(self.DM_READY_JS, 8):
+                    return True
+                # the row's Message button opens the DM too
+                mxy = self.js(f"""(() => {{ const r = ({self.ROWS_JS}).find((r) => {find});
+                                  const m = r && r.querySelector('[aria-label="Message"]'); if (!m) return null;
+                                  const b = m.getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; }})()""")
+                if mxy:
+                    self._trusted_click(mxy)
+                    return self._wait(self.DM_READY_JS, 8)
+                return False
             time.sleep(0.25)
         raise DiscordError("Couldn't find that friend in Discord's Friends list")
 
@@ -544,9 +678,9 @@ class DiscordWeb:
     # open a DM (openPrivateChannel), go to a page (transitionTo), start or join a call
     # (selectVoiceChannel: in a DM that's exactly what the call button does, and it rings them).
     ACTIONS_JS = r"""(() => {
-      if (window.__cbActions && window.__cbActions.selectVoiceChannel) return window.__cbActions;
+      if (window.__cbActions && window.__cbActions.selectVoiceChannel && window.__cbActions.transitionTo) return window.__cbActions;
       const chunk = window.webpackChunkdiscord_app;
-      if (!chunk || !chunk.push) return null;
+      if (!chunk || !chunk.push) return window.__cbActions || null;
       let req = null;
       try { chunk.push([[Symbol('crossbar-actions')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return null; }
       if (!req || !req.c) return null;
@@ -558,6 +692,7 @@ class DiscordWeb:
         if (!out.selectVoiceChannel && fn(obj, 'selectVoiceChannel') && fn(obj, 'selectChannel')) out.selectVoiceChannel = obj.selectVoiceChannel.bind(obj);
         if (!out.openPrivateChannel && fn(obj, 'openPrivateChannel')) out.openPrivateChannel = obj.openPrivateChannel.bind(obj);
         if (!out.ensurePrivateChannel && fn(obj, 'ensurePrivateChannel')) out.ensurePrivateChannel = obj.ensurePrivateChannel.bind(obj);
+        if (!out.getOrEnsurePrivateChannel && fn(obj, 'getOrEnsurePrivateChannel')) out.getOrEnsurePrivateChannel = obj.getOrEnsurePrivateChannel.bind(obj);
         if (!out.ring && fn(obj, 'ring') && fn(obj, 'stopRinging')) out.ring = obj.ring.bind(obj);
       };
       for (const m of Object.values(req.c)) {
@@ -569,11 +704,12 @@ class DiscordWeb:
         for (const k of keys) {
           let v; try { v = ex[k]; } catch (e) { continue; }
           take(v);
+          if (v && typeof v === 'object') take(v.default);
           if (!out.transitionTo && typeof v === 'function') {
             try { if (/transitionTo - Transitioning to/.test(Function.prototype.toString.call(v))) out.transitionTo = v; } catch (e) { /* native */ }
           }
         }
-        if (out.selectVoiceChannel && out.openPrivateChannel && out.transitionTo) break;
+        if (out.selectVoiceChannel && out.openPrivateChannel && out.transitionTo && out.ring) break;
       }
       window.__cbActions = out;
       return out;
@@ -583,23 +719,29 @@ class DiscordWeb:
         """Start the call with Discord's own functions. Returns a note of what was missing, or None."""
         r = self.js(f"""(async () => {{
             const S = {self.STORES_JS}, A = {self.ACTIONS_JS};
-            if (!S || !S.ChannelStore || !A) return {{ ok: false, why: 'modules not found' }};
-            const C = S.ChannelStore;
-            let cid = null;
-            try {{ cid = C.getDMFromUserId('{uid}'); }} catch (e) {{ /* older client */ }}
+            const have = 'stores: ' + (S ? Object.keys(S).join('/') : 'none') + ', functions: ' + (A ? Object.keys(A).join('/') || 'none' : 'none');
+            if (!A || !A.selectVoiceChannel) return {{ ok: false, why: 'start-call function not found (' + have + ')' }};
+            const C = S && S.ChannelStore;
+            const dm = () => {{
+              try {{ const c = C && C.getDMFromUserId ? C.getDMFromUserId('{uid}') : null; if (c) return c; }} catch (e) {{}}
+              const m = location.pathname.match(/^\\/channels\\/@me\\/(\\d+)/); return m ? m[1] : null;
+            }};
+            let cid = C ? dm() : null;
             if (!cid) {{
-              const open = A.openPrivateChannel || A.ensurePrivateChannel;
-              if (!open) return {{ ok: false, why: 'no DM yet, and openPrivateChannel not found' }};
-              try {{ const r = open('{uid}'); if (r && r.then) await r; }} catch (e) {{ /* it may still have opened */ }}
-              for (let i = 0; i < 40 && !cid; i++) {{ await new Promise(r => setTimeout(r, 150)); try {{ cid = C.getDMFromUserId('{uid}'); }} catch (e) {{}} }}
-              if (!cid) return {{ ok: false, why: "Discord didn't create the DM" }};
+              for (const name of ['getOrEnsurePrivateChannel', 'ensurePrivateChannel', 'openPrivateChannel']) {{
+                if (!A[name]) continue;
+                try {{ const p = A[name]('{uid}'); const v = p && p.then ? await p : p;
+                       if (typeof v === 'string' && /^\\d+$/.test(v)) cid = v; }} catch (e) {{ /* try the next */ }}
+                for (let i = 0; i < 20 && !cid; i++) {{ await new Promise(r => setTimeout(r, 150)); cid = dm(); }}
+                if (cid) break;
+              }}
+              if (!cid) return {{ ok: false, why: "couldn't open your DM with them (" + have + ')' }};
             }}
             try {{ if (A.transitionTo) A.transitionTo('/channels/@me/' + cid); }} catch (e) {{ /* showing it is optional */ }}
-            if (!A.selectVoiceChannel) return {{ ok: false, why: 'start-call function not found', cid }};
             A.selectVoiceChannel(cid);
             if (A.ring) {{ await new Promise(r => setTimeout(r, 1200)); try {{ A.ring(cid); }} catch (e) {{ /* already ringing */ }} }}
             return {{ ok: true, cid }};
-          }})()""", timeout=20) or {}
+          }})()""", timeout=25) or {}
         return None if r.get("ok") else (r.get("why") or "unknown")
 
     def call(self, user_id):
@@ -630,93 +772,101 @@ class DiscordWeb:
         except DiscordError as e:
             opened, _ = False, notes.append(str(e))
         if opened:
-            time.sleep(0.5)
-            for _ in range(15):
-                if self.js(self.CALL_BTN_JS):
-                    st = self._in_call()
-                    if st:
-                        return st
+            time.sleep(0.6)
+            xy = seen = None
+            for i in range(8):                   # the header fills in a moment after the chat
+                xy, seen = self._find_control(self.CALL_RE, "header", self.CALL_AVOID, hover=(i == 7 or i == 3))
+                if xy:
                     break
                 time.sleep(0.4)
+            if xy:
+                self._trusted_click(xy)
+                st = self._in_call(10)
+                if st:
+                    return st
             self._press_call_shortcut()
             st = self._in_call(10)
             if st:
                 return st
-            notes.append("header buttons: " + (", ".join(self.js(self.HEADER_LABELS_JS) or []) or "none"))
+            notes.append("chat buttons: " + (", ".join(seen or []) or "none"))
         else:
             notes.append(f"chat didn't open (at {self.js('location.pathname')})")
-        raise DiscordError("Couldn't start the call — " + "; ".join(n for n in notes if n))
+        raise DiscordError("Couldn't start the call: " + "; ".join(n for n in notes if n))
 
     # ---- screen share (Go Live) -----------------------------------------------------------
     # The button must be pressed with a real (trusted) click: browsers only allow screen
     # capture from one. The screen is picked automatically (no picker to use on a TV).
-    SHARE_BTN_JS = r"""((want) => {
-      const lab = (x) => x.getAttribute('aria-label') || '';
-      const visible = (x) => { const r = x.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-      const all = [...document.querySelectorAll('[aria-label]')].filter(visible);
-      let b = null;
-      if (want === 'stop') b = all.find((x) => /^(stop (streaming|sharing|screen ?share|stream))/i.test(lab(x)));
-      else if (want === 'golive') b = [...document.querySelectorAll('button')].filter(visible).find((x) => /^go live$/i.test((x.innerText || '').trim()));
-      else b = all.find((x) => /share (your )?screen|screen ?share|^go live$|^stream/i.test(lab(x)) && !/stop|settings|end/i.test(lab(x)));
-      if (!b) return null;
-      const r = b.getBoundingClientRect();
-      return [r.left + r.width / 2, r.top + r.height / 2];
-    })"""
-
-    @contextlib.contextmanager
-    def _laid_out(self):
-        """While Crossbar works the page: lay it out at desktop size and treat it as focused.
-        Hidden away, the window can be small (Discord then tucks buttons like Share Your Screen
-        and Start Voice Call out of sight) and unfocused (keyboard shortcuts don't fire)."""
-        try:
-            self._cmd("Emulation.setFocusEmulationEnabled", {"enabled": True})
-            self._cmd("Emulation.setDeviceMetricsOverride", {"width": 1600, "height": 900, "deviceScaleFactor": 0, "mobile": False})
-            time.sleep(0.5)                       # let Discord re-layout
-        except DiscordError:
-            pass
-        try:
-            yield
-        finally:
-            for m, p in (("Emulation.clearDeviceMetricsOverride", {}), ("Emulation.setFocusEmulationEnabled", {"enabled": False})):
-                try:
-                    self._cmd(m, p)
-                except DiscordError:
-                    pass
-
-    # labels on the voice panel / chat header, for error messages ("what Crossbar could see")
-    LABELS_JS = r"""((re) => [...new Set([...document.querySelectorAll('[aria-label]')].map((x) => x.getAttribute('aria-label'))
-                       .filter((l) => l && new RegExp(re, 'i').test(l)))].slice(0, 12))"""
-
-    def _trusted_click(self, xy):
-        for t in ("mousePressed", "mouseReleased"):
-            self._cmd("Input.dispatchMouseEvent", {"type": t, "x": xy[0], "y": xy[1], "button": "left", "clickCount": 1})
+    # Crossbar keeps a hand on the captured stream, so it can tell sharing is on (whatever
+    # Discord's buttons are called this month) and stop it by ending the capture.
+    SHARE_HOOK_JS = r"""(() => {
+      const md = navigator.mediaDevices;
+      if (!md || !md.getDisplayMedia) return false;
+      if (!window.__cbGDM) {
+        const orig = md.getDisplayMedia.bind(md);
+        window.__cbGDM = orig;
+        md.getDisplayMedia = async (...a) => { const s = await orig(...a); window.__cbShareStream = s; return s; };
+      }
+      return true;
+    })()"""
+    SHARING_JS = r"""(() => {
+      const s = window.__cbShareStream;
+      if (s && s.active && s.getVideoTracks().some((t) => t.readyState === 'live')) return true;
+      try { const A = window.__cbStores && window.__cbStores.ApplicationStreamingStore;
+            if (A && A.getCurrentUserActiveStream && A.getCurrentUserActiveStream()) return true; } catch (e) {}
+      return !![...document.querySelectorAll('[aria-label]')].find((x) => /^(stop streaming|stop sharing)/i.test(x.getAttribute('aria-label')));
+    })()"""
+    SHARE_RE = r"share (your )?screen|screen ?share|^screen$|go live|^stream( your screen)?$"
+    SHARE_AVOID = r"stop|settings|end|quality|watch|join"
 
     def sharing(self):
-        return bool(self.js(f"!!{self.SHARE_BTN_JS}('stop')"))
+        return bool(self.js(self.SHARING_JS))
+
+    def _stop_share(self):
+        xy, _ = self._find_control(r"^stop (streaming|sharing|stream)|stop screen ?share", "voice", hover=False)
+        if xy:
+            self._trusted_click(xy)
+            time.sleep(0.6)
+        if self.sharing():                       # end the capture itself: Discord stops the stream
+            self.js("(() => { const s = window.__cbShareStream; if (s) s.getTracks().forEach((t) => t.stop()); return true; })()")
+        return {"sharing": False}
 
     def share_screen(self, on=True):
         self.start()
-        if not self.status().get("voice"):
+        st = self.status()
+        if not st.get("voice"):
             raise DiscordError("Join a voice channel or call first")
         if not on:
-            xy = self.js(f"{self.SHARE_BTN_JS}('stop')")
-            if not xy:
-                return {"sharing": False}
-            self._trusted_click(xy)
-            return {"sharing": False}
+            with self._laid_out():
+                return self._stop_share()
         if self.sharing():
             return {"sharing": True}
+        if not self.js(self.SHARE_HOOK_JS):
+            raise DiscordError("This Discord window can't share the screen (no screen capture in the browser)")
         with self._laid_out():
-            xy = self.js(f"{self.SHARE_BTN_JS}('start')")
+            xy, seen = self._find_control(self.SHARE_RE, "voice", self.SHARE_AVOID)
             if not xy:
-                seen = ", ".join(self.js(f"{self.LABELS_JS}('share|screen|stream|camera|video|activit')") or []) or "none"
-                raise DiscordError(f"Couldn't find Discord's Share Your Screen button (voice panel buttons: {seen})")
+                more_xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, hover=False)
+                xy, seen = more_xy, seen + [m for m in more if m not in seen][:6]
+            if not xy and (st["voice"] or {}).get("channel_id"):
+                # the call's own page has the same button in its control bar
+                v = st["voice"]
+                path = f"/channels/{v.get('guild_id') or '@me'}/{v['channel_id']}"
+                if re.fullmatch(r"/channels/(@me|\d+)/\d+", path):
+                    self.js(f"""(() => {{ const A = {self.ACTIONS_JS};
+                        if (A && A.transitionTo) {{ A.transitionTo('{path}'); return true; }}
+                        const a = document.querySelector('a[href="{path}"]'); if (a) a.click(); return !!a; }})()""", timeout=15)
+                    time.sleep(1.2)
+                    xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, limit=24)
+                    seen += [m for m in more if m not in seen][:8]
+            if not xy:
+                raise DiscordError("Couldn't find Discord's Share Your Screen button (buttons seen: "
+                                   + (", ".join(seen[:14]) or "none") + ")")
             self._trusted_click(xy)
             for _ in range(30):                 # Discord may ask for quality first: press its Go Live
                 time.sleep(0.4)
                 if self.sharing():
                     return {"sharing": True}
-                golive = self.js(f"{self.SHARE_BTN_JS}('golive')")
+                golive, _ = self._find_control(r"^go live$", "all", hover=False)
                 if golive:
                     self._trusted_click(golive)
         raise DiscordError("Screen sharing didn't start (the screen-capture portal may be missing: update Crossbar)")

@@ -527,6 +527,7 @@ GET = {
     "/api/flathub/app": lambda q: apps.flathub_app(q["id"]),
     "/api/xmb/folders": lambda q: folders.list_folders(),
     "/api/xmb/tags": lambda q: folders.tags(),
+    "/api/xmb/hidden": lambda q: folders.hidden(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -632,6 +633,8 @@ def route_post(path, b):
             return folders.move(b["key"], b["cat"], b.get("folder"))
         if what == "tag":
             return folders.set_tag(b["key"], b.get("text"))
+        if what == "hide":
+            return folders.set_hidden(b["key"], b.get("label", ""), bool(b.get("on", True)))
         raise KeyError(what)
     if head == "theme":
         what = parts[1] if len(parts) > 1 else ""

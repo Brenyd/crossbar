@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 Alpha
+- **Hide** any game, app or ROM from the XMB (Y › Hide); bring it back in
+  Settings › Games & Emulation › Game Settings › Hidden Games & Apps
+- **Flathub**: opening an app's page failed ("'list' object has no attribute 'items'") since
+  Flathub changed how it lists screenshots, so nothing could be installed — fixed
+- **Discord**: calling a friend and Share Your Screen work with Discord's current client. Buttons
+  that only name themselves in a hover tooltip are found by hovering them; DMs open through
+  Discord's own functions, its DM list or a real click on the friend; sharing is detected (and
+  stopped) through the captured screen itself
+- **Spotify**: occasional Spotify server errors (500/502/503) are retried quietly; when playback
+  keeps failing the speaker restarts once by itself, and the message explains what librespot reported.
+  Restart Speaker is also on Y in Music › Spotify
+
 ## 1.0 Alpha
 - **Downloads**: live progress for Steam (follows the data landing on disk, not Steam's slow counters),
   GOG shows progress from the start, rows update in place every second

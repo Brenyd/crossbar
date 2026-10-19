@@ -461,6 +461,8 @@ in **Store**, and installed games in **Game**.
   Steam, so Proton settings you gave them there apply.
 - Both can move to another category with **Y › Show In…**. Every game has a tag next to its name
   ([STEAM], [GOG], [LUTRIS], [NON-STEAM]…): **Y › Edit Tag…** renames or hides it.
+- **Y › Hide** takes any game, app or ROM off the XMB; Settings › Games & Emulation › Game Settings ›
+  Hidden Games & Apps brings it back.
 - **Compatibility Tools** (Settings › Games & Emulation › Game Settings › Windows Games): the
   tools [ProtonUp-Qt](https://github.com/DavidoTek/ProtonUp-Qt) installs — GE-Proton, Proton-CachyOS,
   Luxtorpeda and Boxtron for Steam; Wine-GE, Kron4ek Wine, Lutris-Wine, DXVK and vkd3d-proton for

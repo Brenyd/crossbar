@@ -274,11 +274,12 @@ const COMPAT_FOLDER = {
 };
 
 const GAMES_FOLDER = {
-  key: 'games', label: 'Game Settings', icon: 'game', sub: 'Launching, demo library',
+  key: 'games', label: 'Game Settings', icon: 'game', sub: 'Launching, hidden games, demo library',
   children: async () => {
     const st = S.state;
     return [
       COMPAT_FOLDER,
+      HIDDEN_FOLDER,
       { key: 'bpm', label: 'Launch Steam Games in Big Picture', icon: 'game',
         sub: st.steam_bigpicture ? 'On — Steam\'s console mode starts the game, then hides when you\'re done' : 'Off — launch directly',
         action: async () => { await setSetting({ steam_bigpicture: !st.steam_bigpicture }); reloadFolder(); } },
@@ -645,7 +646,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.0 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.0 Alpha', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.0.1 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.0.1 Alpha', 'About') },
       ];
     },
   },
