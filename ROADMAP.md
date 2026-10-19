@@ -93,6 +93,12 @@
 - [x] Screen capture setup restored when leaving Crossbar; KDE repairs leftovers at login
 - [x] Discord: Share Screen found at desktop layout size; calling via Discord's own functions, with a Discord Check report
 
+## 0.14
+- [x] Apps category: open apps (switch / close / force close), Flatpaks and AppImages
+- [x] Store › Install Apps: Flathub browser (search, popular, trending, new, updated, categories, details) and AppImage installer, with a category choice
+- [x] Your own folders in any category
+- [x] Artwork: Local File…; apps can use SteamGridDB too
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

@@ -30,6 +30,7 @@ function icon(name) {
   return `<svg viewBox="0 0 64 64" class="i">${ICONS[name] || ICONS.folder}</svg>`;
 }
 Object.assign(ICONS, {
+  apps: '<rect x="10" y="10" width="18" height="18" rx="4"/><rect x="36" y="10" width="18" height="18" rx="4"/><rect x="10" y="36" width="18" height="18" rx="4"/><rect x="36" y="36" width="18" height="18" rx="4"/>',
   photo: '<rect x="8" y="14" width="48" height="38" rx="3"/><circle cx="22" cy="26" r="5"/><path d="M8 46l14-12 10 8 8-6 16 12"/>',
   video: '<rect x="6" y="14" width="40" height="36" rx="3"/><path d="M46 26l12-7v26l-12-7z"/>',
   tv: '<rect x="6" y="12" width="52" height="34" rx="3"/><path d="M22 54h20M32 46v8"/><path d="M27 23l11 6-11 6z"/>',

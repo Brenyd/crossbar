@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import artwork, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import apps, artwork, folders, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -229,6 +229,65 @@ def _safe_gr(g):
         return True
     except KeyError:
         return False
+
+
+BROWSE_EXT = {".zip": ".zip", ".appimage": ".appimage", "image": (".png", ".jpg", ".jpeg", ".webp", ".gif")}
+
+
+def r_apps(what, b):
+    """Apps category / Store › Install Apps (crossbar/apps.py)."""
+    if what == "launch":
+        return r_app_launch(b["key"], b.get("name") or "App")
+    if what == "category":
+        r = apps.set_category(b["key"], b["category"])
+        HUB.publish({"type": "apps"})
+        return r
+    if what == "uninstall":
+        return JOBS.start("uninstall", b.get("name") or b["key"], lambda j: (apps.uninstall(j, b["key"]), HUB.publish({"type": "apps"})),
+                          "app", b["key"]).as_dict()
+    if what == "install-flatpak":
+        def run(j):
+            apps.install_flatpak(j, b["id"], b.get("category") or "apps")
+            HUB.publish({"type": "apps"})
+        return JOBS.start("install", b.get("name") or b["id"], run, "flatpak", b["id"]).as_dict()
+    if what == "install-appimage":
+        if not media.allowed(b["path"]):
+            raise PermissionError("Pick a file in your home folder or on a drive")
+        r = apps.install_appimage(b["path"], b.get("category") or "apps")
+        HUB.publish({"type": "apps"})
+        return r
+    raise KeyError(what)
+
+
+def r_app_launch(key, name):
+    """Start an app with the "Starting…" screen; once its window shows, bring it forward.
+    (Not a game: no game mode, and it stays out of Game › Return to….)"""
+    argv, env = apps.argv(key)
+    live = bool(os.environ.get("SWAYSOCK"))
+
+    def run():
+        before = {w["con_id"] for w in system.windows()}
+        if live:
+            HUB.publish({"type": "launching", "title": name, "sub": "Starting…"})
+        try:
+            util.spawn_checked(argv, env=env, what=name, wait=3, game=False)
+        except Exception as e:
+            HUB.publish({"type": "launch-timeout", "title": name, "error": str(e)})
+            return
+        if not live:
+            return
+        end = time.time() + 90
+        while time.time() < end:
+            time.sleep(0.5)
+            new = [w for w in system.windows() if w["con_id"] not in before]
+            if new:
+                system.focus_window(new[-1]["con_id"])
+                HUB.publish({"type": "launched", "title": name})
+                return
+        HUB.publish({"type": "launch-timeout", "title": name})
+    threading.Thread(target=run, daemon=True).start()
+    util.update_config(lambda c: c["last_played"].__setitem__(f"app:{key}", time.time()))
+    return {"ok": True}
 
 
 def r_browser(what, b):
@@ -456,7 +515,14 @@ GET = {
     "/api/art/grids": lambda q: artwork.grids(game_id=q.get("game_id"), steam_appid=q.get("steam_appid")),
     "/api/media/list": lambda q: media.listdir(q["kind"], q.get("path") or None),
     "/api/media/scan": lambda q: media.scan(q["kind"]),
-    "/api/fs": lambda q: media.browse_dirs(q.get("path") or None, q.get("ext") if q.get("ext") in (".zip",) else None),
+    "/api/fs": lambda q: media.browse_dirs(q.get("path") or None, BROWSE_EXT.get(q.get("ext") or "")),
+    "/api/apps": lambda q: apps.installed(),
+    "/api/flathub/collection": lambda q: apps.flathub_collection(q.get("kind", "popular"), int(q.get("page") or 1)),
+    "/api/flathub/categories": lambda q: apps.flathub_categories(),
+    "/api/flathub/category": lambda q: apps.flathub_category(q["id"], int(q.get("page") or 1)),
+    "/api/flathub/search": lambda q: apps.flathub_search(q.get("q", "")),
+    "/api/flathub/app": lambda q: apps.flathub_app(q["id"]),
+    "/api/xmb/folders": lambda q: folders.list_folders(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -548,6 +614,19 @@ def route_post(path, b):
         return r_install(b)
     if head == "uninstall":
         return r_uninstall(b)
+    if head == "apps":
+        return r_apps(parts[1] if len(parts) > 1 else "", b)
+    if head == "xmb" and len(parts) > 2 and parts[1] == "folders":
+        what = parts[2]
+        if what == "create":
+            return folders.create(b["cat"], b.get("name"))
+        if what == "rename":
+            return folders.rename(b["id"], b.get("name"))
+        if what == "delete":
+            return folders.delete(b["id"])
+        if what == "move":
+            return folders.move(b["key"], b["cat"], b.get("folder"))
+        raise KeyError(what)
     if head == "theme":
         what = parts[1] if len(parts) > 1 else ""
         if what == "set":
@@ -673,6 +752,10 @@ def route_post(path, b):
             return artwork.reset_all()
         if what == "settings":
             return artwork.set_settings(key=b.get("key"), auto=b.get("auto"))
+        if what == "local":
+            if not media.allowed(b["path"]):
+                raise PermissionError("Pick a picture in your home folder or on a drive")
+            return artwork.set_local(b["key"], b["path"])
         raise KeyError(path)
     if head == "emulation":
         what = parts[1] if len(parts) > 1 else ""
@@ -990,6 +1073,16 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(quick.SHOT):
                 return self._send(404, b"none", "text/plain")
             return self._send_file(quick.SHOT, "image/jpeg")
+        if path == "/api/apps/icon":
+            p = apps.icon_file(q.get("key", ""))
+            if not p:
+                return self._send(404, b"no icon", "text/plain")
+            return self._send_file(p, "image/svg+xml" if p.endswith(".svg") else "image/png", cache=True)
+        if path.startswith("/art/"):              # artwork you picked from a file
+            p = artwork.local_file(path[len("/art/"):])
+            if not p:
+                return self._send(404, b"not found", "text/plain")
+            return self._send_file(p, mimetypes.guess_type(p)[0] or "image/png", cache=True)
         if path.startswith("/theme/"):            # a theme's pictures, fonts, sounds, css
             parts = urllib.parse.unquote(path[len("/theme/"):]).split("/", 1)
             hit = themes.file_path(parts[0], parts[1]) if len(parts) == 2 else None

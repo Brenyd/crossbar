@@ -65,6 +65,10 @@ body.infolder #cats { opacity: 0; }
 .item.on .art { width: 300px; height: 140px; }
 /* portrait artwork (movie / show posters): shown whole, centred on a dark card, not cropped */
 .item .art.poster { background-size: contain; background-repeat: no-repeat; background-color: rgba(0,0,0,.38); }
+/* app icons: square, shown whole, no card */
+.item .art.square { width: 72px; height: 72px; background-size: contain; background-repeat: no-repeat; background-color: transparent;
+                    box-shadow: none; font-size: 0; }
+.item.on .art.square { width: 120px; height: 120px; }
 .item.on .label { font-size: 36px; }
 .item.on .sub { height: auto; opacity: 1; }
 .item.on .ico, .item.on .art { animation: glow 2.4s ease-in-out infinite; }

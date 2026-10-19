@@ -1,10 +1,10 @@
-# Crossbar — prototype 0.13
+# Crossbar — prototype 0.14
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
 panel, and gamepad control.
 
-Categories: **Users · Settings · Photo · Music · Video · TV & Video Services · Game · Store ·
+Categories: **Users · Settings · Photo · Music · Video · TV & Video Services · Game · Apps · Store ·
 Social**. See [ROADMAP.md](ROADMAP.md) for what's next. One Game list merges Steam, GOG and
 Epic; Store downloads from all three; Music plays your files and Spotify; Video plays
 anything mpv can, with a controller-friendly control panel.
@@ -12,6 +12,15 @@ anything mpv can, with a controller-friendly control panel.
 ![Game category](docs/game.png)
 
 ![Music category](docs/music.png)
+
+### What's new in 0.14
+
+| | |
+|---|---|
+| ![Apps](docs/apps.png) | ![Flathub](docs/flathub.png) |
+| **Apps** — what's open right now (switch to it or close it), plus your Flatpaks and AppImages | **Install Apps** — browse and search Flathub, or install an AppImage; you pick which category it shows up in |
+
+Also: **your own folders** in any category (Y › Move to Folder…), and **Local File…** for artwork.
 
 ### What's new in 0.13
 
@@ -415,11 +424,33 @@ highlight it and press **A** (or **Y › Cancel Download**): it stops and what w
   the installed game is never deleted).
 - **Steam**: new installs only; Steam itself removes the partial game (it may ask you to confirm).
 
+## Apps
+
+**Apps** shows what's open right now first (A switches to it, Y › Close / Force Close), then your
+Flatpaks and AppImages (A opens; Y › Show In… moves an app to another category, Change Artwork…,
+Uninstall). Emulators installed from Game › Emulation stay there.
+
+**Store › Install Apps** (also at the bottom of Apps):
+- **Flatpak (Flathub)** — Search, Popular, Trending, New Apps, Recently Updated and Categories, with
+  each app's description and screenshots. Installs are for your user (no password), with progress
+  and Cancel. You pick the category it shows up in (Apps, Game, TV & Video Services, Video, Music,
+  Photo or Social).
+- **AppImage** — browse to an `.AppImage` (Downloads, a USB stick, a network drive). It's moved to
+  `~/Applications`, made runnable, and its name and icon are read from inside it. Pick a category
+  the same way.
+
+## Folders
+
+Make your own folders in any category (Game, Apps, Music…): highlight anything, **Y › Move to
+Folder… › Into a New Folder…**. Y on a folder renames or deletes it (what's inside goes back to the
+list); Y on something inside takes it out again.
+
 ## Artwork (SteamGridDB)
 
-Highlight any game — Steam, GOG, Epic or a ROM — press **Y** and choose **Change Artwork…** to pick
-from [SteamGridDB](https://www.steamgriddb.com)'s community artwork, search under a different name,
-or go back to the original. Needs a free API key (steamgriddb.com › sign in › Preferences › API),
+Highlight any game or app — Steam, GOG, Epic, a ROM, a Flatpak or AppImage — press **Y** and choose
+**Change Artwork…** to pick from [SteamGridDB](https://www.steamgriddb.com)'s community artwork,
+search under a different name, use **Local File…** (any picture on the console, a USB stick or a
+network drive; no API key needed), or go back to the original. Needs a free API key (steamgriddb.com › sign in › Preferences › API),
 added in **Settings › Games & Emulation › Artwork**. With the key, games that have no picture (most
 ROMs, some GOG / Epic games) get one automatically in the background (turn off with **Fill In
 Missing Artwork**). Your picks are kept in Crossbar's settings; **Reset All Artwork** undoes them.

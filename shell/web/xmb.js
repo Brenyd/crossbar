@@ -214,7 +214,7 @@ const Options = {
 const S = {
   state: null, jobs: [], ci: 0, catSel: {}, stack: [], items: {},
 };
-const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'store', 'party'];
+const ORDER = ['users', 'settings', 'photo', 'music', 'video', 'tv', 'game', 'apps', 'store', 'party'];
 
 function prov(id) { return S.state.providers.find((p) => p.id === id); }
 
@@ -360,6 +360,7 @@ const CATS = [   // more categories are added by media.js and settings.js
       const items = [];
       if (S.state.demo) items.push({ key: 'demo', label: 'Demo library is on', icon: 'demo', sub: 'Settings › Demo Library to use your real accounts', action: () => goCat('settings') });
       items.push({ key: 'search', label: 'Search All Stores', icon: 'search', sub: 'Find a game across Steam, GOG and Epic', action: searchStores });
+      if (typeof INSTALL_APPS !== 'undefined') items.push({ ...INSTALL_APPS, key: 'install-apps', label: 'Install Apps' });
       const linked = S.state.providers.filter((p) => p.linked);
       items.push(...linked.map(storeFolder));
       if (!linked.length) {
@@ -413,7 +414,8 @@ async function refresh(catId) {
   const cat = CATS.find((c) => c.id === catId);
   if (!cat || !S.state) return;
   try {
-    const items = await cat.load();
+    let items = await cat.load();
+    if (typeof applyExtras === 'function') items = applyExtras(catId, items);   // apps put here, your folders
     const old = S.items[catId] || [];
     const prevKey = old[S.catSel[catId] ?? 0]?.key;
     S.items[catId] = items;
@@ -470,7 +472,7 @@ function itemEl(it) {
   let slot;
   if (it.art !== undefined) {
     const h = hashHue(it.artTitle || it.label);
-    slot = `<div class="art${it.artShape === 'poster' ? ' poster' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
+    slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
   } else slot = `<div class="ico">${icon(it.icon)}</div>`;
   el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
     <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
@@ -745,6 +747,7 @@ function connectEvents() {
     }
     if (ev.type === 'art') { refresh('game'); return; }
     if (ev.type === 'theme') { Theme.load(); return; }
+    if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }
     if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
@@ -867,6 +870,11 @@ async function boot() {
     try { await loadState(); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
   }
   await Promise.race([Theme.load(), new Promise((r) => setTimeout(r, 2000))]);
+  // categories added by later scripts (Apps) take their place in the bar
+  CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
+  S.ci = CATS.findIndex((c) => c.id === 'game');
+  $('#cats').innerHTML = '';
+  if (typeof loadApps === 'function') await Promise.race([Promise.all([loadApps(), loadFolders()]), new Promise((r) => setTimeout(r, 3000))]);
   S.items = {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const others = Promise.all(CATS.filter((c) => c.id !== 'game').map((c) => refresh(c.id)));

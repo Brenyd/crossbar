@@ -122,8 +122,9 @@ def browse_dirs(path=None, ext=None):
         raise PermissionError("Folder not allowed")
     entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
     dirs = [{"name": e.name, "path": e.path} for e in entries if e.is_dir() and not e.name.startswith(".")]
+    exts = tuple(x.lower() for x in (ext if isinstance(ext, (tuple, list)) else [ext] if ext else []))
     files = [{"name": e.name, "path": e.path} for e in entries
-             if ext and e.is_file() and e.name.lower().endswith(ext.lower()) and not e.name.startswith(".")]
+             if exts and e.is_file() and e.name.lower().endswith(exts) and not e.name.startswith(".")]
     return {"path": path, "dirs": dirs, "files": files}
 
 

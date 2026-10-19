@@ -152,7 +152,7 @@ def spawn(argv, cwd=None, env=None):
 GAME_LOG = os.path.join(os.path.expanduser("~/.cache"), "crossbar-games.log")
 
 
-def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5):
+def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5, game=True):
     """Start a game like spawn(), but keep its output in ~/.cache/crossbar-games.log and, if it
     quits with an error within a few seconds, raise that error instead of failing silently."""
     import time
@@ -164,7 +164,10 @@ def spawn_checked(argv, cwd=None, env=None, what="The game", wait=5):
     if os.environ.get("CROSSBAR_WRAP") == "gamescope" and shutil.which("gamescope"):
         argv = ["gamescope", "-f", "--", *argv]
     from . import perf
-    env = {**perf.env(), **(env or {}), "CROSSBAR_GAME": "1"}   # frame-rate overlay; marks its windows as a game
+    if game:
+        env = {**perf.env(), **(env or {}), "CROSSBAR_GAME": "1"}   # frame-rate overlay; marks its windows as a game
+    else:
+        env = dict(env or {})
     p = subprocess.Popen(argv, cwd=cwd, env={**os.environ, **env}, stdin=subprocess.DEVNULL,
                          stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     log.close()

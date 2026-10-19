@@ -26,6 +26,7 @@ function artDone(target) {
   // leave the picker (everything above the folder it was opened from) and show the new art
   while (S.stack.length && S.stack.at(-1).source?.artPicker) S.stack.pop();
   refresh('game');
+  if (target.key.startsWith('app:') && typeof loadApps === 'function') loadApps().then(refreshAll);
   if (S.stack.length) reloadFolder(); else render();
   target.done && target.done();
 }
@@ -46,15 +47,32 @@ async function searchArt(target) {
 }
 
 // target: {key: 'steam:123' | 'rom:snes:file.sfc' …, title, steam: appid?, custom: bool}
+// Local File…: any picture on this console (Downloads, a USB stick, a network drive)
+async function artFileBrowse(target, path) {
+  const r = await api.get(`/api/fs?ext=image${path ? `&path=${encodeURIComponent(path)}` : ''}`);
+  const items = (r.files || []).map((f) => ({
+    key: `img:${f.path}`, label: f.name, art: `/api/thumb?path=${encodeURIComponent(f.path)}&size=480`, artTitle: f.name, sub: '{ok} use this picture',
+    action: async () => { if (await call(() => api.post('/api/art/local', { key: target.key, path: f.path }), `New artwork for ${target.title}`)) artDone(target); },
+  }));
+  for (const d of r.dirs) items.push({ key: `d:${d.path}`, label: d.name, icon: 'folder', artPicker: true, children: () => artFileBrowse(target, d.path) });
+  if (!items.length) items.push({ key: 'none', label: 'No pictures here', icon: 'info', sub: '.png, .jpg, .webp or .gif' });
+  return items;
+}
+
 async function changeArtwork(target) {
-  let st = await api.get('/api/art').catch(() => ({}));
-  if (!st.ready) {
-    if (!(await confirmBox('Choosing artwork uses SteamGridDB, which needs a free API key. Add one now?', 'Change Artwork'))) return;
-    if (!(await sgdbKeyDialog())) return;
-  }
+  const st = await api.get('/api/art').catch(() => ({}));
+  const local = { key: 'local', label: 'Local File…', icon: 'folder', sub: 'A picture from Downloads, a USB stick or a network drive', artPicker: true,
+    children: () => artFileBrowse(target, null) };
   openFolder({ label: `Artwork: ${target.title}`, icon: 'photo', artPicker: true,
     children: async () => {
-      const items = [{ key: 'search', label: 'Search SteamGridDB…', icon: 'search', sub: 'Pick a different game or spelling', action: () => searchArt(target) }];
+      if (!st.ready) {
+        const items = [local, { key: 'sgdb', label: 'Set Up SteamGridDB', icon: 'account', sub: 'Community artwork for almost every game (free API key)',
+          action: async () => { if (await sgdbKeyDialog()) { S.stack.pop(); changeArtwork(target); } } }];
+        if (target.custom) items.push({ key: 'reset', label: 'Use Original Artwork', icon: 'refresh', sub: 'Forget your pick',
+          action: async () => { if (await call(() => api.post('/api/art/reset', { key: target.key }), 'Artwork reset')) artDone(target); } });
+        return items;
+      }
+      const items = [{ key: 'search', label: 'Search SteamGridDB…', icon: 'search', sub: 'Pick a different game or spelling', action: () => searchArt(target) }, local];
       if (target.custom) {
         items.push({ key: 'reset', label: 'Use Original Artwork', icon: 'refresh', sub: 'Forget your pick for this game',
           action: async () => { if (await call(() => api.post('/api/art/reset', { key: target.key }), 'Artwork reset')) artDone(target); } });
@@ -71,7 +89,7 @@ async function changeArtwork(target) {
           }
         }
       }
-      if (items.length <= (target.custom ? 2 : 1)) items.push({ key: 'none', label: 'No artwork found', icon: 'info', sub: 'Try Search SteamGridDB with a different name' });
+      if (items.length <= (target.custom ? 3 : 2)) items.push({ key: 'none', label: 'No artwork found', icon: 'info', sub: 'Try Search SteamGridDB with a different name' });
       return items;
     } });
 }

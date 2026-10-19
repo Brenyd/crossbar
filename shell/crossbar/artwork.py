@@ -124,6 +124,39 @@ def set_override(key, url):
     return {"key": key, "art": url}
 
 
+LOCAL = os.path.join(util.HOME, ".local", "share", "crossbar", "art")
+LOCAL_EXT = (".png", ".jpg", ".jpeg", ".webp", ".gif")
+
+
+def set_local(key, path):
+    """Artwork from a picture on this console (USB stick, Downloads…): copied into Crossbar's own folder."""
+    import hashlib
+    import shutil
+    path = os.path.realpath(os.path.expanduser(path))
+    ext = os.path.splitext(path)[1].lower()
+    if ext not in LOCAL_EXT or not os.path.isfile(path):
+        raise ValueError("Pick a picture (.png, .jpg, .webp or .gif)")
+    if os.path.getsize(path) > 25 << 20:
+        raise ValueError("That picture is too big (25 MB at most)")
+    with open(path, "rb") as f:
+        digest = hashlib.sha1(f.read()).hexdigest()[:20]
+    os.makedirs(LOCAL, exist_ok=True)
+    name = digest + (".jpg" if ext == ".jpeg" else ext)
+    shutil.copy(path, os.path.join(LOCAL, name))
+    url = f"/art/{name}"
+    util.update_config(lambda c: c.setdefault("art_overrides", {}).__setitem__(key, url))
+    return {"key": key, "art": url}
+
+
+def local_file(name):
+    """Path of a copied picture, for the web server (None if it isn't one)."""
+    import re as _re
+    if not _re.fullmatch(r"[0-9a-f]{20}\.(png|jpg|webp|gif)", name or ""):
+        return None
+    p = os.path.join(LOCAL, name)
+    return p if os.path.isfile(p) else None
+
+
 def reset(key):
     util.update_config(lambda c: (c.setdefault("art_overrides", {}).pop(key, None)))
     with _lock:
@@ -161,13 +194,13 @@ def _save_auto():
     os.replace(tmp, CACHE)
 
 
-def apply(games, key_of=lambda g: f"{g.get('provider')}:{g.get('id')}"):
+def apply(games, key_of=lambda g: f"{g.get('provider')}:{g.get('id')}", fill=True):
     """Set g['art'] from your picks, else (for games with none) from automatic matches.
 
     Games still without art are queued for a background lookup. Returns the list (changed in place)."""
     overrides = util.load_config().get("art_overrides") or {}
     st = _cfg()
-    auto = bool(st.get("key")) and st.get("auto", True)
+    auto = fill and bool(st.get("key")) and st.get("auto", True)
     with _lock:
         _load_auto()
         for g in games:
