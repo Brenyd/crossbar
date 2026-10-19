@@ -1,4 +1,4 @@
-# Crossbar — 1.1 Alpha
+# Crossbar — 1.1.1 Alpha
 
 **A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
 cross-media bar — categories across, items down, flowing waves behind — and runs everything from a
@@ -456,8 +456,12 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
 - **Proton VPN, Surfshark, Windscribe, IVPN, AirVPN, ExpressVPN, your own server**: import the
   WireGuard `.conf` / OpenVPN `.ovpn` files from your account page (a folder or `.zip` of them gives
   you several locations). Proton's port forwarding (NAT-PMP) works too.
-- **Split Tunneling**: sites and addresses that skip the VPN, and apps that skip it (Steam and its
-  games, other games, Discord, the browser, AppImages). Your local network always stays reachable.
+- **Split Tunneling** (on by default): nothing uses the VPN except the apps and sites you add —
+  Torrents, Steam and its games, other games, Discord, the browser, AppImages — and their DNS goes
+  through the VPN too. Turn it off and everything uses the VPN.
+- **Leak Tests**: a torrent IP leak test (your torrent engine announces a made-up torrent to
+  [WhatIsMyIP.net's tracker checker](https://www.whatismyip.net/tools/torrent-ip-checker/); Crossbar shows the address it saw
+  next to yours without the VPN) and a DNS leak test ([bash.ws](https://bash.ws/dnsleak)).
 - **Connect at Startup**, **Check My Address**. Passwords, tokens and keys stay in a file only you
   can read.
 

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.1 Alpha
+- **VPN connects**: PIA's servers were refused by Python 3.13's strict certificate check (their CA
+  doesn't mark Basic Constraints critical); that one check is relaxed for PIA's own CA only
+- **Split tunneling** is a switch, on by default: nothing uses the VPN except the apps and sites you
+  add (Torrents, Steam, other games, Discord, the browser, AppImages). Their DNS goes through the VPN
+  too. Off: everything uses the VPN
+- **Leak tests** (VPN › Leak Tests, and in Torrents): a torrent IP leak test (the torrent engine
+  announces a made-up torrent to WhatIsMyIP.net's tracker checker, and Crossbar shows which address
+  it saw) and a DNS leak test (bash.ws)
+- **Torrent search** results: Crossbar now keeps one session with the engine (qBittorrent keeps a
+  search in the session that started it, so results came back "not found")
+- **Speed test** download: asked Cloudflare for 100 MB at a time, which it refuses (read as 0 Mbps);
+  now 25 MB, errors are reported, and latency / jitter ignore one-off stalls
+
 ## 1.1 Alpha
 - **Torrents** (Apps › Torrents): a controller client on qBittorrent's engine — search through
   qBittorrent search plugins (official, and the community list from the qBittorrent wiki with a

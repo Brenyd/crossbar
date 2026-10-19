@@ -48,8 +48,9 @@ def latency(n=12):
                 times.append((time.perf_counter() - t) * 1000)
     finally:
         c.close()
-    jitter = statistics.mean(abs(a - b) for a, b in zip(times, times[1:])) if len(times) > 1 else 0.0
-    return min(times), jitter
+    diffs = sorted(abs(a - b) for a, b in zip(times, times[1:]))
+    jitter = statistics.mean(diffs[:max(1, int(len(diffs) * 0.8))]) if diffs else 0.0   # minus the worst fifth
+    return statistics.median(times), jitter
 
 
 def _run(work, seconds, progress, what):
@@ -84,19 +85,26 @@ def _run(work, seconds, progress, what):
             break
     stop.set()
     el = time.perf_counter() - t0
-    if warm_bytes is None or el <= warm_t:
+    got = total[0] - (warm_bytes or 0)
+    if warm_bytes is None or el <= warm_t or (errors and got <= 0):
         if errors:
-            raise util.friendly_net_error(f"https://{HOST}", errors[0])
+            raise RuntimeError(f"{what.capitalize()} test failed: {errors[0]}")
         return 0.0
-    return (total[0] - warm_bytes) * 8 / (el - warm_t) / 1e6
+    return got * 8 / (el - warm_t) / 1e6
+
+
+DOWN_BYTES = 25_000_000            # per request (Cloudflare refuses much bigger ones)
 
 
 def download(progress):
     def work(stop, add):
         while not stop.is_set():
             c = _conn()
-            c.request("GET", f"/__down?bytes={100_000_000}", headers={"User-Agent": "Crossbar"})
+            c.request("GET", f"/__down?bytes={DOWN_BYTES}", headers={"User-Agent": "Crossbar"})
             r = c.getresponse()
+            if r.status != 200:
+                c.close()
+                raise OSError(f"the speed test server answered {r.status} to the download")
             while not stop.is_set():
                 b = r.read(65536)
                 if not b:

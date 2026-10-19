@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -688,6 +688,12 @@ def route_post(path, b):
         if what == "import":
             return vpn.import_files(b["provider"], b["path"])
         raise KeyError(what)
+    if head == "leaktest":
+        if parts[1:] == ["torrent"]:
+            return JOBS.start("leaktest", "Torrent IP leak test", leaktest.torrent_test, "leaktest", "torrent").as_dict()
+        if parts[1:] == ["dns"]:
+            return JOBS.start("leaktest", "DNS leak test", leaktest.dns_test, "leaktest", "dns").as_dict()
+        raise KeyError("leaktest")
     if head == "speedtest":
         return JOBS.start("speedtest", "Internet speed test", speedtest.run, "speedtest", "net").as_dict()
     if head == "wintricks" and len(parts) > 1 and parts[1] == "install":

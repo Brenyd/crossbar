@@ -402,10 +402,11 @@ def boot_session(req):
 
 
 # ---- VPN split tunneling ------------------------------------------------------------------------------
-# Traffic to excluded addresses, and from apps started in the "skip the VPN" slice (marked by
-# nftables from their cgroup), is routed with table 2000: the normal internet connection's
-# default route. Marked packets are masqueraded onto that connection (their source address was
-# picked for the tunnel). Undone completely by {"enable": false} (and before every change).
+# Split tunneling on: the VPN isn't the default route; traffic from the chosen apps (their cgroup,
+# marked by nftables), to the chosen sites, and from the VPN's own address (a program bound to
+# it, like the torrent engine) goes through it with routing table 2000. Marked apps' DNS goes to
+# the VPN's DNS server (through the tunnel), and their packets get the tunnel's address
+# (masquerade). Undone completely by {"enable": false} (and before every change).
 SPLIT_TABLE, SPLIT_MARK, SPLIT_PREF = "2000", "0x2000", 1000
 
 
@@ -429,34 +430,47 @@ def vpn_split(req):
         print(json.dumps({"ok": True}))
         return
     dev = clean(req.get("dev"), "Network device", r"[A-Za-z0-9_.-]{1,15}", maxlen=15)
-    try:
-        gw = str(ipaddress.IPv4Address(req.get("gateway") or ""))
-    except ValueError:
-        fail("Gateway isn't an IPv4 address")
-    nets = []
-    for x in (req.get("exclude") or [])[:256]:
+    gw = None
+    if req.get("gateway"):
         try:
-            n = ipaddress.ip_network(str(x), strict=False)
+            gw = str(ipaddress.IPv4Address(req["gateway"]))
         except ValueError:
-            fail(f"Not an address: {x}")
-        if n.version == 4:
-            nets.append(str(n))
+            fail("Gateway isn't an IPv4 address")
+
+    def v4(x, what, net=True):
+        try:
+            n = ipaddress.ip_network(str(x), strict=False) if net else ipaddress.ip_address(str(x))
+        except ValueError:
+            fail(f"Not an address ({what}): {x}")
+        return str(n) if n.version == 4 else None
+    to = [n for n in (v4(x, "site") for x in (req.get("to") or [])[:256]) if n]
+    frm = [n for n in (v4(x, "source", net=False) for x in (req.get("from") or [])[:4]) if n]
+    dns = v4(req["dns"], "DNS", net=False) if req.get("dns") else None
     cg = req.get("cgroup")
-    if cg is not None and not re.fullmatch(r"user\.slice/user-\d+\.slice/user@\d+\.service/cbnovpn\.slice", str(cg)):
+    if cg is not None and not re.fullmatch(r"user\.slice/user-\d+\.slice/user@\d+\.service/cbviavpn\.slice", str(cg)):
         fail("Bad app group")
-    r = _run("ip", "-4", "route", "add", "default", "via", gw, "dev", dev, "table", SPLIT_TABLE)
+    route = ["ip", "-4", "route", "add", "default"] + (["via", gw] if gw else []) + ["dev", dev, "table", SPLIT_TABLE]
+    r = _run(*route)
     if r.returncode:
-        fail(f"Couldn't add the bypass route: {r.stderr.strip()}")
-    for n in nets:
+        fail(f"Couldn't add the VPN route: {r.stderr.strip()}")
+    for n in to:
         _run("ip", "-4", "rule", "add", "to", n, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
+    for a in frm:
+        _run("ip", "-4", "rule", "add", "from", a, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
     if cg:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
+        dnat = (f"""  chain dns {{
+    type nat hook output priority -100; policy accept;
+    meta mark {SPLIT_MARK} udp dport 53 dnat ip to {dns}
+    meta mark {SPLIT_MARK} tcp dport 53 dnat ip to {dns}
+  }}
+""" if dns else "")
         rules = f"""table inet crossbar_split {{
   chain out {{
     type route hook output priority mangle; policy accept;
     socket cgroupv2 level 4 "{cg}" meta mark set {SPLIT_MARK}
   }}
-  chain post {{
+{dnat}  chain post {{
     type nat hook postrouting priority srcnat; policy accept;
     meta mark {SPLIT_MARK} oifname "{dev}" masquerade
   }}
@@ -465,10 +479,10 @@ def vpn_split(req):
         r = _run("nft", "-f", "-", inp=rules)
         if r.returncode:
             split_clear()
-            fail(f"Couldn't set up app split tunneling: {r.stderr.strip()[-200:]}")
-        for k in ("all", dev):                    # replies come back on the normal connection: loose check
+            fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
+        for k in ("all", dev):                    # replies arrive on the VPN for these: loose check
             _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
-    print(json.dumps({"ok": True, "excluded": len(nets), "apps": bool(cg)}))
+    print(json.dumps({"ok": True, "sites": len(to), "apps": bool(cg), "dns": bool(dns)}))
 
 
 if __name__ == "__main__":

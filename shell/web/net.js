@@ -105,41 +105,92 @@ function vpnLocationsFolder() {
 }
 
 function vpnSplitFolder() {
-  return { key: 'vpn-split', label: 'Split Tunneling', icon: 'network', sub: 'Sites and apps that skip the VPN',
+  return { key: 'vpn-split', label: 'Split Tunneling', icon: 'network', sub: 'Choose what uses the VPN',
     children: async () => {
       const st = await vpnStatus();
-      const setOpt = async (body, msg) => { if (await call(() => api.post('/api/vpn/options', body), msg)) reloadFolder(); };
+      const setOpt = async (body, msg) => {
+        const r = await call(() => api.post('/api/vpn/options', body), msg);
+        if (r && 'split' in body && r.connected && await confirmBox('Reconnect the VPN now so this takes effect?')) { vpnConnect(); return; }
+        if (r) reloadFolder();
+      };
       const appImages = (S.apps || []).filter((a) => a.kind === 'appimage').map((a) => [`app:${a.key}`, a.name]);
-      return [
-        { key: 'lan', label: 'Local Network', icon: 'info', sub: 'Always reachable (printers, NAS, casting) while the VPN is on' },
-        { key: 'sites', label: 'Sites & Addresses', icon: 'network', sub: st.split_exclude.length ? st.split_exclude.join(', ') : 'None — everything goes through the VPN',
-          children: async () => {
-            const cur = (await vpnStatus()).split_exclude;
-            return [...cur.map((x) => ({ key: `x:${x}`, label: x, icon: 'network', sub: '{ok} remove',
-              action: async () => setOpt({ split_exclude: cur.filter((y) => y !== x) }, `${x} goes through the VPN again`) })),
-            { key: 'add', label: 'Add a Site or Address…', icon: 'add', sub: 'e.g. netflix.com, 203.0.113.5 or 192.0.2.0/24',
-              action: async () => {
-                const r = await Dialog.ask({ title: 'Skip the VPN', buttons: ['Add', 'Cancel'], fields: [{ key: 'x', label: 'Site name, address or network' }],
-                  body: 'Traffic to this goes straight out, not through the VPN.\nSite names are looked up when the VPN connects.' });
-                if (r.button === 0 && r.values.x.trim()) setOpt({ split_exclude: [...cur, r.values.x.trim()] }, `${r.values.x.trim()} skips the VPN`);
-              } }];
-          } },
-        { key: 'apps', label: 'Apps That Skip the VPN', icon: 'apps',
-          sub: st.split_apps.length ? `${st.split_apps.length} chosen` : 'None',
-          children: async () => {
-            const cur = (await vpnStatus()).split_apps;
-            const rows = [...VPN_APPS, ...appImages].map(([id, label]) => {
-              const on = cur.includes(id);
-              return { key: `a:${id}`, label, icon: on ? 'check' : 'apps', sub: on ? 'Skips the VPN · {ok} change' : 'Uses the VPN · {ok} change',
-                action: () => setOpt({ split_apps: on ? cur.filter((x) => x !== id) : [...cur, id] }, `${label}: ${on ? 'uses the VPN' : 'skips the VPN'} (next time it starts)`) };
-            });
-            rows.push({ key: 'note', label: 'About Flatpak Apps', icon: 'info', sub: 'Flatpaks always follow the VPN',
-              action: () => message('Apps that skip the VPN are started in their own group, whose traffic goes around the tunnel.\nFlatpak apps put themselves in a group of their own when they start, so they can\'t be split off: they always use the VPN.\nChanges apply the next time an app starts.', 'Split Tunneling') });
-            return rows;
-          } },
-      ];
+      const rows = [{ key: 'on', label: 'Split Tunneling', icon: st.split ? 'check' : 'power',
+        sub: st.split ? 'On · only the apps and sites below use the VPN' : 'Off · everything uses the VPN',
+        action: () => setOpt({ split: !st.split }, st.split ? 'Everything will use the VPN' : 'Only chosen apps and sites will use the VPN') }];
+      if (!st.split) return rows;
+      rows.push({ key: 'apps', label: 'Apps That Use the VPN', icon: 'apps', sub: st.vpn_apps.length ? `${st.vpn_apps.length} chosen` : 'None yet',
+        children: async () => {
+          const cur = (await vpnStatus()).vpn_apps;
+          const list = [['torrents', 'Torrents'], ...VPN_APPS, ...appImages].map(([id, label]) => {
+            const on = cur.includes(id);
+            return { key: `a:${id}`, label, icon: on ? 'check' : 'apps', sub: on ? 'Uses the VPN · {ok} change' : 'Doesn\'t use the VPN · {ok} change',
+              action: () => setOpt({ vpn_apps: on ? cur.filter((x) => x !== id) : [...cur, id] }, `${label}: ${on ? 'no VPN' : 'uses the VPN'} (from the next time it starts)`) };
+          });
+          list.push({ key: 'note', label: 'How This Works', icon: 'info', sub: 'Changes apply when an app next starts',
+            action: () => message('Apps chosen here start in their own group, and only that group\'s traffic (and its DNS) goes through the VPN.\nTorrents with "Only Use the VPN" on always use it.\nFlatpak apps put themselves in a group of their own when they start, so they can\'t be chosen.\nChanges apply the next time an app starts.', 'Split Tunneling') });
+          return list;
+        } });
+      rows.push({ key: 'sites', label: 'Sites That Use the VPN', icon: 'network', sub: st.vpn_sites.length ? st.vpn_sites.join(', ') : 'None',
+        children: async () => {
+          const cur = (await vpnStatus()).vpn_sites;
+          return [...cur.map((x) => ({ key: `x:${x}`, label: x, icon: 'network', sub: '{ok} remove',
+            action: () => setOpt({ vpn_sites: cur.filter((y) => y !== x) }, `${x} no longer uses the VPN`) })),
+          { key: 'add', label: 'Add a Site or Address…', icon: 'add', sub: 'e.g. bbc.co.uk, 203.0.113.5 or 192.0.2.0/24',
+            action: async () => {
+              const r = await Dialog.ask({ title: 'Use the VPN For', buttons: ['Add', 'Cancel'], fields: [{ key: 'x', label: 'Site name, address or network' }],
+                body: 'Traffic to this goes through the VPN, from any app.\nSite names are looked up when the VPN connects.' });
+              if (r.button === 0 && r.values.x.trim()) setOpt({ vpn_sites: [...cur, r.values.x.trim()] }, `${r.values.x.trim()} uses the VPN`);
+            } }];
+        } });
+      return rows;
     } };
 }
+
+// a job with a live results window (speed test, leak tests)
+async function jobDialog(path, title, render) {
+  const j = await call(() => api.post(path));
+  if (!j) return;
+  let open = true;
+  Dialog.ask({ title, body: 'Starting…', buttons: ['Close'] }).then(() => { open = false; });
+  $('.dlg-body').classList.add('long');                // a solid backdrop: results are read, not glanced at
+  while (open) {
+    await new Promise((r) => setTimeout(r, 600));
+    const cur = (await api.get('/api/jobs').catch(() => [])).find((x) => x.id === j.id);
+    if (!cur || !open) break;
+    $('.dlg-body').textContent = render(cur).filter((x) => x != null && x !== '').join('\n');
+    if (cur.status !== 'running') break;
+  }
+  if (S.stack.length) reloadFolder();
+}
+const LEAK_MARK = { leak: '⚠ ', protected: '✓ ', exposed: '⚠ ', 'not-vpn': '⚠ ' };
+function torrentLeakTest() {
+  return jobDialog('/api/leaktest/torrent', 'Torrent IP Leak Test', (cur) => {
+    const r = cur.result;
+    if (!r) return [cur.message, '', 'The torrent engine announces a made-up torrent to WhatIsMyIP.net\'s tracker,', 'which records the address it came from.'];
+    return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
+      r.seen.length ? 'Trackers saw:' : 'Nothing reached the tracker (blocked, or "Only Use the VPN" with the VPN off).',
+      ...r.seen.map((x) => `   ${x.ip}${x.ip === r.isp_ip ? '  ← your real address' : ''}${x.agent ? `   (${x.agent})` : ''}`),
+      r.isp_ip ? `Your address without the VPN: ${r.isp_ip}` : 'Your address without the VPN isn\'t known yet: check it once with the VPN off (Check My Address).',
+      `VPN: ${r.vpn ? 'on' : 'off'}${r.bound ? ` · torrents bound to ${r.bound}` : ''}`];
+  });
+}
+function dnsLeakTest() {
+  return jobDialog('/api/leaktest/dns', 'DNS Leak Test', (cur) => {
+    const r = cur.result;
+    if (!r) return [cur.message, '', 'Made-up names are looked up, then bash.ws reports which DNS servers did it.'];
+    return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
+      `DNS servers used (${r.servers.length}):`, ...r.servers.slice(0, 8).map((x) => `   ${x.ip}  ${x.country}${x.asn ? ` · ${x.asn}` : ''}`),
+      `Seen as: ${r.ip || '?'}${r.ip_country ? `  ${r.ip_country}` : ''}${r.ip_asn ? ` · ${r.ip_asn}` : ''}${r.ip === r.isp_ip ? '  ← your real address' : ''}`,
+      r.split ? 'Tested as an app that uses the VPN (split tunneling is on).' : '', r.conclusion ? `bash.ws: ${r.conclusion}` : ''];
+  });
+}
+const LEAK_FOLDER = { key: 'leaks', label: 'Leak Tests', icon: 'search', sub: 'Torrent IP and DNS',
+  children: async () => [
+    { key: 'tleak', label: 'Torrent IP Leak Test', icon: 'download', sub: 'What address trackers see from your torrent client', action: torrentLeakTest },
+    { key: 'dleak', label: 'DNS Leak Test', icon: 'network', sub: 'Which DNS servers your lookups go to', action: dnsLeakTest },
+    { key: 'ip', label: 'Check My Address', icon: 'search', sub: 'What websites see',
+      action: async () => { const ip = await call(() => api.get('/api/vpn/ip')); if (ip) message(`${ip.ip || 'Unknown'}${ip.country ? `\nCountry: ${ip.country}` : ''}`, 'Your Address'); } },
+  ] };
 
 const VPN_ITEM = {
   key: 'vpn', label: 'VPN', icon: 'network', sub: 'PIA, Mullvad, NordVPN, Proton, WireGuard, OpenVPN…',
@@ -170,11 +221,14 @@ const VPN_ITEM = {
           if (st.connected && await confirmBox('Reconnect now so it takes effect?')) vpnConnect(); else vpnRefresh();
         }
       } });
-    items.push(vpnSplitFolder());
+    items.push({ ...vpnSplitFolder(), sub: !st.split ? 'Off · everything uses the VPN' : (() => {
+      const n = st.vpn_apps.length + st.vpn_sites.length;
+      const what = [st.vpn_apps.length ? `${st.vpn_apps.length} app${st.vpn_apps.length === 1 ? '' : 's'}` : '', st.vpn_sites.length ? `${st.vpn_sites.length} site${st.vpn_sites.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+      return n ? `On · ${what} ${n === 1 ? 'uses' : 'use'} the VPN` : 'On · nothing uses the VPN yet: add apps here';
+    })() });
     items.push({ key: 'auto', label: 'Connect at Startup', icon: 'power', sub: st.autoconnect ? 'On' : 'Off',
       action: async () => { if (await call(() => api.post('/api/vpn/options', { autoconnect: !st.autoconnect }))) vpnRefresh(); } });
-    items.push({ key: 'ip', label: 'Check My Address', icon: 'search', sub: 'What websites see',
-      action: async () => { const ip = await call(() => api.get('/api/vpn/ip')); if (ip) message(`${ip.ip || 'Unknown'}${ip.country ? `\nCountry: ${ip.country}` : ''}${ip.server ? `\nNearest Cloudflare: ${ip.server}` : ''}\nVPN: ${st.connected ? 'on' : 'off'}`, 'Your Address'); } });
+    items.push(LEAK_FOLDER);
     const prov = (await api.get('/api/vpn/providers')).find((p) => p.id === st.provider);
     items.push({ key: 'acct', label: 'Account', icon: 'user', sub: `${st.provider_name}${st.username ? ` · ${st.username}` : ''}`,
       children: async () => [

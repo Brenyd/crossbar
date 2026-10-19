@@ -282,6 +282,7 @@ function torrentsItem() {
           { key: 'file', label: '.torrent File…', icon: 'folder', torrentBrowse: true, children: () => torrentFileBrowse(null) }] },
         PLUGINS_FOLDER,
         TSET_FOLDER,
+        { key: 'tleak', label: 'Leak Tests', icon: 'search', sub: 'What address trackers see, and where DNS goes', children: LEAK_FOLDER.children },
         { key: 'quit', label: 'Stop the Torrent Engine', icon: 'power', sub: 'Stops downloading and seeding until you open Torrents again',
           action: async () => { if (await confirmBox('Stop all downloading and seeding?')) { await tPost('stop', {}, 'Torrent engine stopped'); back(); } } },
       ];

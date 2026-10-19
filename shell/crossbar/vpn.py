@@ -229,11 +229,13 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
     def __init__(self, ip, port, name):
         ctx = ssl.create_default_context(cafile=PIA_CA)
         ctx.check_hostname = False                     # PIA's certificates name the server in CN only
+        ctx.verify_flags &= ~ssl.VERIFY_X509_STRICT    # and its CA doesn't mark Basic Constraints critical
+                                                       # (Python 3.13 refuses that by default; curl doesn't)
         super().__init__(name, port, context=ctx, timeout=10)
         self._ip, self._name = ip, name
 
     def connect(self):
-        raw = socket.create_connection((self._ip, self.port), self.timeout)
+        raw = socket.create_connection((self._ip, self.port), self.timeout, source_address=_tunnel_source())
         self.sock = self._context.wrap_socket(raw, server_hostname=self._name)
         cn = dict(x[0] for x in self.sock.getpeercert().get("subject", ()))
         if cn.get("commonName") != self._name:
@@ -596,22 +598,28 @@ def setup(provider, protocol=None, fields=None):
 
 
 def set_options(**kw):
-    allowed = {"region", "protocol", "port_forward", "autoconnect", "split_exclude", "split_apps", "lan"}
+    allowed = {"region", "protocol", "port_forward", "autoconnect", "split", "vpn_sites", "vpn_apps"}
     kw = {k: v for k, v in kw.items() if k in allowed}
     if "protocol" in kw and kw["protocol"] not in PROVIDER.get(cfg().get("provider"), {}).get("protocols", []):
         raise ValueError("That provider doesn't offer that protocol")
-    if "split_exclude" in kw:
-        kw["split_exclude"] = [clean_target(x) for x in kw["split_exclude"]][:64]
-    if "split_apps" in kw:
-        kw["split_apps"] = [a for a in kw["split_apps"] if isinstance(a, str) and re.fullmatch(r"[\w:.\-]{1,120}", a)][:64]
+    if "split" in kw:
+        kw["split"] = bool(kw["split"])
+    if "vpn_sites" in kw:
+        kw["vpn_sites"] = [clean_target(x) for x in kw["vpn_sites"]][:64]
+    if "vpn_apps" in kw:
+        kw["vpn_apps"] = [a for a in kw["vpn_apps"] if isinstance(a, str) and re.fullmatch(r"[\w:.\-]{1,120}", a)][:64]
+    was_split = split_on()
     _set(**kw)
-    if nm_state() == "activated" and ({"split_exclude", "split_apps"} & set(kw)):
-        apply_split()
+    if nm_state() == "activated":
+        if "split" in kw and kw["split"] != was_split:
+            _state["error"] = "Reconnect the VPN for the split tunneling change"
+        elif split_on() and ({"vpn_sites", "vpn_apps"} & set(kw)):
+            apply_split()
     return status()
 
 
 def clean_target(x):
-    """An address, network (CIDR) or host name to keep outside the VPN."""
+    """An address, network (CIDR) or site name (for split tunneling)."""
     x = str(x).strip()
     if re.fullmatch(r"\d{1,3}(\.\d{1,3}){3}(/\d{1,2})?", x) or re.fullmatch(r"[0-9a-fA-F:]+(/\d{1,3})?", x) and ":" in x:
         return x
@@ -635,8 +643,8 @@ def status():
             "iface": _iface() if st == "activated" else None, "error": _state["error"],
             "port_forward": bool(c.get("port_forward")), "pf_supported": bool(p and p.get("port_forward")),
             "forwarded_port": _state["pf_port"] if st == "activated" else None, "pf_error": _state["pf_error"],
-            "autoconnect": bool(c.get("autoconnect")), "split_exclude": c.get("split_exclude") or [],
-            "split_apps": c.get("split_apps") or [], "signed_in": bool(p and (_secret(p["id"]) or p["kind"] == "import")),
+            "autoconnect": bool(c.get("autoconnect")), "split": split_on(), "vpn_sites": c.get("vpn_sites") or [],
+            "vpn_apps": c.get("vpn_apps") or [], "isp_ip": c.get("isp_ip"), "signed_in": bool(p and (_secret(p["id"]) or p["kind"] == "import")),
             "username": _secret(p["id"]).get("username", "") if p else ""}
 
 
@@ -654,6 +662,8 @@ def connect(job=None):
     _state.update(connecting=True, error=None)
     _publish()
     try:
+        if nm_state() != "activated":
+            _remember_isp_ip()
         stop_port_forward()
         job.set(0.1, "Getting the connection details…")
         if provider == "pia":
@@ -681,8 +691,16 @@ def connect(job=None):
                 _nmcli("connection", "modify", CONN, "+vpn.data", "password-flags=0", "vpn.user-name", creds[0],
                        "vpn.secrets", f"password={creds[1]}")
         os.remove(path)
-        _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.dns-priority", "-50",
-               "ipv6.dns-priority", "-50", check=False)
+        vpn_dns = _conf_dns(conf)
+        if split_on():
+            # Split tunneling: the VPN is only a road some traffic takes (chosen apps and sites),
+            # not the default route; its DNS server is only used by that traffic (see apply_split).
+            _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.never-default", "yes",
+                   "ipv6.never-default", "yes", "ipv4.ignore-auto-dns", "yes", "ipv6.ignore-auto-dns", "yes",
+                   "ipv4.dns", "", "ipv6.dns", "", "ipv6.method", "disabled" if protocol == "openvpn" else "ignore", check=False)
+        else:
+            _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.dns-priority", "-50",
+                   "ipv6.dns-priority", "-50", check=False)
         job.set(0.7, "Connecting…")
         _nmcli("connection", "up", CONN, timeout=90)
         for _ in range(30):
@@ -691,18 +709,21 @@ def connect(job=None):
             time.sleep(0.5)
         else:
             raise RuntimeError("The VPN didn't come up")
-        if c.get("port_forward") and pf:
-            start_port_forward(pf)
         try:                                     # the torrent client, if it only uses the VPN: bind again
             from . import torrent
             torrent._apply_vpn_binding()
         except Exception:
             pass
-        if c.get("split_exclude") or c.get("split_apps"):
+        _state["dns"] = vpn_dns or _nm_dns()
+        if split_on():
             try:
                 apply_split()
             except RuntimeError as e:
                 _state["error"] = f"Split tunneling: {e}"
+        else:
+            clear_split()
+        if c.get("port_forward") and pf:
+            start_port_forward(pf)
         job.set(1.0, "Connected")
         return status()
     except Exception as e:
@@ -745,7 +766,10 @@ def _write_private(path, text):
 
 def public_ip():
     from . import speedtest
-    return speedtest._trace()
+    t = speedtest._trace()
+    if t.get("ip") and nm_state() != "activated":
+        _set(isp_ip=t["ip"])
+    return t
 
 
 # ---- port forwarding ------------------------------------------------------------------------------------
@@ -753,7 +777,10 @@ def _tunnel_gateway():
     out = _nmcli("-g", "IP4.GATEWAY", "device", "show", TUN, timeout=10, check=False).strip()
     if out:
         return out
-    r = subprocess.run(["ip", "-4", "route", "show", "dev", TUN], capture_output=True, text=True)
+    try:
+        r = subprocess.run(["ip", "-4", "route", "show", "dev", TUN], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     m = re.search(r"via (\d+\.\d+\.\d+\.\d+)", r.stdout)
     return m.group(1) if m else None
 
@@ -801,6 +828,9 @@ def natpmp_map(gateway, proto, lifetime=60, timeout=3.0):
     pkt = struct.pack("!BBHHHI", 0, op, 0, 1, 0, lifetime)       # internal port 1, as Proton documents
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.settimeout(timeout)
+        src = _tunnel_source()
+        if src:
+            s.bind(src)
         s.sendto(pkt, (gateway, 5351))
         data, _ = s.recvfrom(64)
     ver, rop, code, _epoch, _inner, public, _life = struct.unpack("!BBHIHHI", data[:16])
@@ -838,25 +868,56 @@ def stop_port_forward():
 
 
 # ---- split tunneling -----------------------------------------------------------------------------------
-NOVPN_SLICE = "cbnovpn.slice"
+# On (the default): nothing uses the VPN except the apps and sites you add. Chosen apps start in
+# their own systemd group (cbviavpn.slice); the root helper marks that group's traffic and sends
+# it, traffic to chosen sites, and anything using the VPN's own address (the torrent engine bound
+# to it) through the VPN with its own routing table; their DNS goes to the VPN's DNS server too.
+# Off: everything uses the VPN (it's the default route, and its DNS is the only DNS).
+VIA_SLICE = "cbviavpn.slice"
 
 
-def novpn_cgroup():
-    return f"user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/{NOVPN_SLICE}"
+def split_on():
+    return cfg().get("split", True) is not False
 
 
-def bypasses(app_id):
-    """Should this app skip the VPN (it's in VPN › Split Tunneling › Apps)?"""
-    c = cfg()
-    return app_id in (c.get("split_apps") or []) and nm_state() == "activated"
+def via_cgroup():
+    return f"user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/{VIA_SLICE}"
+
+
+def uses_vpn(app_id):
+    """Is this app one of the ones that go through the VPN (split tunneling on)?"""
+    if not split_on() or not app_id:
+        return False
+    apps = cfg().get("vpn_apps") or []
+    if app_id == "leaktest":                    # the leak tests check what VPN traffic would do
+        return True
+    if app_id == "torrents":
+        try:
+            from . import torrent
+            if torrent.prefs_local().get("vpn_only"):
+                return True
+        except Exception:
+            pass
+    return app_id in apps
 
 
 def wrap(argv, app_id):
-    """argv run outside the VPN when the app is set to skip it: started in a systemd scope whose
-    traffic the split rules send around the tunnel."""
-    if app_id and bypasses(app_id) and util.which("systemd-run"):
-        return ["systemd-run", "--user", "--scope", "--quiet", f"--slice={NOVPN_SLICE}", "--", *argv]
+    """Start an app in the VPN's group when it's one that uses the VPN (it takes effect whenever
+    the VPN is connected; with the VPN off the group is just a group)."""
+    if uses_vpn(app_id) and util.which("systemd-run"):
+        _ensure_slice()
+        return ["systemd-run", "--user", "--scope", "--quiet", f"--slice={VIA_SLICE}", "--", *argv]
     return argv
+
+
+def _ensure_slice():
+    unit = os.path.join(util.HOME, ".config", "systemd", "user", VIA_SLICE)
+    if not os.path.exists(unit):
+        os.makedirs(os.path.dirname(unit), exist_ok=True)
+        with open(unit, "w") as f:
+            f.write("[Unit]\nDescription=Crossbar: apps that use the VPN\n\n[Slice]\n")
+        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=15)
+    subprocess.run(["systemctl", "--user", "start", VIA_SLICE], capture_output=True, timeout=15)
 
 
 def _resolve(targets):
@@ -873,22 +934,35 @@ def _resolve(targets):
     return sorted(set(out))[:256]
 
 
+def _conf_dns(conf):
+    m = re.search(r"^\s*DNS\s*=\s*([\d.]+)", conf or "", re.M | re.I)
+    return m.group(1) if m else None
+
+
+def _nm_dns():
+    out = _nmcli("-g", "IP4.DNS", "connection", "show", CONN, timeout=10, check=False).strip()
+    return next((x for x in re.split(r"[\s|]+", out) if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", x)), None)
+
+
+def _vpn_addr():
+    out = _nmcli("-g", "IP4.ADDRESS", "device", "show", _iface(), timeout=10, check=False).strip()
+    m = re.search(r"(\d+\.\d+\.\d+\.\d+)", out)
+    if m:
+        return m.group(1)
+    try:
+        r = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", _iface()], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", r.stdout)
+    return m.group(1) if m else None
+
+
 def apply_split():
     c = cfg()
-    dev, gw = _physical()
-    if not dev:
-        raise RuntimeError("Couldn't find the normal internet connection")
-    apps = bool(c.get("split_apps"))
-    if apps:                                   # the group "skip the VPN" apps start in (it must exist first)
-        unit = os.path.join(util.HOME, ".config", "systemd", "user", NOVPN_SLICE)
-        if not os.path.exists(unit):
-            os.makedirs(os.path.dirname(unit), exist_ok=True)
-            with open(unit, "w") as f:
-                f.write("[Unit]\nDescription=Crossbar: apps that skip the VPN\n\n[Slice]\n")
-            subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=15)
-        subprocess.run(["systemctl", "--user", "start", NOVPN_SLICE], capture_output=True, timeout=15)
-    req = {"enable": True, "dev": dev, "gateway": gw, "exclude": _resolve(c.get("split_exclude") or []),
-           "cgroup": novpn_cgroup() if apps else None}
+    _ensure_slice()
+    addr = _vpn_addr()
+    req = {"enable": True, "dev": _iface(), "gateway": None, "to": _resolve(c.get("vpn_sites") or []),
+           "from": [addr] if addr else [], "cgroup": via_cgroup(), "dns": _state.get("dns")}
     return _admin("vpn-split", req)
 
 
@@ -896,6 +970,27 @@ def clear_split():
     try:
         _admin("vpn-split", {"enable": False})
     except RuntimeError:
+        pass
+
+
+def _tunnel_source():
+    """With split tunneling on, requests that must go through the tunnel (port forwarding) are
+    sent from the VPN's own address, which the split rules route through it."""
+    if split_on() and nm_state() == "activated":
+        a = _vpn_addr()
+        if a:
+            return (a, 0)
+    return None
+
+
+def _remember_isp_ip():
+    """Your address without the VPN (for the leak tests: is it ever seen while the VPN is on?)."""
+    try:
+        from . import speedtest
+        ip = speedtest._trace().get("ip")
+        if ip:
+            _set(isp_ip=ip)
+    except Exception:
         pass
 
 

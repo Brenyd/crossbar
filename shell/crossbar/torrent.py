@@ -105,6 +105,9 @@ def start():
     argv = ["qbittorrent-nox", f"--profile={PROFILE}", f"--webui-port={PORT}"]
     if _version_tuple(_nox_version()) >= (5, 0):
         argv.append("--confirm-legal-notice")
+    from . import vpn
+    argv = vpn.wrap(argv, "torrents")                     # in the VPN's group when torrents use the VPN
+    _cache.pop("sid", None)
     _proc["p"] = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(60):
         time.sleep(0.25)
@@ -142,6 +145,10 @@ def _version_tuple(v):
 def _req(method, path, params=None, data=None, files=None, timeout=15):
     c = http.client.HTTPConnection("127.0.0.1", PORT, timeout=timeout)
     headers = {"Referer": f"http://127.0.0.1:{PORT}", "Host": f"127.0.0.1:{PORT}"}
+    if _cache.get("sid"):
+        # one session for everything: qBittorrent keeps searches in the session that started
+        # them (a new session per request = "not found" asking for the results)
+        headers["Cookie"] = f"SID={_cache['sid']}"
     body = None
     if params:
         path += "?" + urllib.parse.urlencode(params)
@@ -163,6 +170,9 @@ def _req(method, path, params=None, data=None, files=None, timeout=15):
         c.request(method, path, body=body, headers=headers)
         r = c.getresponse()
         raw = r.read()
+        m = re.search(r"\bSID=([^;\s]+)", r.getheader("Set-Cookie") or "")
+        if m:
+            _cache["sid"] = m.group(1)
     finally:
         c.close()
     if r.status == 403:
@@ -365,6 +375,9 @@ def set_settings(**kw):
         api("POST", "/api/v2/app/setPreferences", data={"json": json.dumps(kw)})
     if "vpn_only" in local:
         _apply_vpn_binding()
+        from . import vpn
+        if vpn.split_on():                     # it has to start again inside (or outside) the VPN's group
+            threading.Thread(target=lambda: (stop(), time.sleep(2), _safe(start)), daemon=True).start()
     return settings()
 
 
@@ -448,7 +461,12 @@ def search_start(pattern, category="all", plugin_names="enabled"):
 
 def search_results(sid, offset=0, limit=200):
     sid = int(sid)
-    st = api("GET", "/api/v2/search/status", params={"id": sid})
+    try:
+        st = api("GET", "/api/v2/search/status", params={"id": sid})
+    except TorrentError as e:
+        if "not found" not in str(e):
+            raise
+        return {"running": False, "total": 0, "results": [], "expired": True}      # engine restarted: search gone
     running_ = bool(st and st[0].get("status") == "Running")
     r = api("GET", "/api/v2/search/results", params={"id": sid, "limit": limit, "offset": int(offset)}) or {}
     res = [{"name": x.get("fileName", ""), "url": x.get("fileUrl", ""), "size": x.get("fileSize", -1), "seeds": x.get("nbSeeders", -1),
