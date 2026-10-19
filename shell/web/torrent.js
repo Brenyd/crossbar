@@ -86,7 +86,7 @@ async function torrentSearch() {
   const r = await Dialog.ask({ title: 'Search Torrents', buttons: ['Search', 'Cancel'], fields: [{ key: 'q', label: 'What are you looking for?' }] });
   const q = r.button === 0 ? r.values.q.trim() : '';
   if (!q) return;
-  const cat = await choose(T_CATS);
+  const cat = await choose(T_CATS);   // Everything is first: plugins without the chosen category are left out
   if (!cat) return;
   const s = await tPost('search/start', { pattern: q, category: cat });
   if (!s) return;
@@ -98,12 +98,41 @@ async function torrentSearch() {
         action: async () => { if (await tPost('search/download', { url: x.url, engine: x.engine }, `Downloading ${x.name}`)) pollJobs(); },
         options: [{ label: 'Download', action: () => tPost('search/download', { url: x.url, engine: x.engine }, `Downloading ${x.name}`) },
           ...(x.page ? [{ label: 'Open Its Page', action: () => (typeof openBrowser === 'function' ? openBrowser(x.page) : message(x.page, 'Page')) }] : [])] }));
-      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far` : `${res.total} found`, icon: res.running ? 'refresh' : 'search',
-        sub: 'Most seeds first · {ok} on a result downloads it',
-        action: () => tPost('search/stop', { id: s.id }, 'Search stopped') });
+      const errs = (res.errors || []).join(' · ').slice(0, 160);
+      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far` : (res.expired ? 'This search has ended' : `${res.total} found`),
+        icon: res.running ? 'refresh' : (errs && !res.total ? 'info' : 'search'),
+        sub: errs && !res.total ? `A plugin had a problem: ${errs}` : `With ${(res.engines || s.engines || []).join(', ')} · most seeds first`,
+        action: () => (res.running ? tPost('search/stop', { id: s.id }, 'Search stopped')
+          : errs ? message(`The plugins said:\n${(res.errors || []).join('\n')}\n\nSites change: try Search Plugins › Update All, or turn that plugin off.`, 'Search') : null) });
       return rows;
     } });
 }
+// Search is a folder: a new search, and which installed plugins it uses (on/off right there).
+const SEARCH_FOLDER = {
+  key: 'search', label: 'Search', icon: 'search', sub: 'Through your search plugins',
+  children: async () => {
+    const have = await api.get('/api/torrent/plugins');
+    const on = have.filter((p) => p.enabled);
+    const toggle = async (p) => { if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }, `${p.full_name}: ${p.enabled ? 'off' : 'on'} for searches`)) reloadFolder(); };
+    return [
+      { key: 'new', label: 'New Search…', icon: 'search', sub: on.length ? `With ${on.map((p) => p.full_name).join(', ')}`.slice(0, 140) : 'Turn on a plugin below first',
+        action: torrentSearch },
+      { key: 'with', label: 'Search With', icon: 'check', sub: `${on.length} of ${have.length} plugins on · {ok} turns one on or off`,
+        children: async () => {
+          const list = await api.get('/api/torrent/plugins');
+          if (!list.length) return [{ key: 'none', label: 'No search plugins yet', icon: 'info', sub: 'Get some in Search Plugins', action: () => openFolder(PLUGINS_FOLDER) }];
+          return [
+            { key: 'all-on', label: 'Turn All On', icon: 'check', action: async () => { for (const p of list.filter((x) => !x.enabled)) await tPost('plugin/action', { name: p.name, what: 'enable', enable: true }); reloadFolder(); } },
+            { key: 'all-off', label: 'Turn All Off', icon: 'power', action: async () => { for (const p of list.filter((x) => x.enabled)) await tPost('plugin/action', { name: p.name, what: 'enable', enable: false }); reloadFolder(); } },
+            ...list.map((p) => ({ key: `sw:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power', badge: p.enabled ? 'ON' : 'OFF',
+              sub: `${p.enabled ? 'Used' : 'Not used'} in searches${p.categories.length ? ` · ${p.categories.filter((c) => c !== 'all').join(', ')}` : ''}`.slice(0, 140),
+              action: () => toggle(p), options: [{ label: p.enabled ? 'Turn Off' : 'Turn On', action: () => toggle(p) },
+                ...(p.login ? [{ label: 'Sign In…', action: () => pluginSignIn(p.name) }] : [])] }))];
+        } },
+      PLUGINS_FOLDER,
+    ];
+  },
+};
 
 // ---- search plugins -------------------------------------------------------------------------------
 async function pluginSignIn(name) {
@@ -127,12 +156,14 @@ async function pluginInstall(url, label, login) {
 function pluginListFolder(key, label, sub, load) {
   return { key, label, icon: 'folder', sub, children: async () => {
     const [list, have] = await Promise.all([load(), api.get('/api/torrent/plugins')]);
-    const names = new Set(have.map((p) => p.url));
-    return list.map((p) => ({ key: `pl:${p.url}`, label: p.name, icon: names.has(p.url) ? 'check' : 'download',
-      badge: p.login ? 'LOGIN' : (p.broken ? 'BROKEN' : ''),
-      sub: [names.has(p.url) ? 'Installed' : '', p.version ? `v${p.version}` : '', p.updated, p.comments].filter(Boolean).join(' · ').slice(0, 140),
+    // installed plugins are known by name (the .py file's name), not by the address they came from
+    const names = new Set(have.map((p) => p.name.toLowerCase()));
+    const inst = (p) => names.has(((p.url || '').split('/').pop() || '').replace(/\.py$/i, '').toLowerCase());
+    return list.map((p) => ({ key: `pl:${p.url}`, label: p.name, icon: inst(p) ? 'check' : 'download',
+      badge: inst(p) ? 'INSTALLED' : (p.login ? 'LOGIN' : (p.broken ? 'BROKEN' : '')),
+      sub: [inst(p) ? 'Installed' : '', p.version ? `v${p.version}` : '', p.updated, p.comments].filter(Boolean).join(' · ').slice(0, 140),
       action: () => pluginInstall(p.url, p.name, p.login),
-      options: [{ label: names.has(p.url) ? 'Install Again (update)' : 'Install', action: () => pluginInstall(p.url, p.name, p.login) },
+      options: [{ label: inst(p) ? 'Install Again (update)' : 'Install', action: () => pluginInstall(p.url, p.name, p.login) },
         ...(p.help ? [{ label: 'Help Page', action: () => (typeof openBrowser === 'function' ? openBrowser(p.help) : message(p.help, p.name)) }] : []),
         ...(p.site ? [{ label: 'Open the Site', action: () => (typeof openBrowser === 'function' ? openBrowser(p.site) : message(p.site, p.name)) }] : [])] }));
   } };
@@ -273,7 +304,7 @@ function torrentsItem() {
           options: [{ label: 'Pause Everything', action: () => tPost('action', { hashes: ['all'], what: 'pause' }, 'Everything paused') },
             { label: 'Resume Everything', action: () => tPost('action', { hashes: ['all'], what: 'resume' }, 'Everything resumed') },
             { label: st.alt_speed ? 'Normal Speed' : 'Slow Mode (limits in Settings)', action: () => tPost('altspeed', {}, st.alt_speed ? 'Normal speed' : 'Slow mode') }] },
-        { key: 'search', label: 'Search', icon: 'search', sub: 'Through your search plugins', action: torrentSearch },
+        SEARCH_FOLDER,
         transfersFolder('downloading', 'Downloading'),
         transfersFolder('completed', 'Finished & Seeding'),
         transfersFolder('all', 'All Torrents'),

@@ -417,7 +417,9 @@ def plugins():
         out.append({"name": name, "full_name": p.get("fullName") or name, "version": p.get("version", ""), "enabled": bool(p.get("enabled")),
                     "url": p.get("url", ""), "categories": [c.get("id") if isinstance(c, dict) else c for c in p.get("supportedCategories") or []],
                     "login": bool(plugin_fields(name))})
-    return sorted(out, key=lambda p: p["full_name"].lower())
+    out = sorted(out, key=lambda p: p["full_name"].lower())
+    _cache["plugins_list"] = out
+    return out
 
 
 def install_plugin(url):
@@ -447,53 +449,157 @@ def plugin_action(name, what, enable=True):
     return plugins()
 
 
-def search_start(pattern, category="all", plugin_names="enabled"):
+# Searches run qBittorrent's own search runner (nova3/nova2.py, the one its search tab uses) with
+# your plugins, here, rather than through the Web API: the API keeps searches per login session,
+# which a headless engine with no login doesn't hold on to, so results came back "not found" or
+# empty. Same plugins, same results; each search runs in the background and its results stream in.
+_searches = {}
+_sid = [0]
+
+
+def _nova_dir():
+    for d in _engines_dirs():
+        nova = os.path.dirname(d)
+        if os.path.isfile(os.path.join(nova, "nova2.py")):
+            return nova
+    return None
+
+
+def search_start(pattern, category="all", plugin_names=None):
     pattern = (pattern or "").strip()[:200]
     if not pattern:
         raise ValueError("Type something to search for")
     if category not in CATEGORIES:
         category = "all"
-    if not any(p["enabled"] for p in plugins()):
-        raise TorrentError("No search plugins are on yet: Torrents › Search Plugins")
-    r = api("POST", "/api/v2/search/start", data={"pattern": pattern, "plugins": plugin_names, "category": category})
-    return {"id": r.get("id") if isinstance(r, dict) else r}
+    pl = plugins()
+    names = [p["name"] for p in pl if p["enabled"]] if not plugin_names else \
+        [n for n in plugin_names if n in {p["name"] for p in pl}]
+    if not names:
+        raise TorrentError("No search plugins are on: Torrents › Search › Search With")
+    if category != "all":                       # a plugin that doesn't have this category is skipped by the runner
+        cats = {p["name"]: p["categories"] for p in pl}
+        fit = [n for n in names if not cats.get(n) or category in cats[n]]
+        if not fit:
+            raise TorrentError(f"None of your search plugins have a “{category}” category: search Everything instead")
+        names = fit
+    nova = _nova_dir()
+    if not nova:
+        raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
+    import sys
+    from . import vpn
+    argv = vpn.wrap([sys.executable or "python3", "nova2.py", ",".join(names), category, *pattern.split()], "torrents")
+    p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                         text=True, encoding="utf-8", errors="replace", start_new_session=True)
+    _sid[0] += 1
+    sid = _sid[0]
+    st = {"proc": p, "results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern}
+    _searches[sid] = st
+    for old in [k for k, v in _searches.items() if k < sid - 8]:      # keep the last few
+        _searches.pop(old, None)
+
+    def read_out():
+        for line in p.stdout:
+            r = parse_result(line, names)
+            if r:
+                st["results"].append(r)
+        p.wait()
+        st["running"] = False
+
+    def read_err():
+        for line in p.stderr:
+            line = line.strip()
+            if line:
+                st["errors"] = (st["errors"] + [line])[-6:]
+
+    def watchdog():
+        time.sleep(90)                                   # plugins that hang don't keep it "searching" forever
+        if p.poll() is None:
+            try:
+                os.killpg(p.pid, 15)
+            except OSError:
+                pass
+    for fn in (read_out, read_err, watchdog):
+        threading.Thread(target=fn, daemon=True).start()
+    return {"id": sid, "engines": names}
+
+
+def parse_result(line, engines=None):
+    """One line from novaprinter: link|name(quoted)|size|seeds|leech|engine_url|desc_link|pub_date."""
+    parts = line.rstrip("\n").split("|")
+    if len(parts) < 6 or not parts[0]:
+        return None
+
+    def num(x):
+        try:
+            return int(float(x))
+        except ValueError:
+            return -1
+    return {"url": parts[0], "name": urllib.parse.unquote(parts[1]), "size": num(parts[2]), "seeds": num(parts[3]),
+            "peers": num(parts[4]), "site": parts[5], "page": parts[6] if len(parts) > 6 else "",
+            "engine": engines[0] if engines and len(engines) == 1 else _engine_for_site(parts[5])}
+
+
+def _engine_for_site(site):
+    try:
+        for p in _cache.get("plugins_list") or plugins():
+            a, b = urllib.parse.urlparse(p.get("url") or "").netloc, urllib.parse.urlparse(site or "").netloc
+            if a and b and (a == b or a.endswith("." + b) or b.endswith("." + a)):
+                return p["name"]
+    except Exception:
+        pass
+    return urllib.parse.urlparse(site).netloc
 
 
 def search_results(sid, offset=0, limit=200):
-    sid = int(sid)
-    try:
-        st = api("GET", "/api/v2/search/status", params={"id": sid})
-    except TorrentError as e:
-        if "not found" not in str(e):
-            raise
-        return {"running": False, "total": 0, "results": [], "expired": True}      # engine restarted: search gone
-    running_ = bool(st and st[0].get("status") == "Running")
-    r = api("GET", "/api/v2/search/results", params={"id": sid, "limit": limit, "offset": int(offset)}) or {}
-    res = [{"name": x.get("fileName", ""), "url": x.get("fileUrl", ""), "size": x.get("fileSize", -1), "seeds": x.get("nbSeeders", -1),
-            "peers": x.get("nbLeechers", -1), "site": x.get("siteUrl", ""), "page": x.get("descrLink", ""),
-            "engine": x.get("engineName", "") or urllib.parse.urlparse(x.get("siteUrl", "")).netloc}
-           for x in r.get("results", [])]
-    res.sort(key=lambda x: -(x["seeds"] if isinstance(x["seeds"], int) else 0))
-    return {"running": running_, "total": r.get("total", len(res)), "results": res}
+    st = _searches.get(int(sid))
+    if not st:
+        return {"running": False, "total": 0, "results": [], "expired": True, "errors": []}
+    res = sorted(st["results"], key=lambda x: -(x["seeds"] if isinstance(x["seeds"], int) else 0))
+    errs = []
+    if not st["running"] and not res and st["errors"]:
+        errs = [e for e in st["errors"] if not e.startswith(("Traceback", "File ", "^"))][-2:] or st["errors"][-1:]
+    return {"running": st["running"], "total": len(res), "results": res[int(offset):int(offset) + limit], "errors": errs,
+            "engines": st["engines"]}
 
 
 def search_stop(sid):
-    try:
-        api("POST", "/api/v2/search/stop", data={"id": int(sid)})
-        api("POST", "/api/v2/search/delete", data={"id": int(sid)})
-    except TorrentError:
-        pass
+    st = _searches.get(int(sid))
+    if st and st["proc"].poll() is None:
+        try:
+            os.killpg(st["proc"].pid, 15)
+        except OSError:
+            pass
     return {"ok": True}
 
 
 def download_result(url, engine=None, save_path=None):
-    """A search result: through its plugin when the engine can (private sites need the plugin's
-    sign-in to fetch the .torrent), else added by its link."""
-    if engine and _version_tuple(webapi_version()) >= (2, 11):
+    """A search result: a magnet link is added as it is; a .torrent link is fetched by its plugin
+    (nova2dl.py, as qBittorrent does), so private sites' sign-ins and cookies are used."""
+    if url.lower().startswith("magnet:"):
+        return add(urls=[url], save_path=save_path)
+    nova = _nova_dir()
+    if nova and engine and re.fullmatch(r"[\w.\-]{1,80}", engine) and os.path.isfile(os.path.join(nova, "nova2dl.py")):
+        import sys
+        from . import vpn
         try:
-            api("POST", "/api/v2/search/downloadTorrent", data={"url": url, "pluginName": engine})
-            return {"ok": True}
-        except TorrentError:
+            r = subprocess.run(vpn.wrap([sys.executable or "python3", "nova2dl.py", engine, url], "torrents"), cwd=nova,
+                               capture_output=True, text=True, timeout=60)
+            first = (r.stdout.strip().splitlines() or [""])[0]
+            path = first.split(" ", 1)[0]
+            if r.returncode == 0 and path and os.path.isfile(path):
+                try:
+                    with open(path, "rb") as f:
+                        blob = f.read(20 * 1024 * 1024)
+                    data = {"savepath": save_path or ""}
+                    out = api("POST", "/api/v2/torrents/add", data=data, files={"torrents": (os.path.basename(path) + ".torrent", blob)})
+                    if not (isinstance(out, str) and out.strip().lower().startswith("fail")):
+                        return {"ok": True}
+                finally:
+                    try:
+                        os.remove(path)
+                    except OSError:
+                        pass
+        except (OSError, subprocess.TimeoutExpired):
             pass
     return add(urls=[url], save_path=save_path)
 

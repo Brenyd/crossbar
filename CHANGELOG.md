@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.2 Alpha
+- **Split tunneling works from the console session**: apps that use the VPN were marked through a
+  systemd user scope, which didn't take on the TTY session, so they still went out your own line
+  (the DNS leak test said so). They're now started in a `crossbar-vpn` group that the firewall
+  sends through the VPN (made once, with your password, the first time)
+- **Clearer VPN answers**: with split tunneling on, Crossbar itself and Check My Address use your
+  own line by design; Check My Address now shows both addresses (VPN apps / everything else), the
+  torrent leak test says when Torrents simply isn't set to use the VPN, and **Check Split
+  Tunneling** (VPN › Leak Tests) shows what a VPN app is seen as, the rules, and whether the
+  firewall is marking its traffic
+- **Torrent search**: runs qBittorrent's own search runner with your plugins (the Web API search
+  kept coming back empty); plugin errors are shown; plugins without the category you pick are left
+  out (pick Everything to use them all)
+- **Search** is a folder: **New Search…**, **Search With** (turn each plugin on or off, all on / all
+  off) and Search Plugins. Plugin lists mark the ones you've installed
+
 ## 1.1.1 Alpha
 - **VPN connects**: PIA's servers were refused by Python 3.13's strict certificate check (their CA
   doesn't mark Basic Constraints critical); that one check is relaxed for PIA's own CA only

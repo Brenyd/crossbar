@@ -101,12 +101,16 @@ def torrent_test(job):
         except Exception:
             pass
     seen = sorted({r["ip"] for r in rows})
+    verdict = _verdict(seen, st.get("isp_ip"), st.get("connected"))
+    if verdict == "leak" and st.get("split") and not vpn.uses_vpn("torrents"):
+        verdict = "not-chosen"                 # split tunneling on, torrents not one of the VPN apps: as set up
     res = {"kind": "torrent", "seen": rows, "ips": seen, "isp_ip": st.get("isp_ip"), "vpn": st.get("connected"),
-           "bound": torrent.summary().get("interface") or "", "verdict": _verdict(seen, st.get("isp_ip"), st.get("connected"))}
+           "bound": torrent.summary().get("interface") or "", "verdict": verdict}
     job.result = res
     job.set(1.0, {"leak": "LEAK: trackers see your real address", "protected": "Protected: trackers only see the VPN",
                   "exposed": "The VPN is off: trackers see your real address", "none": "The tracker didn't hear from the engine",
-                  "unknown": "Trackers see " + ", ".join(seen)}[res["verdict"]])
+                  "unknown": "Trackers see " + ", ".join(seen),
+                  "not-chosen": "Torrents aren't set to use the VPN, so trackers see your real address"}[res["verdict"]])
     return res
 
 
@@ -140,7 +144,7 @@ def dns_test(job):
     st = vpn.status()
     job.set(0.1, "Looking up test names…")
     argv = vpn.wrap([sys.executable, "-m", "crossbar.leaktest", "dns"], "leaktest")
-    if argv[0] == "systemd-run":                          # through the VPN's group (split tunneling on)
+    if argv[0] == "sg":                                   # as an app that uses the VPN (split tunneling on)
         r = subprocess.run(argv, capture_output=True, text=True, timeout=120,
                            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         try:

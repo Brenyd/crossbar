@@ -8,7 +8,8 @@
     pkexec /usr/lib/crossbar/admin.py ps5-fan-target < {"value": 40..95}
     pkexec /usr/lib/crossbar/admin.py ps5-led        < {"name": "<preset>" | "off"}
     pkexec /usr/lib/crossbar/admin.py ps5-control    < {"args": ["--fan", "on|off|max"] | ["--boost", "on|off"]}
-    pkexec /usr/lib/crossbar/admin.py vpn-split      < {"enable", "dev", "gateway", "exclude": [cidr], "cgroup"}
+    pkexec /usr/lib/crossbar/admin.py vpn-split      < {"enable", "dev", "gateway", "to": [cidr], "from": [ip], "gid", "dns"}
+    pkexec /usr/lib/crossbar/admin.py vpn-group      < {}   (makes the crossbar-vpn group, adds whoever asked)
 
 Network drives go in /etc/fstab with a marker comment (# crossbar-nas:<name>),
 always mount under /mnt/nas/<name>, use x-systemd.automount + nofail so a
@@ -402,8 +403,8 @@ def boot_session(req):
 
 
 # ---- VPN split tunneling ------------------------------------------------------------------------------
-# Split tunneling on: the VPN isn't the default route; traffic from the chosen apps (their cgroup,
-# marked by nftables), to the chosen sites, and from the VPN's own address (a program bound to
+# Split tunneling on: the VPN isn't the default route; traffic from the chosen apps (started with
+# the crossbar-vpn group, so their sockets carry that group; marked by nftables), to the chosen sites, and from the VPN's own address (a program bound to
 # it, like the torrent engine) goes through it with routing table 2000. Marked apps' DNS goes to
 # the VPN's DNS server (through the tunnel), and their packets get the tunnel's address
 # (masquerade). Undone completely by {"enable": false} (and before every change).
@@ -446,9 +447,15 @@ def vpn_split(req):
     to = [n for n in (v4(x, "site") for x in (req.get("to") or [])[:256]) if n]
     frm = [n for n in (v4(x, "source", net=False) for x in (req.get("from") or [])[:4]) if n]
     dns = v4(req["dns"], "DNS", net=False) if req.get("dns") else None
-    cg = req.get("cgroup")
-    if cg is not None and not re.fullmatch(r"user\.slice/user-\d+\.slice/user@\d+\.service/cbviavpn\.slice", str(cg)):
-        fail("Bad app group")
+    gid = req.get("gid")
+    if gid is not None:
+        import grp
+        try:
+            if grp.getgrgid(int(gid)).gr_name != VPN_GROUP:
+                fail("Bad app group")
+        except (KeyError, ValueError, TypeError):
+            fail("Bad app group")
+        gid = int(gid)
     route = ["ip", "-4", "route", "add", "default"] + (["via", gw] if gw else []) + ["dev", dev, "table", SPLIT_TABLE]
     r = _run(*route)
     if r.returncode:
@@ -457,7 +464,7 @@ def vpn_split(req):
         _run("ip", "-4", "rule", "add", "to", n, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
     for a in frm:
         _run("ip", "-4", "rule", "add", "from", a, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
-    if cg:
+    if gid is not None:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
         dnat = (f"""  chain dns {{
     type nat hook output priority -100; policy accept;
@@ -468,7 +475,7 @@ def vpn_split(req):
         rules = f"""table inet crossbar_split {{
   chain out {{
     type route hook output priority mangle; policy accept;
-    socket cgroupv2 level 4 "{cg}" meta mark set {SPLIT_MARK}
+    meta skgid {gid} meta mark set {SPLIT_MARK} counter
   }}
 {dnat}  chain post {{
     type nat hook postrouting priority srcnat; policy accept;
@@ -482,7 +489,39 @@ def vpn_split(req):
             fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
         for k in ("all", dev):                    # replies arrive on the VPN for these: loose check
             _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
-    print(json.dumps({"ok": True, "sites": len(to), "apps": bool(cg), "dns": bool(dns)}))
+    print(json.dumps({"ok": True, "sites": len(to), "apps": gid is not None, "dns": bool(dns)}))
+
+
+VPN_GROUP = "crossbar-vpn"
+
+
+def vpn_group(req):
+    """The group apps that use the VPN run with (split tunneling); the person asking joins it."""
+    import grp
+    import pwd
+    try:
+        uid = int(os.environ.get("PKEXEC_UID", ""))
+        user = pwd.getpwuid(uid).pw_name
+    except (ValueError, KeyError):
+        fail("Couldn't tell who asked")
+    try:
+        grp.getgrnam(VPN_GROUP)
+    except KeyError:
+        r = _run("groupadd", "--system", VPN_GROUP)
+        if r.returncode:
+            fail(f"Couldn't make the {VPN_GROUP} group: {r.stderr.strip()}")
+    if user not in grp.getgrnam(VPN_GROUP).gr_mem:
+        r = _run("gpasswd", "-a", user, VPN_GROUP)
+        if r.returncode:
+            fail(f"Couldn't add {user} to {VPN_GROUP}: {r.stderr.strip()}")
+    print(json.dumps({"ok": True, "gid": grp.getgrnam(VPN_GROUP).gr_gid, "user": user}))
+
+
+def vpn_split_status(req):
+    """What's in place (for the split tunneling check): rules, routes, and how many packets were marked."""
+    out = {"rules": _run("ip", "-4", "rule", "show").stdout[-3000:], "route": _run("ip", "-4", "route", "show", "table", SPLIT_TABLE).stdout,
+           "nft": _run("nft", "list", "table", "inet", "crossbar_split").stdout[-3000:]}
+    print(json.dumps({"ok": True, **out}))
 
 
 if __name__ == "__main__":
@@ -490,7 +529,7 @@ if __name__ == "__main__":
         fail("crossbar-admin must run as root (via pkexec)")
     actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
                "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control,
-               "vpn-split": vpn_split}
+               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

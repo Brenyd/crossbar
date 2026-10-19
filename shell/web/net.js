@@ -17,7 +17,7 @@ async function vpnConnect() {
     if (!cur || cur.status === 'running') continue;
     if (cur.status === 'done') {
       const ip = await api.get('/api/vpn/ip').catch(() => ({}));
-      toast(`VPN connected${ip.ip ? ` · you're seen as ${ip.ip}${ip.country ? ` (${ip.country})` : ''}` : ''}`, 'network');
+      toast(`VPN connected${ip.vpn ? ` · VPN apps are seen as ${ip.vpn}${ip.vpn_country ? ` (${ip.vpn_country})` : ''}` : ''}`, 'network');
     } else toast(`VPN: ${cur.message}`, 'info');
     break;
   }
@@ -162,7 +162,7 @@ async function jobDialog(path, title, render) {
   }
   if (S.stack.length) reloadFolder();
 }
-const LEAK_MARK = { leak: '⚠ ', protected: '✓ ', exposed: '⚠ ', 'not-vpn': '⚠ ' };
+const LEAK_MARK = { leak: '⚠ ', protected: '✓ ', exposed: '⚠ ', 'not-vpn': '⚠ ', 'not-chosen': '⚠ ' };
 function torrentLeakTest() {
   return jobDialog('/api/leaktest/torrent', 'Torrent IP Leak Test', (cur) => {
     const r = cur.result;
@@ -170,6 +170,7 @@ function torrentLeakTest() {
     return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
       r.seen.length ? 'Trackers saw:' : 'Nothing reached the tracker (blocked, or "Only Use the VPN" with the VPN off).',
       ...r.seen.map((x) => `   ${x.ip}${x.ip === r.isp_ip ? '  ← your real address' : ''}${x.agent ? `   (${x.agent})` : ''}`),
+      r.verdict === 'not-chosen' ? 'Split tunneling is on and Torrents isn\'t one of the VPN apps. Turn on Torrents › Settings ›\nNetwork & VPN › Only Use the VPN (or add Torrents in VPN › Split Tunneling).' : '',
       r.isp_ip ? `Your address without the VPN: ${r.isp_ip}` : 'Your address without the VPN isn\'t known yet: check it once with the VPN off (Check My Address).',
       `VPN: ${r.vpn ? 'on' : 'off'}${r.bound ? ` · torrents bound to ${r.bound}` : ''}`];
   });
@@ -181,15 +182,47 @@ function dnsLeakTest() {
     return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
       `DNS servers used (${r.servers.length}):`, ...r.servers.slice(0, 8).map((x) => `   ${x.ip}  ${x.country}${x.asn ? ` · ${x.asn}` : ''}`),
       `Seen as: ${r.ip || '?'}${r.ip_country ? `  ${r.ip_country}` : ''}${r.ip_asn ? ` · ${r.ip_asn}` : ''}${r.ip === r.isp_ip ? '  ← your real address' : ''}`,
-      r.split ? 'Tested as an app that uses the VPN (split tunneling is on).' : '', r.conclusion ? `bash.ws: ${r.conclusion}` : ''];
+      r.split ? 'Tested as an app that uses the VPN (split tunneling is on).' : '',
+      r.verdict === 'not-vpn' && r.split ? 'VPN apps aren\'t going through the VPN: see Leak Tests › Check Split Tunneling.' : '',
+      r.verdict !== 'not-vpn' && r.conclusion ? `bash.ws: ${r.conclusion}` : ''];
   });
+}
+async function checkMyAddress() {
+  const ip = await call(() => api.get('/api/vpn/ip'));
+  if (!ip) return;
+  const lines = [];
+  if (!ip.connected) lines.push(`VPN off. Everything is seen as ${ip.normal || '?'}${ip.country ? ` (${ip.country})` : ''}.`);
+  else if (!ip.split) lines.push(`Everything uses the VPN, seen as ${ip.vpn || ip.normal || '?'}${ip.vpn_country ? ` (${ip.vpn_country})` : ''}.`);
+  else {
+    lines.push(`Apps that use the VPN are seen as: ${ip.vpn || '(couldn\'t check)'}${ip.vpn_country ? ` (${ip.vpn_country})` : ''}`);
+    lines.push(`Everything else is seen as: ${ip.normal || '?'}${ip.country ? ` (${ip.country})` : ''}`);
+    lines.push('', 'Split tunneling is on, so only the apps and sites you chose use the VPN —', 'the rest (and this menu) use your normal connection, as intended.');
+  }
+  message(lines.join('\n'), 'Your Address');
+}
+async function checkSplit() {
+  toast('Checking split tunneling…', 'network');
+  const r = await call(() => api.get('/api/vpn/check'));
+  if (!r) return;
+  const ok = r.app && r.vpn && r.app === r.vpn && r.app !== r.isp_ip;
+  const lines = [!r.connected ? 'The VPN is off: connect it first.' : !r.split ? 'Split tunneling is off: everything uses the VPN.'
+    : ok ? '✓ Working: VPN apps come out of the VPN.' : '⚠ Not working: VPN apps aren\'t using the VPN.', '',
+    `A VPN app is seen as: ${r.app || '?'}${r.app && r.app === r.isp_ip ? '  ← your real address' : ''}`,
+    `The VPN's own address is seen as: ${r.vpn || '?'}`,
+    `Crossbar itself is seen as: ${r.normal || '?'}`,
+    `VPN app group: ${r.group?.exists ? (r.group.member ? 'ready' : 'you\'re not in it yet') : 'not made yet'}${r.app_gid_ok === false ? ' · the test app didn\'t get it' : ''}`];
+  if (r.app_error) lines.push(`Test app: ${r.app_error}`);
+  if (r.helper?.error) lines.push(`System helper: ${r.helper.error}`);
+  else if (r.helper?.nft) { const m = r.helper.nft.match(/counter packets (\d+)/); if (m) lines.push(`Packets sent through the VPN for apps so far: ${m[1]}`); }
+  message(lines.join('\n'), 'Split Tunneling Check');
 }
 const LEAK_FOLDER = { key: 'leaks', label: 'Leak Tests', icon: 'search', sub: 'Torrent IP and DNS',
   children: async () => [
     { key: 'tleak', label: 'Torrent IP Leak Test', icon: 'download', sub: 'What address trackers see from your torrent client', action: torrentLeakTest },
     { key: 'dleak', label: 'DNS Leak Test', icon: 'network', sub: 'Which DNS servers your lookups go to', action: dnsLeakTest },
     { key: 'ip', label: 'Check My Address', icon: 'search', sub: 'What websites see',
-      action: async () => { const ip = await call(() => api.get('/api/vpn/ip')); if (ip) message(`${ip.ip || 'Unknown'}${ip.country ? `\nCountry: ${ip.country}` : ''}`, 'Your Address'); } },
+      action: checkMyAddress },
+    { key: 'split', label: 'Check Split Tunneling', icon: 'network', sub: 'Do VPN apps really use the VPN?', action: checkSplit },
   ] };
 
 const VPN_ITEM = {

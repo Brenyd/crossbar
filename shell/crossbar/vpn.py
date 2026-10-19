@@ -868,20 +868,39 @@ def stop_port_forward():
 
 
 # ---- split tunneling -----------------------------------------------------------------------------------
-# On (the default): nothing uses the VPN except the apps and sites you add. Chosen apps start in
-# their own systemd group (cbviavpn.slice); the root helper marks that group's traffic and sends
-# it, traffic to chosen sites, and anything using the VPN's own address (the torrent engine bound
-# to it) through the VPN with its own routing table; their DNS goes to the VPN's DNS server too.
-# Off: everything uses the VPN (it's the default route, and its DNS is the only DNS).
-VIA_SLICE = "cbviavpn.slice"
+# On (the default): nothing uses the VPN except the apps and sites you add. Chosen apps start with
+# the "crossbar-vpn" group (sg), so everything they open carries that group; the root helper marks
+# that group's traffic and sends it, traffic to chosen sites, and anything using the VPN's own
+# address (the torrent engine bound to it) through the VPN with its own routing table; their DNS
+# goes to the VPN's DNS server too. Off: everything uses the VPN (default route, its DNS only).
+# (A group works from any session — a TV login included — where moving apps into a systemd group
+# needs a desktop-style session.)
+VPN_GROUP = "crossbar-vpn"
 
 
 def split_on():
     return cfg().get("split", True) is not False
 
 
-def via_cgroup():
-    return f"user.slice/user-{os.getuid()}.slice/user@{os.getuid()}.service/{VIA_SLICE}"
+def _group():
+    """(gid, am I in it) for the VPN apps' group."""
+    import grp
+    import pwd
+    try:
+        g = grp.getgrnam(VPN_GROUP)
+    except KeyError:
+        return None, False
+    me = pwd.getpwuid(os.getuid()).pw_name
+    return g.gr_gid, (me in g.gr_mem or os.getgid() == g.gr_gid)
+
+
+def ensure_group():
+    """Make the group (once, through the root helper) and join it. Returns its gid."""
+    gid, member = _group()
+    if gid is None or not member:
+        r = _admin("vpn-group", {})
+        gid = r.get("gid")
+    return gid
 
 
 def uses_vpn(app_id):
@@ -902,22 +921,22 @@ def uses_vpn(app_id):
 
 
 def wrap(argv, app_id):
-    """Start an app in the VPN's group when it's one that uses the VPN (it takes effect whenever
-    the VPN is connected; with the VPN off the group is just a group)."""
-    if uses_vpn(app_id) and util.which("systemd-run"):
-        _ensure_slice()
-        return ["systemd-run", "--user", "--scope", "--quiet", f"--slice={VIA_SLICE}", "--", *argv]
-    return argv
-
-
-def _ensure_slice():
-    unit = os.path.join(util.HOME, ".config", "systemd", "user", VIA_SLICE)
-    if not os.path.exists(unit):
-        os.makedirs(os.path.dirname(unit), exist_ok=True)
-        with open(unit, "w") as f:
-            f.write("[Unit]\nDescription=Crossbar: apps that use the VPN\n\n[Slice]\n")
-        subprocess.run(["systemctl", "--user", "daemon-reload"], capture_output=True, timeout=15)
-    subprocess.run(["systemctl", "--user", "start", VIA_SLICE], capture_output=True, timeout=15)
+    """Start an app with the VPN apps' group when it's one that uses the VPN (it takes effect
+    whenever the VPN is connected; with the VPN off the group does nothing)."""
+    if not uses_vpn(app_id):
+        return argv
+    gid, member = _group()
+    if gid is None or not member or not util.which("sg"):
+        try:
+            ensure_group()
+        except RuntimeError as e:
+            print(f"vpn: group: {e}", flush=True)
+            return argv
+        gid, member = _group()
+        if not member:
+            return argv
+    import shlex
+    return ["sg", VPN_GROUP, "-c", "exec " + shlex.join(argv)]      # same process: sg execs the shell, the shell execs it
 
 
 def _resolve(targets):
@@ -959,11 +978,51 @@ def _vpn_addr():
 
 def apply_split():
     c = cfg()
-    _ensure_slice()
+    try:
+        gid = ensure_group()
+    except RuntimeError as e:
+        gid = None
+        _state["error"] = f"Apps can't be split off: {e}"
     addr = _vpn_addr()
     req = {"enable": True, "dev": _iface(), "gateway": None, "to": _resolve(c.get("vpn_sites") or []),
-           "from": [addr] if addr else [], "cgroup": via_cgroup(), "dns": _state.get("dns")}
+           "from": [addr] if addr else [], "gid": gid, "dns": _state.get("dns")}
     return _admin("vpn-split", req)
+
+
+def split_check():
+    """Is split tunneling really working? Asks the internet what it sees from Crossbar itself, from
+    an app in the VPN group, and from the VPN's own address; plus what the helper set up."""
+    import sys
+    from . import speedtest
+    out = {"split": split_on(), "connected": nm_state() == "activated", "isp_ip": cfg().get("isp_ip")}
+    out["normal"] = speedtest._trace().get("ip")
+    gid, member = _group()
+    out["group"] = {"exists": gid is not None, "member": member}
+    argv = wrap([sys.executable, "-c", "import sys,os;sys.path.insert(0,os.getcwd());from crossbar import speedtest;"
+                 "print(speedtest._trace().get('ip',''));print(os.getgid())"], "leaktest")
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        lines = r.stdout.strip().splitlines()
+        out["app"] = lines[0] if lines else None
+        out["app_gid_ok"] = bool(gid is not None and len(lines) > 1 and lines[1].strip() == str(gid))
+        out["app_error"] = r.stderr.strip()[-200:] if r.returncode else ""
+    except (OSError, subprocess.TimeoutExpired) as e:
+        out["app"], out["app_error"] = None, str(e)
+    src = _tunnel_source()
+    if src:
+        try:
+            c = http.client.HTTPSConnection("speed.cloudflare.com", timeout=10, source_address=src)
+            c.request("GET", "/cdn-cgi/trace", headers={"User-Agent": "Crossbar"})
+            out["vpn"] = dict(ln.split("=", 1) for ln in c.getresponse().read().decode().splitlines() if "=" in ln).get("ip")
+            c.close()
+        except OSError as e:
+            out["vpn"] = None
+            out["vpn_error"] = str(e)
+    try:
+        out["helper"] = _admin("vpn-split-status", {})
+    except RuntimeError as e:
+        out["helper"] = {"error": str(e)}
+    return out
 
 
 def clear_split():
@@ -981,6 +1040,32 @@ def _tunnel_source():
         if a:
             return (a, 0)
     return None
+
+
+def addresses():
+    """What the internet sees: from ordinary traffic, and through the VPN (with split tunneling on
+    those differ: only VPN apps use the VPN, and Crossbar's own checks aren't one)."""
+    from . import speedtest
+    t = speedtest._trace()
+    out = {"normal": t.get("ip"), "country": t.get("country"), "connected": nm_state() == "activated", "split": split_on(),
+           "isp_ip": cfg().get("isp_ip")}
+    if out["normal"] and (not out["connected"] or out["split"]):     # split on: ordinary traffic is your own line
+        _set(isp_ip=out["normal"])
+    src = _tunnel_source()
+    if src:
+        try:
+            c = http.client.HTTPSConnection("speed.cloudflare.com", timeout=10, source_address=src)
+            c.request("GET", "/cdn-cgi/trace", headers={"User-Agent": "Crossbar"})
+            kv = dict(ln.split("=", 1) for ln in c.getresponse().read().decode().splitlines() if "=" in ln)
+            c.close()
+            out["vpn"], out["vpn_country"] = kv.get("ip"), kv.get("loc")
+        except OSError as e:
+            out["vpn_error"] = str(e)
+    elif out["connected"] and not out["split"]:
+        out["vpn"], out["vpn_country"] = out["normal"], out["country"]          # everything uses the VPN
+    elif out["connected"]:
+        out["vpn_error"] = "Couldn't find the VPN's own address"
+    return out
 
 
 def _remember_isp_ip():
