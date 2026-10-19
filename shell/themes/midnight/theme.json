@@ -1,0 +1,11 @@
+{
+  "name": "Midnight",
+  "author": "Crossbar",
+  "description": "Deep blue waves, cool blue highlights",
+  "colors": { "accent": "#5aa9ff", "dim": "rgba(200,220,255,.55)", "highlight": "rgba(90,169,255,.22)", "panel": "rgba(4,10,24,.92)" },
+  "waves": { "mode": "fixed", "high": "#2c5fd6", "low": "#020814", "lines": "#a8c8ff", "sparkles": true },
+  "icons": { "glow": true, "color": "#e6efff" },
+  "keyboard": { "background": "rgba(4,12,30,.92)", "key": "rgba(90,169,255,.10)", "key_text": "#dce9ff",
+                "highlight": "#5aa9ff", "highlight_text": "#02101f", "radius": 14 },
+  "quick_menu": { "panel": "rgba(4,10,24,.93)", "highlight": "rgba(90,169,255,.25)", "accent": "#5aa9ff" }
+}

@@ -1,4 +1,4 @@
-# Crossbar — prototype 0.12.1
+# Crossbar — prototype 0.13
 
 An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
 flowing month-coloured waves, categories across, items down, folders, a △-style options
@@ -12,6 +12,15 @@ anything mpv can, with a controller-friendly control panel.
 ![Game category](docs/game.png)
 
 ![Music category](docs/music.png)
+
+### What's new in 0.13
+
+![Themes](docs/themes.png)
+
+**Themes**: Classic, Midnight, Phosphor and Sunset to start with, and your own: colours, waves,
+a background picture or video, font, icons, sounds, keyboard and Quick Menu colours, all from one
+folder. See **[docs/THEMES.md](docs/THEMES.md)** to make one. Also: PlayStation-style keyboard
+buttons, a faster start-up, Discord Share Screen from Crossbar, and calling friends.
 
 ### What's new in 0.12
 
@@ -365,8 +374,14 @@ Game details must be public). GOG and Epic aren't listed: they don't share achie
 
 ## On-screen keyboard
 
-Text fields open a QWERTY keyboard when you're using a controller: A types, B deletes, Y/△ is
-shift, L1/R1 move the cursor, Start is Done. Touch a real keyboard or mouse and it closes.
+Text fields open a QWERTY keyboard when you're using a controller. The buttons work like a
+PlayStation's keyboard (by button position, whatever controller you use):
+
+| ✕ | ○ | □ | △ | L1 / R1 | L2 | L3 | R2 or Options |
+|---|---|---|---|---|---|---|---|
+| type | close | backspace | space | move the cursor | shift (twice: caps) | symbols | done |
+
+Touch a real keyboard or mouse and it closes.
 In other apps it opens by itself in apps that support Wayland's text-input (GTK, Qt, and Crossbar's
 own web windows like Discord and TV apps), typing any character; anywhere else use **Quick Menu ›
 Keyboard**. It stays away from Steam, which has its own.
@@ -471,7 +486,7 @@ The Settings column groups related sections: **Display & Sound**, **Network & Bl
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
 | Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, frame rate overlay, demo library |
 | Artwork | SteamGridDB API key, fill in missing artwork, reset all |
-| Theme | Background colour, or automatic by month |
+| Theme | Theme packs (stock and your own, install from a folder or .zip), wave colour for Classic — see [docs/THEMES.md](docs/THEMES.md) |
 | Media | Music / Video / Photo folders, IPTV, resume videos, subtitles default |
 | Date & Time | Time zone, automatic time, 12/24-hour clock |
 | Accounts | Steam, GOG, Epic sign-in; Spotify; Discord (sign in, which voice channels show in Social); user name |

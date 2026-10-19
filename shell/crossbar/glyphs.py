@@ -108,10 +108,34 @@ def resolve(pad_names=None, cfg=None):
             actions[action] = label(pick, style, xpad)
     codes = {c: label(c, style, xpad) for c in
              ("BTN_SOUTH", "BTN_EAST", "BTN_NORTH", "BTN_WEST", *OTHER[style].keys())}
-    return {"style": style, "setting": setting, "actions": actions, "codes": codes}
+    # buttons by place, for the on-screen keyboard's PlayStation-style shortcuts
+    for k, v in {"west": FACE[style]["west"], "north": FACE[style]["north"], "l1": OTHER[style]["BTN_TL"],
+                 "r1": OTHER[style]["BTN_TR"], "l2": OTHER[style]["BTN_TL2"], "r2": OTHER[style]["BTN_TR2"],
+                 "l3": OTHER[style]["BTN_THUMBL"], "start": OTHER[style]["BTN_START"]}.items():
+        actions.setdefault("kb_" + k, v)
+    return {"style": style, "setting": setting, "actions": actions, "codes": codes, "xpad": xpad}
 
 
-TOKEN = re.compile(r"\{(ok|back|menu|home|prev|next|toggle|up|down|left|right)\}")
+TOKEN = re.compile(r"\{(ok|back|menu|home|prev|next|toggle|up|down|left|right|kb_west|kb_north|kb_l1|kb_r1|kb_l2|kb_r2|kb_l3|kb_start)\}")
+
+
+# The on-screen keyboard's buttons, PlayStation style (by button position, any controller):
+#   ✕ type · ○ close · □ backspace · △ space · L1/R1 cursor · L2 shift · R2 or Options done · L3 symbols
+def keyboard_action(token, action, xpad):
+    """What a press means while an on-screen keyboard is up (None: use the normal action)."""
+    base = AXES.get(token, token)
+    pos = position(base, xpad)
+    if pos == "west":
+        return "kb_backspace"
+    if pos == "north":
+        return "kb_space"
+    if pos == "east":
+        return "kb_close"
+    return {"BTN_TL": "kb_left", "BTN_TR": "kb_right", "BTN_TL2": "kb_shift", "BTN_TR2": "kb_done",
+            "BTN_THUMBL": "kb_symbols", "BTN_START": "kb_done"}.get(base)
+
+
+KEYBOARD_HINT = "{ok} Type   {kb_west} Delete   {kb_north} Space   {kb_l1} {kb_r1} Cursor   {kb_l2} Shift   {kb_l3} Symbols   {kb_r2} Done   {back} Close"
 
 
 def render(text, g):

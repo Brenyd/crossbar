@@ -64,25 +64,31 @@ class Api:
             return None
 
 
-def css(scale):
+def css(scale, theme=None):
     px = lambda n: f"{max(1, round(n * scale))}px"  # noqa: E731
+    t = theme or {}
+    qm, col, font = t.get("quick_menu") or {}, t.get("colors") or {}, t.get("font") or {}
+    panel, hl, acc = qm.get("panel", "rgba(8,8,10,0.90)"), qm.get("highlight", "rgba(255,255,255,0.15)"), qm.get("accent", "white")
+    text, dim = col.get("text", "white"), col.get("dim", "rgba(255,255,255,0.6)")
+    family = font.get("family", "Noto Sans")
     return f"""
     window, window.background {{ background: transparent; }}
-    .panel {{ background: rgba(8,8,10,0.90); padding: {px(48)} {px(36)} {px(36)} {px(56)}; }}
+    .panel, .panel label {{ font-family: "{family}", "Noto Sans", sans-serif; }}
+    .panel {{ background: {panel}; padding: {px(48)} {px(36)} {px(36)} {px(56)}; }}
     .shade {{ background: rgba(0,0,0,0.30); }}
-    .kicker {{ color: rgba(255,255,255,0.6); font-size: {px(15)}; letter-spacing: {px(5)}; }}
-    .title {{ color: white; font-size: {px(34)}; font-weight: 300; margin-bottom: {px(14)}; }}
+    .kicker {{ color: {dim}; font-size: {px(15)}; letter-spacing: {px(5)}; }}
+    .title {{ color: {text}; font-size: {px(34)}; font-weight: 300; margin-bottom: {px(14)}; }}
     .sep {{ background: rgba(255,255,255,0.22); min-height: 1px; margin-bottom: {px(10)}; }}
-    .row {{ padding: {px(10)} {px(18)}; border-radius: {px(8)}; color: rgba(255,255,255,0.62); }}
-    .row.on {{ background: rgba(255,255,255,0.15); color: white; box-shadow: inset {px(3)} 0 white; }}
+    .row {{ padding: {px(10)} {px(18)}; border-radius: {px(8)}; color: {dim}; }}
+    .row.on {{ background: {hl}; color: {text}; box-shadow: inset {px(3)} 0 {acc}; }}
     .row.danger.on {{ background: rgba(255,90,90,0.30); box-shadow: inset {px(3)} 0 #ff8080; }}
     .label {{ font-size: {px(23)}; font-weight: 300; }}
-    .sub {{ font-size: {px(16)}; color: rgba(255,255,255,0.6); }}
-    .hint {{ font-size: {px(14)}; color: rgba(255,255,255,0.6); }}
-    .foot {{ color: rgba(255,255,255,0.6); font-size: {px(15)}; margin-top: {px(12)}; }}
-    .notice {{ color: white; font-size: {px(17)}; margin-top: {px(8)}; }}
+    .sub {{ font-size: {px(16)}; color: {dim}; }}
+    .hint {{ font-size: {px(14)}; color: {dim}; }}
+    .foot {{ color: {dim}; font-size: {px(15)}; margin-top: {px(12)}; }}
+    .notice {{ color: {text}; font-size: {px(17)}; margin-top: {px(8)}; }}
     progressbar trough {{ min-height: {px(4)}; background: rgba(255,255,255,0.18); border: none; }}
-    progressbar progress {{ min-height: {px(4)}; background: white; border: none; }}
+    progressbar progress {{ min-height: {px(4)}; background: {acc}; border: none; }}
     .more {{ color: rgba(255,255,255,0.55); font-size: {px(16)}; }}
     image {{ color: inherit; }}
     """
@@ -113,11 +119,13 @@ class Overlay(Gtk.Application):
         height = mons.get_item(0).get_geometry().height if mons.get_n_items() else 1080
         width = mons.get_item(0).get_geometry().width if mons.get_n_items() else 1920
         scale = max(0.6, height / 1080)
+        try:
+            self.theme = self.api.get("/api/theme") or {}
+        except Exception:
+            self.theme = {}
         provider = Gtk.CssProvider()
-        if hasattr(provider, "load_from_string"):
-            provider.load_from_string(css(scale))
-        else:
-            provider.load_from_data(css(scale).encode())
+        self.provider, self.css_scale = provider, scale
+        self._load_css(provider, css(scale, self.theme))
         Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         root = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -157,11 +165,29 @@ class Overlay(Gtk.Application):
         self.make_hud(scale)
         self.glyph_data = {}
         self.osk = OskWindow(self, self.api, lambda t: glyphs.render(t, self.glyph_data or self.model.data.get("glyphs")), scale)
+        self.osk.set_theme(self.theme)
         self.osk.start_input_method()
         self.hold()
         threading.Thread(target=self.listen, daemon=True).start()
         threading.Thread(target=self.poll, daemon=True).start()
         print(f"overlay: ready ({width}x{height}, scale {scale:.2f})", flush=True)
+
+    @staticmethod
+    def _load_css(provider, text):
+        if hasattr(provider, "load_from_string"):
+            provider.load_from_string(text)
+        else:
+            provider.load_from_data(text.encode())
+
+    def apply_theme(self):
+        """Theme changed in Settings: restyle the Quick Menu and the keyboard right away."""
+        try:
+            self.theme = self.api.get("/api/theme") or {}
+        except Exception:
+            return False
+        self._load_css(self.provider, css(self.css_scale, self.theme))
+        self.osk.set_theme(self.theme)
+        return False
 
     # ---- PS5 temperature HUD: a small click-through box above everything, games included ----
     def make_hud(self, scale):
@@ -370,6 +396,8 @@ class Overlay(Gtk.Application):
                                 except Exception:
                                     pass
                             GLib.idle_add(self.osk.show, bool(ev.get("open")))
+                        elif ev.get("type") == "theme":
+                            GLib.idle_add(self.apply_theme)
                         elif ev.get("type") == "physical-input" and self.osk.visible:
                             threading.Thread(target=self.osk.close, daemon=True).start()
             except Exception as e:

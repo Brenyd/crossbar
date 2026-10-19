@@ -12,6 +12,7 @@ an action reports "couldn't find" and the window can still be used directly.
 Sign-in happens once in that window (Discord shows a QR code: scan it with the Discord
 app on your phone - no typing needed). Voice keeps running while the window is hidden.
 """
+import contextlib
 import json
 import os
 import re
@@ -451,7 +452,10 @@ class DiscordWeb:
     def debug(self):
         """What the friends reader can see (for bug reports)."""
         self.start()
-        return {**(self.js(self.DEBUG_JS % self.STORES_JS, timeout=15) or {}), "via": self.cache.get("friends_via")}
+        acts = self.js(f"(() => {{ const A = {self.ACTIONS_JS}; return A ? Object.keys(A) : null; }})()", timeout=15)
+        return {**(self.js(self.DEBUG_JS % self.STORES_JS, timeout=15) or {}), "via": self.cache.get("friends_via"),
+                "call_functions": acts,
+                "voice_buttons": self.js(f"{self.LABELS_JS}('share|screen|stream|call|disconnect|mute|deafen')")}
 
     # The call button in a DM's header. Its label has been "Start Voice Call"; match loosely
     # (never the video one), so small wording changes don't break calling.
@@ -547,11 +551,14 @@ class DiscordWeb:
       try { chunk.push([[Symbol('crossbar-actions')], {}, (r) => { req = r; }]); chunk.pop(); } catch (e) { return null; }
       if (!req || !req.c) return null;
       const out = {};
+      const fn = (o, n) => { try { return typeof o[n] === 'function'; } catch (e) { return false; } };
       const take = (obj) => {
         if (!obj || (typeof obj !== 'object' && typeof obj !== 'function')) return;
-        for (const name of ['selectVoiceChannel', 'openPrivateChannel', 'ensurePrivateChannel']) {
-          try { if (!out[name] && typeof obj[name] === 'function') out[name] = obj[name].bind(obj); } catch (e) { /* lazy */ }
-        }
+        // the channel actions object has both (a look-alike elsewhere wouldn't)
+        if (!out.selectVoiceChannel && fn(obj, 'selectVoiceChannel') && fn(obj, 'selectChannel')) out.selectVoiceChannel = obj.selectVoiceChannel.bind(obj);
+        if (!out.openPrivateChannel && fn(obj, 'openPrivateChannel')) out.openPrivateChannel = obj.openPrivateChannel.bind(obj);
+        if (!out.ensurePrivateChannel && fn(obj, 'ensurePrivateChannel')) out.ensurePrivateChannel = obj.ensurePrivateChannel.bind(obj);
+        if (!out.ring && fn(obj, 'ring') && fn(obj, 'stopRinging')) out.ring = obj.ring.bind(obj);
       };
       for (const m of Object.values(req.c)) {
         const ex = m && m.exports;
@@ -588,8 +595,9 @@ class DiscordWeb:
               if (!cid) return {{ ok: false, why: "Discord didn't create the DM" }};
             }}
             try {{ if (A.transitionTo) A.transitionTo('/channels/@me/' + cid); }} catch (e) {{ /* showing it is optional */ }}
-            if (!A.selectVoiceChannel) return {{ ok: false, why: 'selectVoiceChannel not found', cid }};
+            if (!A.selectVoiceChannel) return {{ ok: false, why: 'start-call function not found', cid }};
             A.selectVoiceChannel(cid);
+            if (A.ring) {{ await new Promise(r => setTimeout(r, 1200)); try {{ A.ring(cid); }} catch (e) {{ /* already ringing */ }} }}
             return {{ ok: true, cid }};
           }})()""", timeout=20) or {}
         return None if r.get("ok") else (r.get("why") or "unknown")
@@ -601,6 +609,10 @@ class DiscordWeb:
         if not re.fullmatch(r"\d+|name:.{1,100}", uid):
             raise ValueError("user id")
         self.start()
+        with self._laid_out():
+            return self._call(uid)
+
+    def _call(self, uid):
         notes = []
         if uid.isdigit():
             try:
@@ -639,13 +651,41 @@ class DiscordWeb:
     # The button must be pressed with a real (trusted) click: browsers only allow screen
     # capture from one. The screen is picked automatically (no picker to use on a TV).
     SHARE_BTN_JS = r"""((want) => {
-      const re = want === 'stop' ? /^(stop streaming|stop sharing|stop screen ?share)/i : /^(share your screen|share screen|screen ?share|go live)/i;
-      const b = [...document.querySelectorAll('button[aria-label], [role=button][aria-label]')].find((x) => re.test(x.getAttribute('aria-label')))
-             || (want === 'golive' ? [...document.querySelectorAll('button')].find((x) => /^go live$/i.test((x.innerText || '').trim())) : null);
+      const lab = (x) => x.getAttribute('aria-label') || '';
+      const visible = (x) => { const r = x.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
+      const all = [...document.querySelectorAll('[aria-label]')].filter(visible);
+      let b = null;
+      if (want === 'stop') b = all.find((x) => /^(stop (streaming|sharing|screen ?share|stream))/i.test(lab(x)));
+      else if (want === 'golive') b = [...document.querySelectorAll('button')].filter(visible).find((x) => /^go live$/i.test((x.innerText || '').trim()));
+      else b = all.find((x) => /share (your )?screen|screen ?share|^go live$|^stream/i.test(lab(x)) && !/stop|settings|end/i.test(lab(x)));
       if (!b) return null;
       const r = b.getBoundingClientRect();
       return [r.left + r.width / 2, r.top + r.height / 2];
     })"""
+
+    @contextlib.contextmanager
+    def _laid_out(self):
+        """While Crossbar works the page: lay it out at desktop size and treat it as focused.
+        Hidden away, the window can be small (Discord then tucks buttons like Share Your Screen
+        and Start Voice Call out of sight) and unfocused (keyboard shortcuts don't fire)."""
+        try:
+            self._cmd("Emulation.setFocusEmulationEnabled", {"enabled": True})
+            self._cmd("Emulation.setDeviceMetricsOverride", {"width": 1600, "height": 900, "deviceScaleFactor": 0, "mobile": False})
+            time.sleep(0.5)                       # let Discord re-layout
+        except DiscordError:
+            pass
+        try:
+            yield
+        finally:
+            for m, p in (("Emulation.clearDeviceMetricsOverride", {}), ("Emulation.setFocusEmulationEnabled", {"enabled": False})):
+                try:
+                    self._cmd(m, p)
+                except DiscordError:
+                    pass
+
+    # labels on the voice panel / chat header, for error messages ("what Crossbar could see")
+    LABELS_JS = r"""((re) => [...new Set([...document.querySelectorAll('[aria-label]')].map((x) => x.getAttribute('aria-label'))
+                       .filter((l) => l && new RegExp(re, 'i').test(l)))].slice(0, 12))"""
 
     def _trusted_click(self, xy):
         for t in ("mousePressed", "mouseReleased"):
@@ -666,17 +706,19 @@ class DiscordWeb:
             return {"sharing": False}
         if self.sharing():
             return {"sharing": True}
-        xy = self.js(f"{self.SHARE_BTN_JS}('start')")
-        if not xy:
-            raise DiscordError("Couldn't find Discord's Share Your Screen button")
-        self._trusted_click(xy)
-        for _ in range(30):                     # Discord may ask for quality first: press its Go Live
-            time.sleep(0.4)
-            if self.sharing():
-                return {"sharing": True}
-            golive = self.js(f"{self.SHARE_BTN_JS}('golive')")
-            if golive:
-                self._trusted_click(golive)
+        with self._laid_out():
+            xy = self.js(f"{self.SHARE_BTN_JS}('start')")
+            if not xy:
+                seen = ", ".join(self.js(f"{self.LABELS_JS}('share|screen|stream|camera|video|activit')") or []) or "none"
+                raise DiscordError(f"Couldn't find Discord's Share Your Screen button (voice panel buttons: {seen})")
+            self._trusted_click(xy)
+            for _ in range(30):                 # Discord may ask for quality first: press its Go Live
+                time.sleep(0.4)
+                if self.sharing():
+                    return {"sharing": True}
+                golive = self.js(f"{self.SHARE_BTN_JS}('golive')")
+                if golive:
+                    self._trusted_click(golive)
         raise DiscordError("Screen sharing didn't start (the screen-capture portal may be missing: update Crossbar)")
 
     def sign_out_local(self):

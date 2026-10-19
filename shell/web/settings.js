@@ -387,6 +387,25 @@ const BROWSER_SETTINGS = {
   },
 };
 
+// Settings › Theme › Install a Theme…: browse to a theme folder (has theme.json) or a .zip
+async function themeBrowse(path) {
+  const r = await api.get(`/api/fs?ext=.zip${path ? `&path=${encodeURIComponent(path)}` : ''}`);
+  const install = async (p) => {
+    const t = await call(() => api.post('/api/theme/install', { path: p }));
+    if (!t) return;
+    toast(`Installed ${t.name}`, 'palette');
+    if (await confirmBox(`Use ${t.name} now?`, 'Theme')) { await call(() => api.post('/api/theme/set', { id: t.id })); await Theme.load(); }
+    while (S.stack.length && S.stack.at(-1).source?.themeBrowse) S.stack.pop();
+    reloadFolder();
+  };
+  const items = [];
+  if (path) items.push({ key: 'here', label: 'Install This Folder', icon: 'check', sub: path, action: () => install(path) });
+  for (const f of r.files || []) items.push({ key: `z:${f.path}`, label: f.name, icon: 'download', sub: 'Install this theme', action: () => install(f.path) });
+  for (const d of r.dirs) items.push({ key: `d:${d.path}`, label: d.name, icon: 'folder', themeBrowse: true, children: () => themeBrowse(d.path) });
+  if (!items.length) items.push({ key: 'none', label: 'Nothing here', icon: 'info', sub: 'No folders or .zip files' });
+  return items;
+}
+
 const SETTINGS_FOLDERS = [
   {
     key: 'display', label: 'Display', icon: 'display', sub: 'Resolution, refresh rate, scale',
@@ -442,14 +461,29 @@ const SETTINGS_FOLDERS = [
   CONTROLS_FOLDER,
   GAMES_FOLDER,
   {
-    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Background colour',
+    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Theme packs, colour, adding your own',
     children: async () => {
       const st = S.state;
-      const cur = st.theme === 'auto' ? 0 : st.theme + 1;
-      const opts = [{ label: `${check(cur === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]
-        .concat(MONTHS.map((m, i) => ({ label: `${check(cur === i + 1)}${m} colour`, action: () => setSetting({ theme: i }).then(reloadFolder) })));
-      return [{ key: 'color', label: 'Theme Colour', icon: 'palette', sub: st.theme === 'auto' ? 'Automatic (changes monthly)' : `${MONTHS[st.theme]} colour`,
-        action: () => Options.show(opts, cur) }];
+      const [list, cur] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
+      const items = list.map((t) => ({
+        key: `t:${t.id}`, label: t.name, badge: t.id === cur.id ? 'ON' : t.user ? 'YOURS' : '',
+        sub: `${t.description}${t.author ? ' · by ' + t.author : ''}`,
+        ...(t.preview ? { art: t.preview, artTitle: t.name } : { icon: t.id === cur.id ? 'check' : 'palette' }),
+        action: async () => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } },
+        options: [{ label: 'Use This Theme', action: async () => { await call(() => api.post('/api/theme/set', { id: t.id })); await Theme.load(); reloadFolder(); } },
+          ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
+      }));
+      if (cur.waves.mode === 'month') {
+        const c = st.theme === 'auto' ? 0 : st.theme + 1;
+        const opts = [{ label: `${check(c === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]
+          .concat(MONTHS.map((m, i) => ({ label: `${check(c === i + 1)}${m} colour`, action: () => setSetting({ theme: i }).then(reloadFolder) })));
+        items.push({ key: 'color', label: 'Wave Colour', icon: 'palette', sub: st.theme === 'auto' ? 'Automatic (changes monthly)' : `${MONTHS[st.theme]} colour`,
+          action: () => Options.show(opts, c) });
+      }
+      items.push({ key: 'install', label: 'Install a Theme…', icon: 'add', sub: 'From a folder or .zip (USB stick, Downloads, network drive)', themeBrowse: true, children: () => themeBrowse(null) });
+      items.push({ key: 'how', label: 'Make Your Own', icon: 'info', sub: 'A folder with theme.json — see docs/THEMES.md on GitHub',
+        action: () => message('A theme is a folder with a theme.json file (colours, waves, background, font, keyboard),\nplus optional pictures: background.jpg, icons/<name>.svg, sounds/<name>.ogg, theme.css.\n\nPut it in ~/.local/share/crossbar/themes/ or install it from here.\nFull guide: github.com/Brenyd/crossbar/blob/main/docs/THEMES.md', 'Themes') });
+      return items;
     },
   },
   {
@@ -596,7 +630,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.12.1', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.12.1', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.13', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.13', 'About') },
       ];
     },
   },
@@ -665,7 +699,7 @@ const SETTINGS_GROUPS = [
   { key: 'g-games', label: 'Games & Emulation', icon: 'game', sub: 'Launching, Proton, artwork, emulators, achievements', keys: ['games', 'artwork', 'emulation'] },
   { key: 'media' },
   { key: 'accounts' },
-  { key: 'g-look', label: 'Theme & Time', icon: 'palette', sub: 'Background colour, clock, time zone', keys: ['theme', 'time'] },
+  { key: 'g-look', label: 'Theme & Time', icon: 'palette', sub: 'Themes, clock, time zone', keys: ['theme', 'time'] },
   { key: 'g-system', label: 'System', icon: 'system', sub: 'Updates, power, terminal, information', keys: ['ps5', 'system'], flatten: 'system' },
 ];
 const settingsFolder = (k) => SETTINGS_FOLDERS.find((f) => f.key === k);

@@ -109,13 +109,20 @@ def desktop_available():
     return target.startswith(("sddm", "plasmalogin"))
 
 
+def _leave():
+    """About to hand over to another session: give the user services their own settings back
+    (screen capture), then end sway."""
+    subprocess.Popen(["sh", "-c", "/usr/local/bin/crossbar-portal stop 2>/dev/null; sleep 1; swaymsg exit"],
+                     start_new_session=True)
+
+
 def switch_session(target):
     """PS5 setup: leave Crossbar for gaming mode ("gamescope") or Plasma ("desktop")."""
     if target not in ("gamescope", "desktop"):
         raise ValueError(target)
     with open(PS5_TOKEN, "w") as f:
         f.write(target + "\n")
-    subprocess.Popen(["sh", "-c", "sleep 1; swaymsg exit"], start_new_session=True)
+    _leave()
 
 
 def switch_to_desktop():
@@ -125,7 +132,7 @@ def switch_to_desktop():
         # TTY setup: hand tty1 back to your own startup (gaming mode / Plasma) until you return
         with open(BOOT_FILE, "w") as f:
             f.write("system\n")
-        subprocess.Popen(["sh", "-c", "sleep 1; swaymsg exit"], start_new_session=True)
+        _leave()
         return
     import json
     r = subprocess.run(["pkexec", "/usr/lib/crossbar/admin.py", "boot-session"], input=json.dumps({"session": "desktop"}),
@@ -137,12 +144,11 @@ def switch_to_desktop():
     if not res.get("ok"):
         raise RuntimeError(res.get("error"))
     # the login manager logs straight back in, into the desktop
-    subprocess.Popen(["sh", "-c", "sleep 1; swaymsg exit"], start_new_session=True)
+    _leave()
 
 
 def exit_session():
-    from . import system
-    system._swaymsg("exit")
+    _leave()
 
 
 # ---- don't outlive the screen ----------------------------------------------------

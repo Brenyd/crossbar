@@ -49,11 +49,13 @@ const Sfx = (() => {
       o.connect(g).connect(ac.destination); o.start(t0); o.stop(t0 + dur + 0.02);
     } catch (e) { /* audio not available */ }
   }
+  const themed = (n) => !!S.state?.sounds && typeof Theme !== 'undefined' && Theme.play(n);
   return {
-    move: () => tone(1450, 0.05, 0.03),
-    ok: () => { tone(880, 0.09, 0.05); tone(1320, 0.12, 0.04, 0.05); },
-    back: () => tone(660, 0.1, 0.04),
-    err: () => { tone(300, 0.15, 0.05); tone(220, 0.2, 0.05, 0.1); },
+    // a theme pack's sounds/ files replace these beeps
+    move: () => themed('move') || tone(1450, 0.05, 0.03),
+    ok: () => themed('ok') || (tone(880, 0.09, 0.05), tone(1320, 0.12, 0.04, 0.05)),
+    back: () => themed('back') || tone(660, 0.1, 0.04),
+    err: () => themed('err') || (tone(300, 0.15, 0.05), tone(220, 0.2, 0.05, 0.1)),
   };
 })();
 
@@ -62,8 +64,8 @@ const Sfx = (() => {
 // button mapped to that action, in the style picked in Settings (Xbox / PlayStation / Nintendo).
 const DIR_GLYPH = { up: '▲', down: '▼', left: '◀', right: '▶' };
 function gl(text) {
-  return String(text ?? '').replace(/\{(ok|back|menu|home|prev|next|toggle|up|down|left|right)\}/g,
-    (m, a) => S.state?.glyphs?.actions?.[a] || DIR_GLYPH[a] || ({ ok: 'A', back: 'B', menu: 'Y', prev: 'LB', next: 'RB' })[a] || a);
+  return String(text ?? '').replace(/\{(ok|back|menu|home|prev|next|toggle|up|down|left|right|kb_west|kb_north|kb_l1|kb_r1|kb_l2|kb_r2|kb_l3|kb_start)\}/g,
+    (m, a) => S.state?.glyphs?.actions?.[a] || DIR_GLYPH[a] || ({ ok: 'A', back: 'B', menu: 'Y', prev: 'LB', next: 'RB', kb_west: 'X', kb_north: 'Y', kb_l1: 'LB', kb_r1: 'RB', kb_l2: 'LT', kb_r2: 'RT', kb_l3: 'LS', kb_start: 'Menu' })[a] || a);
 }
 // PlayStation symbols are drawn (font glyphs like △ sit off-centre); everything else is text
 const PS_SVG = {
@@ -742,6 +744,7 @@ function connectEvents() {
       clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
     }
     if (ev.type === 'art') { refresh('game'); return; }
+    if (ev.type === 'theme') { Theme.load(); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }
     if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
@@ -855,12 +858,21 @@ async function boot() {
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');
   render();
+  // The splash goes as soon as the Game column is ready (other columns fill in behind it; some
+  // wait on the network on a cold boot) and never stays more than 10 s.
+  let booted = false;
+  const reveal = () => { if (booted) return; booted = true; $('#boot').classList.add('done'); Sfx.ok(); };
+  setTimeout(reveal, 10000);
   for (let tries = 0; ; tries++) {
     try { await loadState(); break; } catch { await new Promise((r) => setTimeout(r, 500)); }
   }
+  await Promise.race([Theme.load(), new Promise((r) => setTimeout(r, 2000))]);
   S.items = {};
-  await Promise.all(CATS.map((c) => refresh(c.id)));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const others = Promise.all(CATS.filter((c) => c.id !== 'game').map((c) => refresh(c.id)));
+  await Promise.race([refresh('game'), sleep(4000)]);
   render();
-  setTimeout(() => { $('#boot').classList.add('done'); Sfx.ok(); }, 900);
+  setTimeout(reveal, 300);
+  others.then(() => render());
   if (S.state.pads?.error) setTimeout(() => toast(S.state.pads.error, 'game'), 2500);
 }

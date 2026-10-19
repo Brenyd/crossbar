@@ -29,6 +29,7 @@ const Osk = {
     if (!input) return;
     this.input = input; this.onDone = onDone; this.open = true;
     api.post('/api/osk/show', { on: false }).catch(() => {});   // never two keyboards: close the system one
+    api.post('/api/osk/web', { open: true }).catch(() => {});   // □ △ L2 R2 L3 work as keyboard buttons
     this.layer = 'abc'; this.shift = false; this.caps = false; this.r = 1; this.c = 0;
     input.focus();
     try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* password fields */ }
@@ -39,6 +40,7 @@ const Osk = {
   hide(done = false) {
     if (!this.open) return;
     this.open = false;
+    api.post('/api/osk/web', { open: false }).catch(() => {});
     $('#osk').hidden = true;
     document.body.classList.remove('osk-open');
     const cb = this.onDone; this.onDone = null;
@@ -58,7 +60,7 @@ const Osk = {
       `<div class="osk-key${r === this.r && c === this.c ? ' on' : ''}${k === '⇧' && (this.shift || this.caps) ? ' lit' : ''}${k.length > 1 && k !== 'space' ? ' fn' : ''}"
             style="flex:${OSK_WIDE[k] || 1}" data-r="${r}" data-c="${c}">${esc(this.label(k))}</div>`).join('')}</div>`).join('');
     $('#osk .osk-keys').innerHTML = html;
-    $('#osk .osk-hint').innerHTML = `${glb('ok')}Type ${glb('back')}Delete ${glb('menu')}Shift ${glb('prev')}${glb('next')}Cursor ${glb('toggle')}Done`;
+    $('#osk .osk-hint').innerHTML = `${glb('ok')}Type ${glb('kb_west')}Delete ${glb('kb_north')}Space ${glb('kb_l1')}${glb('kb_r1')}Cursor ${glb('kb_l2')}Shift ${glb('kb_l3')}Symbols ${glb('kb_r2')}Done ${glb('back')}Close`;
   },
 
   // moving between rows keeps the column under the same spot (rows have different key widths)
@@ -115,13 +117,27 @@ const Osk = {
     this.render();
   },
 
+  // PlayStation-style keyboard buttons (the backend sends these while the keyboard is up)
+  kb(action) {
+    if (action === 'kb_backspace') this.backspace();
+    else if (action === 'kb_space') this.insert(' ');
+    else if (action === 'kb_left') this.cursor(-1);
+    else if (action === 'kb_right') this.cursor(1);
+    else if (action === 'kb_shift') { if (this.shift && !this.caps) { this.caps = true; this.shift = false; } else if (this.caps) this.caps = false; else this.shift = true; }
+    else if (action === 'kb_symbols') { this.layer = this.layer === 'abc' ? 'sym' : 'abc'; this.c = Math.min(this.c, this.keys()[this.r].length - 1); }
+    else if (action === 'kb_done') { this.hide(true); return; }
+    else if (action === 'kb_close') { this.hide(false); return; }
+    if (this.open) { Sfx.move(); this.render(); }
+  },
+
   handle(action) {
+    if (action.startsWith('kb_')) return this.kb(action);
     if (action === 'up' || action === 'down') this.moveRow(action === 'up' ? -1 : 1);
     else if (action === 'left' || action === 'right') {
       const n = this.keys()[this.r].length;
       this.c = (this.c + (action === 'left' ? -1 : 1) + n) % n;
     } else if (action === 'ok') return this.press();
-    else if (action === 'back') this.backspace();
+    else if (action === 'back') { this.hide(false); return; }
     else if (action === 'menu' || action === 'opt') { this.shift = !this.shift; this.caps = false; }
     else if (action === 'prev') this.cursor(-1);
     else if (action === 'next') this.cursor(1);

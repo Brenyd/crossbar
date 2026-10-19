@@ -86,6 +86,13 @@
 - [x] Discord: Share Screen (Social / Quick Menu), with the wlroots screen-capture portal set up for the Crossbar session
 - [x] Discord: calling friends through Discord's own start-call (rings them; creates the DM if needed)
 
+## 0.13
+- [x] Themes: colours, waves, background picture/video, font, icons, sounds, keyboard and Quick Menu; four stock themes; install from folder/.zip; docs/THEMES.md
+- [x] On-screen keyboard: PlayStation-style buttons (□ backspace, △ space, L1/R1 cursor, L2 shift, L3 symbols, R2 done, ○ close)
+- [x] Start-up: the splash goes once the Game column is ready (max 10 s), not after every category
+- [x] Screen capture setup restored when leaving Crossbar; KDE repairs leftovers at login
+- [x] Discord: Share Screen found at desktop layout size; calling via Discord's own functions, with a Discord Check report
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

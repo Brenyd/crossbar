@@ -104,8 +104,8 @@ def scan(kind, limit=3000):
     return out
 
 
-def browse_dirs(path=None):
-    """Folder picker: subfolders of path, or a list of starting places."""
+def browse_dirs(path=None, ext=None):
+    """Folder picker: subfolders of path, or a list of starting places. ext (".zip"): also those files."""
     if not path:
         places = [{"name": "Home", "path": util.HOME}]
         for name in ("Music", "Videos", "Pictures", "Games", "Downloads"):
@@ -120,9 +120,11 @@ def browse_dirs(path=None):
         return {"path": None, "dirs": places}
     if not allowed(path):
         raise PermissionError("Folder not allowed")
-    dirs = [{"name": e.name, "path": e.path} for e in sorted(os.scandir(path), key=lambda e: e.name.lower())
-            if e.is_dir() and not e.name.startswith(".")]
-    return {"path": path, "dirs": dirs}
+    entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
+    dirs = [{"name": e.name, "path": e.path} for e in entries if e.is_dir() and not e.name.startswith(".")]
+    files = [{"name": e.name, "path": e.path} for e in entries
+             if ext and e.is_file() and e.name.lower().endswith(ext.lower()) and not e.name.startswith(".")]
+    return {"path": path, "dirs": dirs, "files": files}
 
 
 # ---- artwork -------------------------------------------------------------

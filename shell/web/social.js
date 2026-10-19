@@ -112,7 +112,8 @@ function discordFriendsFolder() {
         key: `df:${f.id}`, label: f.name, sub: `${f.status || 'Online'} · {ok} call`,
         ...(f.avatar ? { art: f.avatar, artTitle: f.name, artShape: 'poster' } : { icon: 'user' }),
         action: () => callFriend(f, d.voice),
-        options: [{ label: 'Call', action: () => callFriend(f, d.voice) }, { label: 'Open Discord', action: () => openDiscord() }],
+        options: [{ label: 'Call', action: () => callFriend(f, d.voice) }, { label: 'Open Discord', action: () => openDiscord() },
+                  { label: 'Discord Check (for a bug report)', action: async () => { const r = await call(() => api.get('/api/discord/debug')); if (r) message(JSON.stringify(r, null, 1), 'Discord Check'); } }],
       }));
     },
   };

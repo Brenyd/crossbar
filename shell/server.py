@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import artwork, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import artwork, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -126,6 +126,7 @@ def state():
         "demo": demo_on(),
         "user": cfg["user"],
         "theme": cfg["theme"],
+        "theme_pack": themes.current_id(),
         "sounds": cfg["sounds"],
         "providers": [{"id": p.id, "name": p.name, "login_fields": p.login_fields,
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
@@ -435,6 +436,8 @@ GET = {
     "/api/discord/friends": lambda q: DISCORD.friends(),
     "/api/discord/debug": lambda q: DISCORD.debug(),
     "/api/browser/info": lambda q: BROWSER.info(),
+    "/api/theme": lambda q: themes.current(),
+    "/api/themes": lambda q: themes.available(),
     "/api/browser/bookmarks": lambda q: {"bookmarks": BROWSER.bookmarks(), "size": __import__("crossbar.browser", fromlist=["size"]).size()},
     "/api/friends/steam": lambda q: friends.steam_friends(),
     "/api/discord/channels": lambda q: DISCORD.voice_channels(q["guild_id"]),
@@ -453,7 +456,7 @@ GET = {
     "/api/art/grids": lambda q: artwork.grids(game_id=q.get("game_id"), steam_appid=q.get("steam_appid")),
     "/api/media/list": lambda q: media.listdir(q["kind"], q.get("path") or None),
     "/api/media/scan": lambda q: media.scan(q["kind"]),
-    "/api/fs": lambda q: media.browse_dirs(q.get("path") or None),
+    "/api/fs": lambda q: media.browse_dirs(q.get("path") or None, q.get("ext") if q.get("ext") in (".zip",) else None),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -545,6 +548,20 @@ def route_post(path, b):
         return r_install(b)
     if head == "uninstall":
         return r_uninstall(b)
+    if head == "theme":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "set":
+            t = themes.set_theme(b["id"])
+        elif what == "install":
+            t = themes.install(b["path"])
+        elif what == "remove":
+            r = themes.remove(b["id"])
+            HUB.publish({"type": "theme"})
+            return r
+        else:
+            raise KeyError(what)
+        HUB.publish({"type": "theme"})
+        return t
     if head == "steam" and len(parts) > 1 and parts[1] == "bigpicture":
         return r_bigpicture()
     if head == "jobs" and len(parts) > 1 and parts[1] == "cancel":
@@ -734,6 +751,9 @@ def route_post(path, b):
             PADS.set_osk(on)
             HUB.publish({"type": "osk", "open": on})
             return {"open": on}
+        if what == "web":                  # the menu's own keyboard opened / closed (PlayStation-style buttons)
+            PADS.osk_web = bool(b.get("open"))
+            return {"open": PADS.osk_web}
         if what == "type":
             f = system.focused() or {}
             if system.is_xmb(f) or "xmb" in f.get("marks", []):
@@ -970,6 +990,12 @@ class Handler(BaseHTTPRequestHandler):
             if not os.path.exists(quick.SHOT):
                 return self._send(404, b"none", "text/plain")
             return self._send_file(quick.SHOT, "image/jpeg")
+        if path.startswith("/theme/"):            # a theme's pictures, fonts, sounds, css
+            parts = urllib.parse.unquote(path[len("/theme/"):]).split("/", 1)
+            hit = themes.file_path(parts[0], parts[1]) if len(parts) == 2 else None
+            if not hit:
+                return self._send(404, b"not found", "text/plain")
+            return self._send_file(hit[0], hit[1], cache=True)
         if path in ("/api/thumb", "/api/file"):
             p = q.get("path", "")
             if path == "/api/thumb":

@@ -1,0 +1,11 @@
+{
+  "name": "Sunset",
+  "author": "Crossbar",
+  "description": "A warm desert-dusk picture behind soft waves",
+  "colors": { "accent": "#ffb36b", "dim": "rgba(255,236,220,.6)", "highlight": "rgba(255,179,107,.2)", "panel": "rgba(30,10,14,.9)" },
+  "waves": { "mode": "fixed", "high": "#ff8a4c", "low": "#2a0a1a", "lines": "#ffe2c4", "sparkles": true, "opacity": 0.7 },
+  "background": { "image": "background.svg", "dim": 0.25, "blur": 0, "waves_on_top": true },
+  "keyboard": { "background": "rgba(36,12,20,.9)", "key": "rgba(255,200,160,.10)", "key_text": "#ffeadb",
+                "highlight": "#ffb36b", "highlight_text": "#2a0a12", "radius": 18 },
+  "quick_menu": { "panel": "rgba(30,10,14,.92)", "highlight": "rgba(255,179,107,.24)", "accent": "#ffb36b" }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Classic",
+  "author": "Crossbar",
+  "description": "Flowing waves in a colour that changes every month",
+  "waves": { "mode": "month" }
+}

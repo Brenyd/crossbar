@@ -25,6 +25,8 @@ const ICONS = {
   refresh: '<path d="M50 24A20 20 0 0 0 14 22M14 40a20 20 0 0 0 36 2"/><path d="M50 10v14H36M14 54V40h14"/>',
 };
 function icon(name) {
+  const themed = typeof Theme !== 'undefined' && Theme.icon(name);     // the theme pack's own icon
+  if (themed) return themed;
   return `<svg viewBox="0 0 64 64" class="i">${ICONS[name] || ICONS.folder}</svg>`;
 }
 Object.assign(ICONS, {

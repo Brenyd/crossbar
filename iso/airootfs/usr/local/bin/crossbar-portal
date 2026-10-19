@@ -1,12 +1,58 @@
 #!/bin/bash
-# Run by sway at the start of the Crossbar session: tell D-Bus / systemd services which
-# Wayland display this is (the screen-capture portal needs it), then (re)start the portal so
-# it serves this session rather than one left from Plasma or gaming mode.
-#   crossbar-portal stop   — after the session ends, so the next session starts its own
-if [[ "${1:-}" == stop ]]; then
-  systemctl --user stop xdg-desktop-portal-wlr.service xdg-desktop-portal.service 2>/dev/null
-  exit 0
-fi
+# Screen capture (Discord's Share Screen) for the Crossbar session, without touching other sessions.
+#
+#   crossbar-portal          (sway, at session start) save the user services' environment, point
+#                            it at this sway session, (re)start the portal
+#   crossbar-portal stop     (session end / before switching to the desktop) put the saved
+#                            environment back exactly and stop the portal, so the next session
+#                            (Plasma, gaming mode) starts its own
+#   crossbar-portal fix-kde  (Plasma autostart) if a Crossbar session left its values behind
+#                            (it crashed or was killed), repair them and restart the portal
+VARS=(WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK)
+SAVE="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/crossbar-portal.saved"
+
+current() {   # VAR=value lines from the user service manager
+  systemctl --user show-environment 2>/dev/null | grep -E "^($(IFS='|'; echo "${VARS[*]}"))="
+}
+
+restore() {
+  [[ -f "$SAVE" ]] || return 1
+  local set=() unset=()
+  for v in "${VARS[@]}"; do
+    line=$(grep -E "^$v=" "$SAVE")
+    if [[ -n "$line" ]]; then set+=("$line"); else unset+=("$v"); fi
+  done
+  ((${#unset[@]})) && systemctl --user unset-environment "${unset[@]}" 2>/dev/null
+  ((${#set[@]})) && systemctl --user set-environment "${set[@]}" 2>/dev/null
+  # D-Bus-activated services (no systemd unit) read D-Bus's own copy; it can't unset, so blank
+  # what wasn't there and restore what was
+  local dbus=("${set[@]}")
+  for v in "${unset[@]}"; do dbus+=("$v="); done
+  ((${#dbus[@]})) && dbus-update-activation-environment "${dbus[@]}" 2>/dev/null
+  rm -f "$SAVE"
+}
+
+case "${1:-}" in
+  stop)
+    restore
+    systemctl --user stop xdg-desktop-portal-wlr.service xdg-desktop-portal.service 2>/dev/null
+    exit 0 ;;
+  fix-kde)
+    # Plasma: if the service manager still says this is sway, it's a leftover from Crossbar
+    if current | grep -qE '^XDG_CURRENT_DESKTOP=sway$' && [[ "${XDG_CURRENT_DESKTOP:-}" != sway ]]; then
+      rm -f "$SAVE"
+      systemctl --user unset-environment SWAYSOCK 2>/dev/null
+      dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE 2>/dev/null
+      systemctl --user stop xdg-desktop-portal-wlr.service 2>/dev/null
+      systemctl --user restart xdg-desktop-portal.service 2>/dev/null
+      echo "crossbar-portal: repaired the desktop's screen-capture setup"
+    fi
+    exit 0 ;;
+esac
+
+# session start: remember what was there (only once, so a restart inside the session keeps
+# the values from before Crossbar), then switch to this session
+[[ -f "$SAVE" ]] || current >"$SAVE"
 dbus-update-activation-environment --systemd WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK 2>/dev/null \
   || systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE SWAYSOCK
 systemctl --user stop xdg-desktop-portal-wlr.service xdg-desktop-portal.service 2>/dev/null

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Crossbar screen-capture repair
+Comment=Undo screen-capture settings a Crossbar session left behind (only acts if it finds some)
+Exec=/usr/local/bin/crossbar-portal fix-kde
+OnlyShowIn=KDE;
+NoDisplay=true
+X-KDE-autostart-phase=1

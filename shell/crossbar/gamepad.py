@@ -181,7 +181,16 @@ class Gamepads:
         """True when the controller was used more recently than a real keyboard/mouse."""
         return getattr(self, "last_pad", 0) > getattr(self, "last_physical", 0)
 
+    def keyboard_up(self):
+        """An on-screen keyboard has the controller (the system one, or the menu's own)."""
+        return getattr(self, "osk_open", False) or (getattr(self, "osk_web", False) and self._target() == "xmb")
+
     def _press(self, action, token=""):
+        if token and action not in controls.DIRECTIONS and action != "home" and self.keyboard_up():
+            from . import glyphs
+            kb = glyphs.keyboard_action(token.split("+")[0], action, glyphs.xpad_layout(list(self.names.values())))
+            if kb:
+                action = kb
         if action == "home":
             self.log.appendleft({"t": time.time(), "token": token, "action": action, "to": "quick menu"})
             self.on_home()
@@ -194,7 +203,16 @@ class Gamepads:
             self._held[action] = time.time() + REPEAT_DELAY
 
     def _raw(self, token, pressed):
-        """Buttons/axes no action uses: extras in the browser."""
+        """Buttons/axes no action uses: the keyboard's L2/R2/L3, extras in the browser."""
+        if pressed and self.keyboard_up():
+            from . import glyphs
+            kb = glyphs.keyboard_action(token, None, glyphs.xpad_layout(list(self.names.values())))
+            if kb:
+                self.last_pad = time.time()
+                target = "osk" if getattr(self, "osk_open", False) else "xmb"
+                self.log.appendleft({"t": time.time(), "token": token, "action": kb, "to": target})
+                self._send(kb, target)
+                return
         action = BROWSER_RAW.get(token)
         if not action:
             return
@@ -345,7 +363,7 @@ class Gamepads:
                 self._release(a)
             return
         actions = self._keymap.get(code, [])
-        if not actions and value in (0, 1) and token in BROWSER_RAW:
+        if not actions and value in (0, 1) and (token in BROWSER_RAW or token in ("BTN_TL2", "BTN_TR2", "BTN_THUMBL")):
             return self._raw(token, value == 1)
         if value == 1 and not actions:
             self.log.appendleft({"t": time.time(), "token": token, "action": None, "to": "unmapped"})

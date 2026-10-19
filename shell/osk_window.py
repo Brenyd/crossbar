@@ -35,14 +35,16 @@ WIDE = {"space": 5, "Done": 2, "?123": 1.5, "abc": 1.5, ".com": 1.5, "https://":
 UNITS = 24          # grid columns per row (keys span WIDE units * 2)
 
 CSS = """
-.osk { background: rgba(12,12,16,0.86); border-radius: {r}px; padding: {p}px; }
-.osk label.key { background: rgba(255,255,255,0.07); border-radius: {kr}px; color: #e9e9e9;
-                 font-family: 'Noto Sans', sans-serif; font-size: {fs}px; min-height: {kh}px; }
-.osk label.key.fn { color: #a9a9a9; font-size: {ffs}px; }
-.osk label.key.lit { color: #fff; }
-.osk label.key.on { background: rgba(255,255,255,0.9); color: #111; }
-.osk label.hint { color: #a9a9a9; font-size: {hs}px; }
+.osk { background: {bg}; border-radius: {r}px; padding: {p}px; }
+.osk label.key { background: {key}; border-radius: {kr}px; color: {text};
+                 font-family: '{font}', 'Noto Sans', sans-serif; font-size: {fs}px; min-height: {kh}px; }
+.osk label.key.fn { color: {dim}; font-size: {ffs}px; }
+.osk label.key.lit { color: {text}; }
+.osk label.key.on { background: {hl}; color: {hltext}; }
+.osk label.hint { color: {dim}; font-size: {hs}px; }
 """
+KB_DEFAULT = {"background": "rgba(12,12,16,0.86)", "key": "rgba(255,255,255,0.07)", "key_text": "#e9e9e9",
+              "highlight": "rgba(255,255,255,0.9)", "highlight_text": "#111", "radius": 12}
 
 
 class OskWindow:
@@ -60,14 +62,8 @@ class OskWindow:
             LayerShell.set_anchor(win, LayerShell.Edge.BOTTOM, True)
             LayerShell.set_margin(win, LayerShell.Edge.BOTTOM, int(30 * scale))
         css = Gtk.CssProvider()
-        text = (CSS.replace("{r}", str(int(22 * scale))).replace("{p}", str(int(20 * scale)))
-                .replace("{kr}", str(int(12 * scale))).replace("{fs}", str(int(30 * scale)))
-                .replace("{ffs}", str(int(20 * scale))).replace("{kh}", str(int(66 * scale)))
-                .replace("{hs}", str(int(17 * scale))))
-        if hasattr(css, "load_from_string"):
-            css.load_from_string(text)
-        else:
-            css.load_from_data(text.encode())
+        self.css = css
+        self.set_theme({})
         from gi.repository import Gdk
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 2)
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=int(8 * scale))
@@ -81,6 +77,22 @@ class OskWindow:
         win.set_child(box)
         self.win = win
         self.cells = []
+
+    def set_theme(self, theme):
+        """Colours, roundness and font from the theme pack (Settings › Theme)."""
+        k = {**KB_DEFAULT, **((theme or {}).get("keyboard") or {})}
+        s = self.scale
+        text = (CSS.replace("{r}", str(int((k["radius"] + 10) * s))).replace("{p}", str(int(20 * s)))
+                .replace("{kr}", str(int(k["radius"] * s))).replace("{fs}", str(int(30 * s)))
+                .replace("{ffs}", str(int(20 * s))).replace("{kh}", str(int(66 * s))).replace("{hs}", str(int(17 * s)))
+                .replace("{bg}", k["background"]).replace("{key}", k["key"]).replace("{text}", k["key_text"])
+                .replace("{hl}", k["highlight"]).replace("{hltext}", k["highlight_text"])
+                .replace("{dim}", ((theme or {}).get("colors") or {}).get("dim", "#a9a9a9"))
+                .replace("{font}", ((theme or {}).get("font") or {}).get("family", "Noto Sans")))
+        if hasattr(self.css, "load_from_string"):
+            self.css.load_from_string(text)
+        else:
+            self.css.load_from_data(text.encode())
 
     # ---- drawing ---------------------------------------------------------------------
     def rows(self):
@@ -116,7 +128,8 @@ class OskWindow:
                 col += span
             self.cells.append(cells)
         g = self.glyph
-        self.hint.set_text(g("{ok} Type     {back} Delete     {menu} Shift     {prev} {next} Cursor     {toggle} Done"))
+        from crossbar.glyphs import KEYBOARD_HINT
+        self.hint.set_text(g(KEYBOARD_HINT))
 
     # ---- show / hide ---------------------------------------------------------------------
     def show(self, on):
@@ -183,6 +196,32 @@ class OskWindow:
     def act(self, a):
         if not self.visible:
             return False
+        if a.startswith("kb_"):              # PlayStation-style buttons: □ △ L1 R1 L2 R2 L3 ○
+            if a == "kb_backspace":
+                self.special("backspace")
+            elif a == "kb_space":
+                self.type_text(" ")
+            elif a in ("kb_left", "kb_right"):
+                self.special("left" if a == "kb_left" else "right")
+            elif a == "kb_shift":
+                if self.shift and not self.caps:
+                    self.caps, self.shift = True, False
+                elif self.caps:
+                    self.caps = False
+                else:
+                    self.shift = True
+            elif a == "kb_symbols":
+                self.layer = "sym" if self.layer == "abc" else "abc"
+                self.c = min(self.c, len(self.rows()[self.r]) - 1)
+            elif a == "kb_done":
+                self.special("enter")
+                self.close()
+                return False
+            elif a == "kb_close":
+                self.close()
+                return False
+            self.render()
+            return False
         if a in ("up", "down"):
             self.move_row(-1 if a == "up" else 1)
         elif a in ("left", "right"):
@@ -192,7 +231,8 @@ class OskWindow:
             self.press()
             return False
         elif a == "back":
-            self.special("backspace")
+            self.close()
+            return False
         elif a == "menu":
             self.shift, self.caps = not self.shift, False
         elif a == "prev":

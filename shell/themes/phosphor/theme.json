@@ -1,0 +1,13 @@
+{
+  "name": "Phosphor",
+  "author": "Crossbar",
+  "description": "Green-screen terminal: monospace text, scanlines, chunky icons",
+  "colors": { "accent": "#6dff6a", "text": "#c8ffc4", "dim": "rgba(140,255,140,.5)", "highlight": "rgba(109,255,106,.16)",
+              "panel": "rgba(0,10,0,.94)", "glyph": "#9dff9a" },
+  "waves": { "mode": "fixed", "high": "#1f8f1c", "low": "#000800", "lines": "#6dff6a", "sparkles": false, "opacity": 0.8 },
+  "font": { "family": "Noto Sans Mono", "weight": 400 },
+  "icons": { "glow": true, "color": "#8dff8a" },
+  "keyboard": { "background": "rgba(0,12,0,.94)", "key": "rgba(109,255,106,.08)", "key_text": "#a8ffa4",
+                "highlight": "#6dff6a", "highlight_text": "#001400", "radius": 2 },
+  "quick_menu": { "panel": "rgba(0,10,0,.95)", "highlight": "rgba(109,255,106,.18)", "accent": "#6dff6a" }
+}

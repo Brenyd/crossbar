@@ -73,6 +73,8 @@ install -Dm644 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.deskto
 # screen capture (Discord's Share Screen) in the Crossbar session only
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal/sway-portals.conf" /etc/xdg/xdg-desktop-portal/sway-portals.conf
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal-wlr/sway" /etc/xdg/xdg-desktop-portal-wlr/sway
+# Plasma: undo anything a crashed Crossbar session left in the screen-capture settings
+install -Dm644 "$HERE/iso/airootfs/etc/xdg/autostart/crossbar-portal-fix.desktop" /etc/xdg/autostart/crossbar-portal-fix.desktop
 chmod 755 /usr/lib/crossbar/admin.py /usr/lib/crossbar/inputd.py /usr/lib/crossbar/overlay.py
 modprobe uinput || true
 udevadm control --reload
