@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import apps, artwork, extgames, folders, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import apps, artwork, extgames, folders, launchopts, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -528,6 +528,7 @@ GET = {
     "/api/xmb/folders": lambda q: folders.list_folders(),
     "/api/xmb/tags": lambda q: folders.tags(),
     "/api/xmb/hidden": lambda q: folders.hidden(),
+    "/api/launchopts": lambda q: launchopts.get(q["key"]),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -619,6 +620,21 @@ def route_post(path, b):
         return r_install(b)
     if head == "uninstall":
         return r_uninstall(b)
+    if head == "launchopts":
+        what = parts[1] if len(parts) > 1 else ""
+        if what == "save":
+            return launchopts.save(b["key"], b.get("env"), b.get("command"), b.get("tool"))
+        if what == "reset":
+            return launchopts.reset(b["key"])
+        if what == "apply":                       # Steam: put saved changes in place now
+            def run(j):
+                from crossbar.providers import steam as st
+                was = launchopts.apply_pending(lambda m: j.set(0.3, m))
+                if was:
+                    j.set(0.7, "Starting Steam again…")
+                    st.start_steam(False)
+            return JOBS.start("apply", "Launch options", run, "launchopts", "apply").as_dict()
+        raise KeyError(what)
     if head == "apps":
         return r_apps(parts[1] if len(parts) > 1 else "", b)
     if head == "xmb" and len(parts) > 2 and parts[1] == "folders":

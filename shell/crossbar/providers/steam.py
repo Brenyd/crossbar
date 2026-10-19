@@ -116,7 +116,7 @@ class Steam(Provider):
         self._cache = (0, [])
         job.set(1, f"Found {n} games")
         if util.which("steam"):  # sign the client in too, so installs work
-            util.spawn(["steam", "-silent"])
+            steam_cmd("-silent")
 
     def logout(self):
         util.update_config(lambda c: c["steam"].update(api_key="", steamid=""))
@@ -126,11 +126,11 @@ class Steam(Provider):
         if not util.which("steam"):
             raise RuntimeError("Steam client is not installed")
         fresh = appid not in self._manifests()        # a new install, not an update
-        util.spawn(["steam", f"steam://install/{appid}"])
+        steam_cmd(f"steam://install/{appid}")
         job.set(0, "Waiting for Steam…")
         if fresh:
             # Steam's own uninstall removes the partly downloaded game (Steam may ask to confirm)
-            job.cancel_with(lambda: util.spawn(["steam", f"steam://uninstall/{appid}"]))
+            job.cancel_with(lambda: steam_cmd(f"steam://uninstall/{appid}"))
         deadline = time.time() + 600
         while True:
             job.check()
@@ -150,7 +150,7 @@ class Steam(Provider):
             time.sleep(1)
 
     def uninstall(self, job, appid):
-        util.spawn(["steam", f"steam://uninstall/{appid}"])
+        steam_cmd(f"steam://uninstall/{appid}")
 
     def launch(self, appid, progress=None):
         """Big Picture (Steam's console UI) by default, so Steam Input and its overlay
@@ -161,15 +161,27 @@ class Steam(Provider):
         progress = progress or (lambda msg: None)
         url = f"steam://rungameid/{appid}"
         bpm = util.load_config().get("steam_bigpicture", True)
+        from .. import launchopts, perf
+        # Launch options / Proton version changed in Crossbar: Steam only reads them at startup
+        # (and writes its own back when it quits), so they go in while Steam is closed.
+        n = int(appid) if str(appid).isdigit() else 0
+        key = str(n >> 32 if n > 0xFFFFFFFF else appid)        # a non-Steam game's id is its shortcut id << 32
+        if launchopts.steam_needs_apply(key):
+            launchopts.apply_pending(progress, appid=key)
+        # the frame-rate overlay reaches Steam games through Steam's environment: a Steam
+        # started some other way doesn't have it, so restart it once (only while the overlay is on)
+        elif steam_running() and perf.prefs().get("fps", "off") != "off" and perf.available() and not steam_has_overlay():
+            progress("Restarting Steam for the frame-rate overlay…")
+            launchopts.close_steam()
         if not steam_running():
             progress("Starting Steam…")
             start_steam(bpm)
             wait_ready(bpm, progress)
         elif bpm:
-            util.spawn(["steam", "steam://open/bigpicture"])
+            steam_cmd("steam://open/bigpicture")
             wait_ready(bpm, progress, quick=True)
         progress("Starting the game…")
-        util.spawn(["steam", url])
+        steam_cmd(url)
 
 
 def _allocated(path):
@@ -280,6 +292,27 @@ def wait_ready(bpm, progress, quick=False, timeout=20 * 60):
             progress(msg)
             last = msg
         time.sleep(1)
+    return False
+
+
+def steam_cmd(*args):
+    """Run steam with arguments. If that starts Steam, it starts with the frame-rate overlay's
+    setting (MangoHud), which Steam then hands to every game it runs."""
+    from .. import perf
+    return util.spawn(["steam", *args], env=perf.env())
+
+
+def steam_has_overlay():
+    """Whether the running Steam was started with MANGOHUD in its environment."""
+    import subprocess
+    r = subprocess.run(["pgrep", "-x", "steam"], capture_output=True, text=True)
+    for pid in r.stdout.split():
+        try:
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                if b"MANGOHUD=1" in f.read().split(b"\0"):
+                    return True
+        except OSError:
+            continue
     return False
 
 

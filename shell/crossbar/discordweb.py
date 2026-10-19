@@ -159,6 +159,7 @@ class DiscordWeb:
             raise DiscordError("Discord's page isn't open")
         self.session = self._cmd("Target.attachToTarget", {"targetId": page["targetId"], "flatten": True},
                                  session=False)["sessionId"]
+        threading.Thread(target=self.install_share_hook, daemon=True).start()
 
     def js(self, expr, timeout=10):
         try:
@@ -798,16 +799,33 @@ class DiscordWeb:
     # capture from one. The screen is picked automatically (no picker to use on a TV).
     # Crossbar keeps a hand on the captured stream, so it can tell sharing is on (whatever
     # Discord's buttons are called this month) and stop it by ending the capture.
+    # Watches the page's screen-capture requests: keeps the stream (to tell sharing is on and to
+    # stop it) and the reason if the browser refused. Installed before Discord's own code loads
+    # (so a copy Discord keeps of getDisplayMedia is the watched one) and again on the live page.
     SHARE_HOOK_JS = r"""(() => {
       const md = navigator.mediaDevices;
       if (!md || !md.getDisplayMedia) return false;
       if (!window.__cbGDM) {
-        const orig = md.getDisplayMedia.bind(md);
+        const proto = Object.getPrototypeOf(md);
+        const orig = (proto && proto.getDisplayMedia) || md.getDisplayMedia;
         window.__cbGDM = orig;
-        md.getDisplayMedia = async (...a) => { const s = await orig(...a); window.__cbShareStream = s; return s; };
+        const watched = function (...a) {
+          window.__cbShareAsked = (window.__cbShareAsked || 0) + 1;
+          window.__cbShareError = '';
+          const p = orig.apply(this || md, a);          // called right away: keeps the click's activation
+          p.then((s) => { window.__cbShareStream = s; },
+                 (e) => { window.__cbShareError = ((e && e.name) || 'Error') + ': ' + ((e && e.message) || e); });
+          return p;
+        };
+        try { if (proto) proto.getDisplayMedia = watched; } catch (e) { /* read-only */ }
+        try { md.getDisplayMedia = watched; } catch (e) { /* read-only */ }
       }
       return true;
     })()"""
+    SHARE_STATE_JS = r"""(() => ({ asked: window.__cbShareAsked || 0, error: window.__cbShareError || '',
+      dialog: [...document.querySelectorAll('[role="dialog"] button, [role="dialog"] [role="button"]')]
+                .map((b) => (b.getAttribute('aria-label') || b.innerText || '').trim().split('\n')[0]).filter(Boolean).slice(0, 8) }))()"""
+
     SHARING_JS = r"""(() => {
       const s = window.__cbShareStream;
       if (s && s.active && s.getVideoTracks().some((t) => t.readyState === 'live')) return true;
@@ -830,6 +848,61 @@ class DiscordWeb:
             self.js("(() => { const s = window.__cbShareStream; if (s) s.getTracks().forEach((t) => t.stop()); return true; })()")
         return {"sharing": False}
 
+    def install_share_hook(self):
+        """Watch screen-capture requests from the start of every page load (see SHARE_HOOK_JS)."""
+        if getattr(self, "_hooked", None) == self.session and self.session:
+            return
+        try:
+            self._cmd("Page.addScriptToEvaluateOnNewDocument", {"source": self.SHARE_HOOK_JS})
+            self._hooked = self.session
+        except DiscordError as e:
+            print(f"discord: share hook: {e}", flush=True)
+
+    def _find_share(self, st):
+        xy, seen = self._find_control(self.SHARE_RE, "voice", self.SHARE_AVOID)
+        if not xy:
+            more_xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, hover=False)
+            xy, seen = more_xy, seen + [m for m in more if m not in seen][:6]
+        if not xy and (st.get("voice") or {}).get("channel_id"):
+            # the call's own page has the same button in its control bar
+            v = st["voice"]
+            path = f"/channels/{v.get('guild_id') or '@me'}/{v['channel_id']}"
+            if re.fullmatch(r"/channels/(@me|\d+)/\d+", path):
+                self.js(f"""(() => {{ const A = {self.ACTIONS_JS};
+                    if (A && A.transitionTo) {{ A.transitionTo('{path}'); return true; }}
+                    const a = document.querySelector('a[href="{path}"]'); if (a) a.click(); return !!a; }})()""", timeout=15)
+                time.sleep(1.2)
+                xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, limit=24)
+                seen += [m for m in more if m not in seen][:8]
+        if not xy:
+            raise DiscordError("Couldn't find Discord's Share Your Screen button (buttons seen: "
+                               + (", ".join(seen[:14]) or "none") + ")")
+        return xy
+
+    def _try_share(self, st, seconds=10):
+        """Press Share Your Screen (and Go Live if Discord asks). Returns None when sharing, else what happened."""
+        asked0 = (self.js(self.SHARE_STATE_JS) or {}).get("asked", 0)
+        self._trusted_click(self._find_share(st))
+        info = {}
+        end = time.time() + seconds
+        while time.time() < end:
+            time.sleep(0.4)
+            if self.sharing():
+                return None
+            info = self.js(self.SHARE_STATE_JS) or {}
+            if info.get("error"):
+                break
+            golive, _ = self._find_control(r"^go live$", "all", hover=False)
+            if golive:
+                self._trusted_click(golive)
+        if info.get("error"):
+            return f"the screen capture was refused: {info['error']}"
+        if info.get("asked", 0) > asked0:
+            return "the screen capture didn't finish (is the screen-capture portal running?)"
+        if info.get("dialog"):
+            return "Discord showed a window with: " + ", ".join(info["dialog"])
+        return "Discord didn't ask for the screen after its button was pressed"
+
     def share_screen(self, on=True):
         self.start()
         st = self.status()
@@ -840,36 +913,34 @@ class DiscordWeb:
                 return self._stop_share()
         if self.sharing():
             return {"sharing": True}
+        self.install_share_hook()
         if not self.js(self.SHARE_HOOK_JS):
             raise DiscordError("This Discord window can't share the screen (no screen capture in the browser)")
         with self._laid_out():
-            xy, seen = self._find_control(self.SHARE_RE, "voice", self.SHARE_AVOID)
-            if not xy:
-                more_xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, hover=False)
-                xy, seen = more_xy, seen + [m for m in more if m not in seen][:6]
-            if not xy and (st["voice"] or {}).get("channel_id"):
-                # the call's own page has the same button in its control bar
-                v = st["voice"]
-                path = f"/channels/{v.get('guild_id') or '@me'}/{v['channel_id']}"
-                if re.fullmatch(r"/channels/(@me|\d+)/\d+", path):
-                    self.js(f"""(() => {{ const A = {self.ACTIONS_JS};
-                        if (A && A.transitionTo) {{ A.transitionTo('{path}'); return true; }}
-                        const a = document.querySelector('a[href="{path}"]'); if (a) a.click(); return !!a; }})()""", timeout=15)
-                    time.sleep(1.2)
-                    xy, more = self._find_control(self.SHARE_RE, "all", self.SHARE_AVOID, limit=24)
-                    seen += [m for m in more if m not in seen][:8]
-            if not xy:
-                raise DiscordError("Couldn't find Discord's Share Your Screen button (buttons seen: "
-                                   + (", ".join(seen[:14]) or "none") + ")")
-            self._trusted_click(xy)
-            for _ in range(30):                 # Discord may ask for quality first: press its Go Live
-                time.sleep(0.4)
-                if self.sharing():
-                    return {"sharing": True}
-                golive, _ = self._find_control(r"^go live$", "all", hover=False)
-                if golive:
-                    self._trusted_click(golive)
-        raise DiscordError("Screen sharing didn't start (the screen-capture portal may be missing: update Crossbar)")
+            why = self._try_share(st)
+        if not why:
+            return {"sharing": True}
+        # Chromium only lets a page capture the screen while its window is really in front (that's
+        # how it works when you press the button yourself): bring Discord forward for a moment,
+        # press it there, then put back whatever you were using.
+        before = system.focused()
+        win = self.window()
+        if not win:
+            raise DiscordError(f"Screen sharing didn't start: {why}")
+        try:
+            system.bring_to_front(win["con_id"])
+            time.sleep(1.0)
+            with self._laid_out():
+                why2 = self._try_share(st)
+        finally:
+            system.hide_window(win["con_id"])
+            if before and before.get("con_id") != win["con_id"]:
+                system.bring_to_front(before["con_id"])
+            else:
+                system.show_shell()
+        if not why2:
+            return {"sharing": True}
+        raise DiscordError(f"Screen sharing didn't start: {why2}")
 
     def sign_out_local(self):
         """Forget the Discord sign-in on this console (deletes the window's profile)."""

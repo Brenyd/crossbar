@@ -70,7 +70,7 @@ function romsFolder() {
                 { key: 'mk', label: 'Create ROM Folders', icon: 'add', sub: 'Makes a folder for every system', action: async () => { const r = await call(() => api.post('/api/emulation/folders')); if (r) toast(`Folders ready in ${r.path}`, 'folder'); } }];
       }
       return systems.map((sys) => ({
-        key: `sys:${sys.id}`, label: sys.name, icon: 'folder', sub: `${sys.count} game${sys.count === 1 ? '' : 's'}`,
+        key: `sys:${sys.id}`, label: sys.name, icon: ICONS[`sys-${sys.id}`] ? `sys-${sys.id}` : 'folder', sub: `${sys.count} game${sys.count === 1 ? '' : 's'}`,
         options: [{ label: 'Choose Emulator', action: () => chooseEmulator(sys) }],
         children: async () => (await api.get(`/api/emulation/games?system=${sys.id}`)).map((g) => ({
           key: `rom:${sys.id}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, sub: g.tags || '', badge: SYSTEM_TAGS[sys.id] || sys.id.toUpperCase(),
@@ -131,7 +131,7 @@ const EMU_SETTINGS = {
         } },
       { key: 'defaults', label: 'Default Emulator per System', icon: 'game', sub: 'Which emulator runs each system',
         children: async () => (await api.get('/api/emulation/all-systems')).map((sys) => ({
-          key: `d:${sys.id}`, label: sys.name, icon: 'folder', sub: (st.emulator_choice[sys.id] || 'Default').replace(/:$/, '').replace(':', ' · '),
+          key: `d:${sys.id}`, label: sys.name, icon: ICONS[`sys-${sys.id}`] ? `sys-${sys.id}` : 'folder', sub: (st.emulator_choice[sys.id] || 'Default').replace(/:$/, '').replace(':', ' · '),
           action: () => chooseEmulator(sys) })) },
       { key: 'aspect', label: 'Aspect Ratio', icon: 'display', sub: ASPECT_NAMES[st.aspect],
         action: () => Options.show(Object.entries(ASPECT_NAMES).map(([v, l]) => ({ label: `${check(st.aspect === v)}${l}`, action: () => set({ aspect: v }, `Aspect ratio: ${l}`) })),

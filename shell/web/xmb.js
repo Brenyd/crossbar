@@ -107,6 +107,9 @@ const Dialog = {
     $('.dlg-title').textContent = title;
     $('.dlg-body').textContent = gl(body);
     $('.dlg-body').classList.toggle('long', String(body).split('\n').length > 5);
+    $('.dlg-body').scrollTop = 0;
+    $('.dlg-body').onscroll = () => this.scrolled();
+    requestAnimationFrame(() => this.scrolled());
     clearInterval(this.timer);
     if (timeout) {  // e.g. "Keep this resolution?" reverts by itself
       let left = Math.round(timeout / 1000);
@@ -134,6 +137,19 @@ const Dialog = {
     $('.dlg-buttons').innerHTML = this.buttons.map((b, i) => `<div class="dlg-btn ${i === this.sel ? 'on' : ''}">${esc(b)}</div>`).join('');
   },
   move(d) { this.sel = (this.sel + d + this.buttons.length) % this.buttons.length; this.renderButtons(); Sfx.move(); },
+  // text taller than the box: up / down (or the wheel) scrolls it; fades show there's more
+  scroll(d) {
+    const b = $('.dlg-body');
+    if (b.scrollHeight <= b.clientHeight + 2) return;
+    b.scrollBy({ top: d * b.clientHeight * 0.6, behavior: 'smooth' });
+    Sfx.move();
+    setTimeout(() => this.scrolled(), 260);
+  },
+  scrolled() {
+    const b = $('.dlg-body');
+    b.classList.toggle('more-up', b.scrollTop > 2);
+    b.classList.toggle('more-down', b.scrollTop + b.clientHeight < b.scrollHeight - 2);
+  },
   fields() { return [...document.querySelectorAll('.dlg-fields input')]; },
   padFocus() {
     const fs = this.fields();
@@ -584,6 +600,7 @@ function handle(action) {
     if (Dialog.fields().length) return Dialog.pad(action);
     if (action === 'left') Dialog.move(-1);
     else if (action === 'right') Dialog.move(1);
+    else if (action === 'up' || action === 'down') Dialog.scroll(action === 'down' ? 1 : -1);   // long text
     else if (action === 'ok') Dialog.close(Dialog.sel);
     else if (action === 'back') Dialog.close(null);
     return;

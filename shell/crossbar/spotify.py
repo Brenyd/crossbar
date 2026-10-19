@@ -233,7 +233,16 @@ class Spotify:
                 lines = f.read().decode("utf-8", "replace").splitlines()
         except OSError:
             return None
+        import datetime
         for ln in reversed(lines[-40:]):
+            m = re.match(r"\[(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)", ln)
+            if m:                                   # only what it said in the last couple of minutes
+                try:
+                    t = datetime.datetime.fromisoformat(m.group(1)).replace(tzinfo=datetime.timezone.utc).timestamp()
+                    if time.time() - t > 150:
+                        break
+                except ValueError:
+                    pass
             if re.search(r"\b(ERROR|error|Unavailable|503|500|could not)\b", ln):
                 return re.sub(r"^\[[^\]]*\]\s*", "", ln).strip()[:160]
         return None
@@ -345,44 +354,56 @@ class Spotify:
             body["uris"] = uris
         if offset is not None:
             body["offset"] = {"position": int(offset)}
-        # Spotify rejects player commands sent to a device that isn't active yet,
-        # so make Crossbar the active device first, then start playback, then shuffle.
-        now = self.now() or {}
-        restarted = False
-        for attempt in range(3):
+        # Start playback straight on the speaker (device_id): Spotify hands it the whole
+        # playlist / album / tracks in one go. Not "transfer, then play": librespot (0.8) drops a
+        # transferred session that has no playlist attached ("transfer context had no uri"),
+        # which is what an idle speaker gets. Transfer is only the fallback for a 404.
+        restarted = transferred = False
+        for attempt in range(4):
             try:
-                if not now.get("here"):
-                    self.api("PUT", "/me/player", {"device_ids": [dev], "play": False})
-                    time.sleep(0.8)
                 self.api("PUT", "/me/player/play", body, device_id=dev)
                 break
             except SpotifyError as e:
                 if e.code < 500 and e.code != 404:
                     raise
-                if e.code >= 500 and not restarted:
-                    # A Spotify 500 for a Connect device usually means the speaker (librespot)
-                    # lost its session: start it again once and retry.
+                if attempt == 3:
+                    raise
+                if e.code == 404 and not transferred:
+                    # "device not found / not active": make it the active one, then play again
+                    transferred = True
+                    try:
+                        self.api("PUT", "/me/player", {"device_ids": [dev], "play": False})
+                    except SpotifyError:
+                        pass
+                    time.sleep(0.8)
+                elif not restarted:
+                    # the speaker (librespot) lost its session: start it again once and retry
                     restarted = True
                     self.restart_speaker()
                     dev = self.device_id()
-                    now = {}
-                    continue
-                if attempt == 2:
-                    raise
-                time.sleep(1.0)
+                else:
+                    time.sleep(1.0)
         try:
             self.api("PUT", "/me/player/shuffle", state="true" if shuffle else "false", device_id=dev)
         except SpotifyError:
             pass  # shuffle is a nicety; never fail playback over it
 
     def transfer(self):
+        """Move what's playing elsewhere to this console. If the speaker can't take the transfer
+        (the librespot bug above), start the same track here at the same point instead."""
+        now = self.now() or {}
         try:
             self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
+            return
         except SpotifyError as e:
-            if e.code < 500:
+            if e.code < 500 and e.code != 404:
                 raise
-            self.restart_speaker()
-            self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
+            if not now.get("uri"):
+                raise
+        self.restart_speaker()
+        dev = self.device_id()
+        self.api("PUT", "/me/player/play", {"uris": [now["uri"]], "position_ms": int(now.get("position", 0)) * 1000},
+                 device_id=dev)
 
     def restart_speaker(self):
         if self.receiver_running():

@@ -51,3 +51,37 @@ Object.assign(ICONS, {
   bluetooth: '<path d="M20 20l24 22-12 10V12l12 10-24 22"/>',
   clock: '<circle cx="32" cy="32" r="24"/><path d="M32 18v15l10 6"/>',
 });
+
+// Emulation › ROMs: one original line drawing per system (its hardware: pad, handheld, console),
+// so each folder is recognisable at a glance. Used as `sys-<id>`; a theme can replace any of them.
+const SYS_TXT = (x, y, s, t) => `<text x="${x}" y="${y}" font-size="${s}" font-family="sans-serif" font-weight="700" text-anchor="middle" style="fill:currentColor;stroke:none">${t}</text>`;
+const SYS_DPAD = (x, y, r = 5) => `<path d="M${x - r} ${y - 1.6}h${r * 2}v3.2h-${r * 2}zM${x - 1.6} ${y - r}h3.2v${r * 2}h-3.2z"/>`;
+Object.assign(ICONS, {
+  'sys-nes': `<rect x="6" y="20" width="52" height="24" rx="2"/>${SYS_DPAD(17, 32)}<path d="M27 34h4M33 34h4"/><circle cx="44" cy="34" r="3"/><circle cx="52" cy="34" r="3"/>`,
+  'sys-snes': `<path d="M18 18h28a14 14 0 0 1 0 28H18a14 14 0 0 1 0-28z"/>${SYS_DPAD(17, 32)}<path d="M27 35l3-2M33 35l3-2"/><circle cx="47" cy="25" r="2.6"/><circle cx="53" cy="32" r="2.6"/><circle cx="41" cy="32" r="2.6"/><circle cx="47" cy="39" r="2.6"/>`,
+  'sys-n64': '<path d="M8 22h48l-4 14-6 2-4 14h-4l-3-10h-6l-3 10h-4l-4-14-6-2z"/><path d="M14 26v6M11 29h6"/><circle cx="32" cy="34" r="3.5"/><circle cx="46" cy="27" r="2.2"/><circle cx="50" cy="31" r="2.2"/>',
+  'sys-gb': `<path d="M16 6h32v46c0 4-4 8-10 8H16z"/><rect x="21" y="11" width="22" height="18" rx="1"/>${SYS_DPAD(24, 41, 4.5)}<circle cx="38" cy="43" r="2.6"/><circle cx="44" cy="39" r="2.6"/><path d="M26 52h4M33 52h4"/>`,
+  'sys-gbc': `<path d="M18 6h28c3 0 4 2 4 4v40c0 6-6 10-12 10H18c-3 0-4-2-4-4V10c0-2 1-4 4-4z"/><rect x="20" y="11" width="24" height="18" rx="2"/>${SYS_DPAD(23, 45, 4.5)}<circle cx="38" cy="47" r="2.6"/><circle cx="44" cy="43" r="2.6"/>${SYS_TXT(32, 36, 5.5, 'COLOR')}`,
+  'sys-gba': `<path d="M14 18h36c6 0 10 6 10 14s-4 14-10 14H14C8 46 4 40 4 32s4-14 10-14z"/><rect x="21" y="22" width="22" height="16" rx="1"/>${SYS_DPAD(12, 32, 4)}<circle cx="51" cy="29" r="2.2"/><circle cx="55" cy="34" r="2.2"/>`,
+  'sys-nds': `<rect x="12" y="6" width="40" height="24" rx="3"/><rect x="21" y="10" width="22" height="16"/><rect x="12" y="34" width="40" height="24" rx="3"/><rect x="21" y="38" width="22" height="16"/>${SYS_DPAD(16, 44, 3)}<circle cx="48" cy="42" r="1.6"/><circle cx="48" cy="48" r="1.6"/>`,
+  'sys-n3ds': `<rect x="10" y="6" width="44" height="24" rx="3"/><rect x="17" y="10" width="30" height="16"/><rect x="12" y="34" width="40" height="24" rx="3"/><rect x="22" y="38" width="20" height="15"/><circle cx="17" cy="41" r="3"/><circle cx="47" cy="41" r="1.6"/><circle cx="47" cy="47" r="1.6"/>${SYS_TXT(32, 21, 9, '3D')}`,
+  'sys-gc': '<path d="M32 8l22 12v24L32 56 10 44V20z"/><path d="M10 20l22 12 22-12M32 32v24"/><path d="M24 24l8 4 8-4"/>',
+  'sys-wii': '<rect x="25" y="4" width="14" height="56" rx="6"/><path d="M29 14h6M32 11v6"/><circle cx="32" cy="25" r="3"/><circle cx="32" cy="42" r="1.5"/><circle cx="32" cy="48" r="1.5"/>',
+  'sys-wiiu': '<rect x="4" y="16" width="56" height="32" rx="9"/><rect x="18" y="20" width="28" height="22" rx="1"/><circle cx="11" cy="25" r="3"/><circle cx="53" cy="25" r="3"/><path d="M8 36h6M11 33v6"/><circle cx="53" cy="37" r="2"/>',
+  'sys-mastersystem': `<path d="M8 22h48v18c0 4-3 6-6 6H14c-3 0-6-2-6-6z"/>${SYS_DPAD(18, 34, 5)}${SYS_TXT(42, 38, 8, '1')}${SYS_TXT(51, 38, 8, '2')}<circle cx="42" cy="35" r="4"/><circle cx="51" cy="35" r="4"/>`,
+  'sys-genesis': `<path d="M8 28c0-8 8-12 24-12s24 4 24 12c0 10-6 18-12 18-4 0-6-4-12-4s-8 4-12 4C14 46 8 38 8 28z"/>${SYS_DPAD(19, 30, 5)}<circle cx="38" cy="34" r="2.6"/><circle cx="44" cy="31" r="2.6"/><circle cx="50" cy="28" r="2.6"/>`,
+  'sys-segacd': '<rect x="6" y="36" width="52" height="16" rx="2"/><path d="M12 44h12"/><circle cx="46" cy="44" r="2"/><ellipse cx="32" cy="22" rx="22" ry="10"/><ellipse cx="32" cy="22" rx="5" ry="2.5"/>',
+  'sys-gamegear': `<path d="M6 18h52v28H6z" transform="translate(0 0)"/><path d="M6 18c-2 4-2 24 0 28M58 18c2 4 2 24 0 28"/><rect x="20" y="22" width="24" height="20" rx="1"/>${SYS_DPAD(13, 32, 4)}<circle cx="50" cy="35" r="2.2"/><circle cx="54" cy="30" r="2.2"/>`,
+  'sys-saturn': `<path d="M14 20h36c6 0 10 6 10 13s-4 13-10 13H14C8 46 4 40 4 33s4-13 10-13z"/>${SYS_DPAD(15, 33, 5)}<circle cx="40" cy="30" r="2"/><circle cx="46" cy="28" r="2"/><circle cx="52" cy="26" r="2"/><circle cx="40" cy="37" r="2"/><circle cx="46" cy="35" r="2"/><circle cx="52" cy="33" r="2"/>`,
+  'sys-dreamcast': `<path d="M14 14h36c4 0 8 4 8 10v12c0 8-4 18-10 18-4 0-6-6-8-10H24c-2 4-4 10-8 10-6 0-10-10-10-18V24c0-6 4-10 8-10z"/><rect x="24" y="18" width="16" height="14" rx="1"/>${SYS_DPAD(14, 30, 4)}<circle cx="49" cy="26" r="2"/><circle cx="53" cy="31" r="2"/><circle cx="45" cy="31" r="2"/><circle cx="49" cy="36" r="2"/>`,
+  'sys-psx': `<circle cx="32" cy="32" r="24"/><circle cx="32" cy="32" r="6"/>${SYS_TXT(32, 23, 10, '1')}`,
+  'sys-ps2': `<path d="M12 10h30l10 6v38H12z"/><path d="M12 22h40M18 16h18"/>${SYS_TXT(32, 44, 16, '2')}`,
+  'sys-ps3': `<path d="M8 40c0-12 8-24 24-24s24 12 24 24v6H8z"/><path d="M8 40h48M14 34h20"/>${SYS_TXT(44, 36, 12, '3')}`,
+  'sys-psp': `<path d="M12 18h40c6 0 10 6 10 14s-4 14-10 14H12C6 46 2 40 2 32s4-14 10-14z"/><rect x="18" y="22" width="28" height="18" rx="1"/>${SYS_DPAD(10, 30, 3.5)}<circle cx="54" cy="27" r="1.6"/><circle cx="58" cy="31" r="1.6"/><circle cx="50" cy="31" r="1.6"/><circle cx="54" cy="35" r="1.6"/>`,
+  'sys-switch': '<path d="M16 14h-4c-4 0-6 3-6 6v24c0 3 2 6 6 6h4z"/><path d="M48 14h4c4 0 6 3 6 6v24c0 3-2 6-6 6h-4z"/><rect x="18" y="14" width="28" height="36" rx="2"/><circle cx="11" cy="24" r="2.2"/><path d="M9 38h4M11 36v4"/><circle cx="53" cy="24" r="1.6"/><circle cx="53" cy="38" r="2.2"/>',
+  'sys-xbox': '<rect x="10" y="14" width="44" height="34" rx="4"/><circle cx="32" cy="31" r="9"/><path d="M27 26l10 10M37 26L27 36"/><path d="M14 52h8M42 52h8"/>',
+  'sys-pcengine': '<rect x="12" y="16" width="40" height="32" rx="3"/><rect x="18" y="12" width="28" height="8" rx="1"/><path d="M18 32h28M18 38h28"/><circle cx="46" cy="44" r="1.5"/>',
+  'sys-atari2600': '<path d="M12 40h40v14H12z"/><path d="M32 40V16"/><circle cx="32" cy="12" r="5"/><circle cx="20" cy="46" r="3"/><path d="M26 40c0-4 12-4 12 0"/>',
+  'sys-arcade': '<path d="M18 6h28v10l-4 8v32H22V24l-4-8z"/><rect x="23" y="12" width="18" height="12" rx="1"/><path d="M18 30h28M27 36v-6"/><circle cx="27" cy="29" r="2"/><circle cx="36" cy="33" r="1.6"/><circle cx="41" cy="33" r="1.6"/>',
+  'sys-scummvm': '<path d="M18 8v38l9-9 6 14 6-3-6-13h12z"/><path d="M38 10h18v12H44l-4 4v-4h-2z"/>',
+});

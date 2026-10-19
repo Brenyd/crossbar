@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.2 Alpha
+- **Launch Options** (Y › Launch Options… on Steam, Lutris, GOG, Epic and non-Steam games): environment
+  variables, a launch command (`gamemoderun %command% -dx11`), the Proton / Wine version, and one-press
+  common options (MangoHud, GameMode, Proton log, WineD3D, esync / fsync, NVAPI…). Steam's are saved
+  in Steam's own settings (put in place the next time you start the game here, or Apply Now);
+  Lutris' in the game's Lutris settings
+- **Frame-rate overlay in Steam games**: Steam is now always started with the overlay's setting
+  (installing, Big Picture and sign-in used to start it without), and a Steam started some other way
+  is restarted once when you launch a game with the overlay on
+- **ROM systems** each have their own icon; **apps** get [FLATPAK] / [APPIMG] tags, and the line
+  under apps and games just says Play (in Game) or Start
+- **Long text** (Flathub's About, messages) scrolls with up / down
+- **Discord**: screen share watches the capture itself; if the browser refuses it in the
+  background, Discord comes forward for a moment to start it, then your game comes back
+- **Spotify**: playback starts straight on the speaker instead of transferring to it first, which
+  librespot 0.8 rejects on an idle speaker ("transfer context had no uri")
+
 ## 1.0.1 Alpha
 - **Hide** any game, app or ROM from the XMB (Y › Hide); bring it back in
   Settings › Games & Emulation › Game Settings › Hidden Games & Apps

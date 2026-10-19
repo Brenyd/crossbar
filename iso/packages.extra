@@ -32,6 +32,7 @@ mpv
 ffmpeg
 python-mutagen
 python-pillow
+python-yaml
 librespot
 # networking (Wi-Fi from Settings) and Bluetooth
 networkmanager

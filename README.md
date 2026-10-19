@@ -461,6 +461,9 @@ in **Store**, and installed games in **Game**.
   Steam, so Proton settings you gave them there apply.
 - Both can move to another category with **Y › Show In…**. Every game has a tag next to its name
   ([STEAM], [GOG], [LUTRIS], [NON-STEAM]…): **Y › Edit Tag…** renames or hides it.
+- **Y › Launch Options…** on Windows games (Steam, Lutris, GOG, Epic): environment variables, a launch
+  command (`gamemoderun %command% -dx11`), the Proton / Wine version and common switches (MangoHud,
+  GameMode, Proton log…). Steam's go into Steam's own settings, Lutris' into Lutris'.
 - **Y › Hide** takes any game, app or ROM off the XMB; Settings › Games & Emulation › Game Settings ›
   Hidden Games & Apps brings it back.
 - **Compatibility Tools** (Settings › Games & Emulation › Game Settings › Windows Games): the

@@ -120,18 +120,21 @@ def env_for(game_key, store, codename):
 
 
 def command(exe, args, game_key, store, codename):
-    """(argv, env) to run a Windows exe with the game's chosen tool."""
+    """(argv, env) to run a Windows exe with the game's chosen tool, plus the game's own
+    launch options (Y › Launch Options…: variables, a command in front, extra arguments)."""
+    from . import launchopts
     tool = tool_for(game_key)
     if tool is None:
         raise RuntimeError("No way to run Windows games: install umu-launcher (or wine)")
+    extra_env, pre, post = launchopts.native(game_key)
     env = {"WINEPREFIX": prefix_for(game_key)}
     if tool == "wine":
-        return ["wine", exe, *args], env
+        return [*pre, "wine", exe, *args, *post], {**env, **extra_env}
     env.update({"GAMEID": umu_id(store, codename), "STORE": store, "PROTON_VERB": "waitforexitandrun"})
     if tool != "umu":
         proton = next((p for p in installed_protons() if p["id"] == tool), None)
         env["PROTONPATH"] = proton["path"] if proton else tool          # "GE-Proton" = newest, fetched by umu
-    return ["umu-run", exe, *args], env
+    return [*pre, "umu-run", exe, *args, *post], {**env, **extra_env}
 
 
 # ---- GE-Proton download manager -----------------------------------------------

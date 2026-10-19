@@ -30,11 +30,14 @@ function choose(list, sel = 0) {
 }
 const pickCategory = (cur = 'apps') => choose(APP_CATS.map(([id, name]) => [id, `${check(id === cur)}${name}`]), Math.max(0, APP_CATS.findIndex(([id]) => id === cur)));
 
+// the line under an app or game: "Play" where games live, "Start" everywhere else
+const verbFor = (cat) => (cat === 'game' ? 'Play' : 'Start');
+
 // ---- installed apps -------------------------------------------------------------------------------
 function appItem(a) {
   const custom = a.art && a.art_custom;
   return {
-    key: `app:${a.key}`, label: a.name, sub: `${a.kind === 'flatpak' ? 'Flatpak' : 'AppImage'} · {ok} open`,
+    key: `app:${a.key}`, label: a.name, sub: verbFor(a.category), badge: a.kind === 'flatpak' ? 'FLATPAK' : 'APPIMG',
     ...(custom ? { art: a.art, artTitle: a.name } : { art: a.icon, artTitle: a.name, artShape: 'square' }),
     action: () => openApp(a),
     options: [
@@ -63,7 +66,7 @@ async function uninstallApp(a) {
 function extItem(g) {
   const play = () => { Sfx.ok(); return call(() => api.post('/api/launch', { provider: g.kind, id: g.launch_id, title: g.name })); };
   return {
-    key: g.key, label: g.name, sub: g.sub, badge: g.tag,
+    key: g.key, label: g.name, sub: verbFor(g.category), badge: g.tag,
     ...(g.art ? { art: g.art, artTitle: g.name, ...(g.poster ? { artShape: 'poster' } : {}) } : { art: '', artTitle: g.name }),
     action: play,
     options: [
@@ -104,6 +107,8 @@ function decorate(items) {
     const out = { ...it, autoBadge: it.badge || '', badge: own !== undefined ? own : it.badge };
     const opts = [...(it.options || [])];
     if (!opts.some((o) => o.label === 'Edit Tag…')) opts.push({ label: 'Edit Tag…', action: () => editTag(out) });
+    if (LAUNCHOPTS.test(it.key) && !opts.some((o) => o.label === 'Launch Options…'))
+      opts.push({ label: 'Launch Options…', action: () => openFolder(launchOptionsFolder(out)) });
     if (!opts.some((o) => o.label === 'Hide')) opts.push({ label: 'Hide', action: () => setHidden(out.key, out.label, true) });
     out.options = opts;
     return out;
@@ -320,4 +325,85 @@ function applyExtras(cat, items) {
   if (at < 0) at = top.length;
   const out = [...top.slice(0, at), ...folderItems, ...top.slice(at)];
   return out;
+}
+
+// ---- Y › Launch Options… : environment variables, launch command, Proton / Wine version per game ----------
+const LAUNCHOPTS = /^(steam|shortcut|lutris|gog|epic):/;
+const LO_PRESETS = [
+  ['Frame Rate Overlay (MangoHud)', { env: ['MANGOHUD', '1'] }],
+  ['GameMode (CPU performance mode)', { pre: 'gamemoderun' }],
+  ['DXVK Frame Rate Counter', { env: ['DXVK_HUD', 'fps'] }],
+  ['Proton Log (for troubleshooting)', { env: ['PROTON_LOG', '1'] }],
+  ['Use WineD3D Instead of DXVK', { env: ['PROTON_USE_WINED3D', '1'] }],
+  ['Turn Off Esync', { env: ['PROTON_NO_ESYNC', '1'] }],
+  ['Turn Off Fsync', { env: ['PROTON_NO_FSYNC', '1'] }],
+  ['NVIDIA DLSS / NVAPI', { env: ['PROTON_ENABLE_NVAPI', '1'] }],
+  ['Native Wayland (Proton 10+)', { env: ['PROTON_ENABLE_WAYLAND', '1'] }],
+  ['Limit to 60 FPS (DXVK)', { env: ['DXVK_FRAME_RATE', '60'] }],
+];
+function launchOptionsFolder(it) {
+  const key = it.key, name = it.label;
+  const get = () => api.get(`/api/launchopts?key=${encodeURIComponent(key)}`);
+  const save = async (body, msg) => {
+    const r = await call(() => api.post('/api/launchopts/save', { key, ...body }));
+    if (r) toast(r.pending ? `${msg} · goes in when you next start it here (Steam restarts once)` : msg, 'settings');
+    return r;
+  };
+  const editVar = async (o, k = '', v = '') => {
+    const r = await Dialog.ask({ title: k ? `Edit ${k}` : 'Add Variable', buttons: k ? ['Save', 'Remove', 'Cancel'] : ['Add', 'Cancel'],
+      body: 'Set for this game only, e.g. DXVK_HUD = fps', fields: [{ key: 'k', label: 'Name', value: k }, { key: 'v', label: 'Value', value: v }] });
+    if (r.button === null || r.button === (k ? 2 : 1)) return;
+    const env = { ...o.env };
+    if (k) delete env[k];
+    if (!(k && r.button === 1)) { const nk = r.values.k.trim().toUpperCase(); if (!nk) return; env[nk] = r.values.v.trim(); }
+    if (await save({ env }, k && r.button === 1 ? `Removed ${k}` : 'Variable saved')) reloadFolder();
+  };
+  return {
+    key: `lo:${key}`, label: 'Launch Options', icon: 'settings', sub: name,
+    children: async () => {
+      const o = await get();
+      const nvars = Object.keys(o.env).length;
+      const items = [];
+      if (o.pending) items.push({ key: 'apply', label: 'Apply Now', icon: 'refresh', sub: 'Saved, waiting for Steam: it closes and reopens to take them',
+        action: async () => { if (await call(() => api.post('/api/launchopts/apply'), 'Applying launch options…')) { pollJobs(); setTimeout(reloadFolder, 4000); } } });
+      if (o.tools.length) items.push({ key: 'tool', label: o.kind === 'lutris' ? 'Wine Version' : 'Proton / Wine Version', icon: 'game', sub: o.tool_name,
+        children: async () => o.tools.map((t) => ({ key: `t:${t.id}`, label: t.name, icon: t.id === o.tool ? 'check' : 'game',
+          sub: t.id === o.tool ? 'Current' : (t.note || ''),
+          action: async () => { if (await save({ tool: t.id }, `${name}: ${t.name}`)) { back(); reloadFolder(); } } })) });
+      items.push({ key: 'env', label: 'Environment Variables', icon: 'settings', sub: nvars ? Object.entries(o.env).map(([k, v]) => `${k}=${v}`).join('  ') : 'None',
+        children: async () => {
+          const cur = await get();
+          return [...Object.entries(cur.env).map(([k, v]) => ({ key: `e:${k}`, label: `${k} = ${v}`, icon: 'settings', sub: '{ok} edit or remove',
+            action: () => editVar(cur, k, v),
+            options: [{ label: 'Edit', action: () => editVar(cur, k, v) },
+              { label: 'Remove', action: async () => { const env = { ...cur.env }; delete env[k]; if (await save({ env }, `Removed ${k}`)) reloadFolder(); } }] })),
+            { key: 'add', label: 'Add Variable…', icon: 'add', sub: 'Any NAME = value', action: () => editVar(cur) }];
+        } });
+      if (o.can_command) items.push({ key: 'cmd', label: 'Launch Command', icon: 'game', sub: o.command,
+        action: async () => {
+          const r = await Dialog.ask({ title: 'Launch Command', buttons: ['Save', 'Cancel'],
+            body: '%command% is the game. Put tools before it and game options after it,\ne.g. gamemoderun %command% -dx11',
+            fields: [{ key: 'c', label: 'Command', value: o.command }] });
+          if (r.button === 0 && await save({ command: r.values.c.trim() || '%command%' }, 'Launch command saved')) reloadFolder();
+        } });
+      items.push({ key: 'presets', label: 'Add a Common Option', icon: 'add', sub: 'MangoHud, GameMode, Proton log, WineD3D, esync / fsync…',
+        children: async () => LO_PRESETS.map(([label, p]) => {
+          const on = p.env ? o.env[p.env[0]] === p.env[1] : (` ${o.command} `).includes(` ${p.pre} `);
+          return { key: `p:${label}`, label, icon: on ? 'check' : 'add', sub: on ? 'On · {ok} turn off' : (p.env ? `${p.env[0]}=${p.env[1]}` : `${p.pre} %command%`),
+            action: async () => {
+              const cur = await get();
+              let body;
+              if (p.env) { const env = { ...cur.env }; if (on) delete env[p.env[0]]; else env[p.env[0]] = p.env[1]; body = { env }; }
+              else if (!cur.can_command) return toast('This one is set in Steam itself', 'info');
+              else body = { command: on ? cur.command.replace(new RegExp(`(^|\\s)${p.pre}(?=\\s)`), '').trim() : `${p.pre} ${cur.command}` };
+              if (await save(body, `${label}: ${on ? 'off' : 'on'}`)) { reloadFolder(); }
+            } };
+        }) });
+      items.push({ key: 'reset', label: 'Reset to Defaults', icon: 'refresh', sub: 'No variables, plain command, default version',
+        action: async () => { if (await confirmBox(`Reset ${name}'s launch options?`)) { const r = await call(() => api.post('/api/launchopts/reset', { key })); if (r) { toast('Launch options reset', 'settings'); reloadFolder(); } } } });
+      if (o.kind === 'steam') items.push({ key: 'how', label: 'About Steam Games', icon: 'info', sub: 'Saved in Steam, so Steam shows the same settings',
+        action: () => message('These are the same launch options and Proton version you\'d set in Steam › Properties.\nSteam only reads them when it starts, and writes its own copy back when it quits, so Crossbar saves them and puts them in place the next time you start this game from the XMB (Steam closes and reopens once). Apply Now does it straight away.', 'Launch Options') });
+      return items;
+    },
+  };
 }
