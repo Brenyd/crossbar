@@ -23,6 +23,36 @@ HOME = os.path.expanduser("~")
 FLATHUB = "https://dl.flathub.org/repo/flathub.flatpakrepo"
 CORE_URL = "https://buildbot.libretro.com/nightly/linux/x86_64/latest/{core}_libretro.so.zip"
 DUCKSTATION_URL = "https://github.com/stenzek/duckstation/releases/download/latest/DuckStation-x64.AppImage"
+# Eden (Nintendo Switch): AppImages from its own forge; the PGO builds are the recommended ones
+EDEN_RELEASES = "https://git.eden-emu.dev/api/v1/repos/eden-emu/eden/releases?limit=10"
+EDEN_URL = "https://stable.eden-emu.dev/{tag}/Eden-Linux-{tag}-{variant}-clang-pgo.AppImage"
+EDEN_FALLBACK = "v0.2.1"
+EDEN_DATA = os.path.join(HOME, ".local", "share", "eden")
+
+
+def eden_url():
+    """The newest stable Eden for this machine: aarch64, the Steam Deck build on Zen 2 (Steam Deck,
+    PS5), else the generic x86-64 one."""
+    import platform
+    tag = EDEN_FALLBACK
+    try:
+        with urllib.request.urlopen(urllib.request.Request(EDEN_RELEASES, headers={"User-Agent": "Crossbar"}), timeout=15) as r:
+            rel = [x for x in json.loads(r.read().decode()) if not x.get("draft") and not x.get("prerelease")]
+        if rel and re.fullmatch(r"v[\d.]+", rel[0].get("tag_name", "")):
+            tag = rel[0]["tag_name"]
+    except Exception as e:
+        print(f"emulation: eden releases: {e}", flush=True)
+    if platform.machine() in ("aarch64", "arm64"):
+        variant = "aarch64"
+    else:
+        try:
+            cpu = open("/proc/cpuinfo").read()
+        except OSError:
+            cpu = ""
+        zen2 = re.search(r"cpu family\s*:\s*23", cpu) and re.search(r"model\s*:\s*(49|71|96|104|113|144)\b", cpu)
+        ps5 = os.path.exists("/dev/icc") or "ps5" in platform.release().lower()
+        variant = "steamdeck" if (ps5 or zen2) else "amd64"
+    return EDEN_URL.format(tag=tag, variant=variant)
 
 
 def root():
@@ -59,6 +89,8 @@ EMULATORS = {
     "flycast": {"name": "Flycast", "kind": "flatpak", "id": "org.flycast.Flycast", "run": ["{rom}"], "about": "Dreamcast"},
     "scummvm": {"name": "ScummVM", "kind": "flatpak", "id": "org.scummvm.ScummVM",
                 "run": ["--fullscreen", "--auto-detect", "--path={rom}"], "about": "Classic adventure games"},
+    "eden": {"name": "Eden", "kind": "appimage", "url": eden_url, "file": "Eden.AppImage",
+             "run": ["-f", "-g", "{rom}"], "about": "Nintendo Switch"},
 }
 
 # ---- systems (folder names as in EmuDeck / ES-DE) ---------------------------------------------
@@ -93,6 +125,8 @@ SYSTEMS = {
     "ps2": {"name": "PlayStation 2", "exts": "iso chd cso gz", "emus": [("pcsx2", None)], "bios": [("ps2:*", True)]},
     "ps3": {"name": "PlayStation 3", "exts": "dir", "emus": [("rpcs3", None)]},
     "psp": {"name": "PSP", "exts": "iso cso pbp chd", "emus": [("ppsspp", None)]},
+    "switch": {"name": "Nintendo Switch", "exts": "nsp xci nca nro nso", "emus": [("eden", None)],
+               "bios": [("switch:keys", True), ("switch:firmware", False)]},
     "xbox": {"name": "Xbox", "exts": "iso xiso", "emus": [("xemu", None)],
              "bios": [("mcpx_1.0.bin", True), ("Complex_4627.bin", True)]},
     "pcengine": {"name": "PC Engine / TurboGrafx", "exts": "pce cue chd zip", "emus": [("retroarch", "mednafen_pce_fast")],
@@ -170,7 +204,8 @@ def install(job, emu):
         os.makedirs(os.path.dirname(_appimage(e)), exist_ok=True)
         job.set(0.1, f"Downloading {e['name']}…")
         job.cancel_with(lambda: None)            # stops at the next chunk; the partial file is deleted
-        util.download(e["url"], _appimage(e), on_bytes=lambda d, t: job.set_bytes(d, t, e["name"]))
+        url = e["url"]() if callable(e["url"]) else e["url"]
+        util.download(url, _appimage(e), on_bytes=lambda d, t: job.set_bytes(d, t, e["name"]))
         job.cancellable = False
         os.chmod(_appimage(e), 0o755)
     job.set(0.95, "Setting it up…")
@@ -296,6 +331,11 @@ def command(system, game_id, choice=None):
         raise RuntimeError("That game file isn't there any more")
     emu, core = _emu_for(system, choice)
     e = EMULATORS[emu]
+    if emu == "eden":
+        try:
+            setup_eden()                                     # keys / firmware added since install
+        except OSError:
+            pass
     if system == "ps3" and os.path.isdir(rom):              # RPCS3 boots the game's EBOOT.BIN
         g = glob.escape(rom)                                 # folder names often contain [IDs]
         boot = glob.glob(os.path.join(g, "PS3_GAME", "USRDIR", "EBOOT.BIN")) + glob.glob(os.path.join(g, "USRDIR", "EBOOT.BIN"))
@@ -332,6 +372,15 @@ def bios_status():
             continue
         items, any_group, any_ok = [], [], False
         for f, req in need:
+            if f == "switch:keys":
+                k = switch_keys()
+                items.append({"file": "prod.keys (in bios/switch/keys)", "found": bool(k), "required": True, "detail": k or ""})
+                continue
+            if f == "switch:firmware":
+                n = len(switch_firmware())
+                items.append({"file": "Firmware (.nca files in bios/switch/firmware)", "found": bool(n) or _eden_has_firmware(),
+                              "required": False, "detail": f"{n} files" if n else ""})
+                continue
             if f.startswith("ps2:"):
                 found = [os.path.basename(p) for p in glob.glob(os.path.join(glob.escape(b), "*.bin")) + glob.glob(os.path.join(glob.escape(b), "ps2", "*.bin"))
                          if re.search(r"scph|ps2|bios", os.path.basename(p), re.I) and os.path.getsize(p) >= 4 * 1024 * 1024]
@@ -416,9 +465,56 @@ def save_prefs(**kw):
 ASPECT = ("auto", "4:3", "16:9", "stretch")
 
 
+# ---- Nintendo Switch keys / firmware (EmuDeck's places, and Eden's own) ------------------------
+def switch_keys():
+    b = bios_dir()
+    for p in (os.path.join(b, "switch", "keys", "prod.keys"), os.path.join(b, "switch", "prod.keys"),
+              os.path.join(b, "prod.keys"), os.path.join(EDEN_DATA, "keys", "prod.keys")):
+        if os.path.isfile(p):
+            return p
+    return None
+
+
+def switch_firmware():
+    b = bios_dir()
+    for d in (os.path.join(b, "switch", "firmware"), os.path.join(b, "switch", "Firmware")):
+        if os.path.isdir(d):
+            return sorted(glob.glob(os.path.join(glob.escape(d), "*.nca")))
+    return []
+
+
+def _eden_has_firmware():
+    return bool(glob.glob(os.path.join(EDEN_DATA, "nand", "system", "Contents", "registered", "*.nca")))
+
+
+def setup_eden():
+    """Give Eden the keys and firmware from the BIOS folder (copies; your originals stay)."""
+    keys = switch_keys()
+    if keys and not keys.startswith(EDEN_DATA):
+        os.makedirs(os.path.join(EDEN_DATA, "keys"), exist_ok=True)
+        for name in ("prod.keys", "title.keys"):
+            src = os.path.join(os.path.dirname(keys), name)
+            if os.path.isfile(src):
+                shutil.copy(src, os.path.join(EDEN_DATA, "keys", name))
+    fw = switch_firmware()
+    if fw:
+        dest = os.path.join(EDEN_DATA, "nand", "system", "Contents", "registered")
+        os.makedirs(dest, exist_ok=True)
+        for f in fw:
+            t = os.path.join(dest, os.path.basename(f))
+            if not os.path.exists(t):
+                shutil.copy(f, t)
+    return {"keys": bool(keys), "firmware": len(fw)}
+
+
 def apply_defaults(only=None):
     """Write Crossbar's emulation choices into each installed emulator's settings."""
     p, inst = prefs(), installed()
+    if inst.get("eden") and only in (None, "eden"):
+        try:
+            setup_eden()
+        except OSError as e:
+            print(f"emulation: eden setup: {e}", flush=True)
     aspect = p.get("aspect", "auto")
     ra = p.get("ra") or {}
     bios = bios_dir()

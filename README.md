@@ -1,69 +1,40 @@
-# Crossbar — prototype 0.14
+# Crossbar — 1.0 Alpha
 
-An Arch-based live distro that boots straight into a console-style cross-media-bar shell:
-flowing month-coloured waves, categories across, items down, folders, a △-style options
-panel, and gamepad control.
+**A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
+cross-media bar — categories across, items down, flowing waves behind — and runs everything from a
+controller: your Steam, GOG, Epic, Lutris and emulated games, apps, music, video, live TV, the web,
+Discord voice and friends. It's built on Arch (CachyOS works great), installs next to your existing
+desktop, and never touches your kernel or graphics drivers.
 
-Categories: **Users · Settings · Photo · Music · Video · TV & Video Services · Game · Apps · Store ·
-Social**. See [ROADMAP.md](ROADMAP.md) for what's next. One Game list merges Steam, GOG and
-Epic; Store downloads from all three; Music plays your files and Spotify; Video plays
-anything mpv can, with a controller-friendly control panel.
+> **Alpha:** everything below works, and it's been used daily on a PC and a PS5 — but expect rough
+> edges. Bug reports with a support report (Settings › System › Share Support Report) are gold.
 
-![Game category](docs/game.png)
+![Crossbar](docs/game-1.0.png)
 
-![Music category](docs/music.png)
+| | | |
+|---|---|---|
+| ![Apps](docs/apps.png) **Apps** — Flatpaks and AppImages, plus what's open now | ![Flathub](docs/flathub.png) **Install Apps** — Flathub browser and AppImage installer | ![Themes](docs/themes.png) **Themes** — four built in, [make your own](docs/THEMES.md) |
+| ![ROMs](docs/roms-tags.png) **Emulation** — EmuDeck-style, 27 systems incl. Switch (Eden) | ![Tools](docs/compat-tools.png) **Proton & Wine tools** — ProtonUp-Qt's list, in Settings | ![Browser](docs/browser.png) **Browser** — made for the controller, sized for a TV |
+| ![Social](docs/social.png) **Social** — Discord voice, calls, screen share; Steam friends | ![Downloads](docs/downloads.png) **Downloads** — live speed and time left, cancel | ![Live TV](docs/iptv-live-tv.png) **IPTV** — live TV, movies and shows |
 
-### What's new in 0.14
+### What's in it
 
-| | |
-|---|---|
-| ![Apps](docs/apps.png) | ![Flathub](docs/flathub.png) |
-| **Apps** — what's open right now (switch to it or close it), plus your Flatpaks and AppImages | **Install Apps** — browse and search Flathub, or install an AppImage; you pick which category it shows up in |
+- **Games, all in one list** — Steam, GOG and Epic (install, play, uninstall), **Lutris** games and
+  Steam's **non-Steam games**, ROMs from 27 systems, each with a tag you can rename ([STEAM], [SNES],
+  [LUTRIS]…). Steam Big Picture one press away. Trophies from RetroAchievements and Steam.
+- **Windows games** run through Proton (umu-launcher) with a per-game tool picker and a built-in
+  download manager for GE-Proton, Proton-CachyOS, Wine-GE, DXVK and more.
+- **Emulation** that reads an EmuDeck folder as-is: emulators install in one press (RetroArch,
+  Dolphin, PCSX2, RPCS3, Eden…), BIOS and Switch keys are checked for you.
+- **Quick Menu** over any game or app (Select + Start): resume/close, volume per app, frame rate
+  overlay, on-screen keyboard, Discord call controls, app switcher, power.
+- **Apps, browser, media** — Flathub and AppImages, a controller-first web browser, music (files
+  and Spotify), video, photos, IPTV, network drives.
+- **Yours** — themes, your own folders in any category, artwork from SteamGridDB or your own
+  pictures, remappable buttons with Xbox / PlayStation / Nintendo glyphs.
+- **PS5** — temperatures, fan, front light, boost; boots alongside gaming mode and Plasma.
 
-Also: **your own folders** in any category (Y › Move to Folder…), and **Local File…** for artwork.
-
-### What's new in 0.13
-
-![Themes](docs/themes.png)
-
-**Themes**: Classic, Midnight, Phosphor and Sunset to start with, and your own: colours, waves,
-a background picture or video, font, icons, sounds, keyboard and Quick Menu colours, all from one
-folder. See **[docs/THEMES.md](docs/THEMES.md)** to make one. Also: PlayStation-style keyboard
-buttons, a faster start-up, Discord Share Screen from Crossbar, and calling friends.
-
-### What's new in 0.12
-
-| | |
-|---|---|
-| ![Browser](docs/browser.png) | ![Downloads](docs/downloads.png) |
-| **A browser made for the controller** — D-pad jumps between links, A opens, the keyboard types straight into the page, sized for a TV | **Downloads you can stop** — speed and time left; Y › Cancel Download deletes what was downloaded. Plus **Steam Big Picture** in Game |
-
-### What's new in 0.11
-
-| | |
-|---|---|
-| ![Artwork picker](docs/artwork-picker.png) | ![Grouped settings](docs/settings-grouped.png) |
-| **Change Artwork** — any game or ROM, from SteamGridDB's community art (Y › Change Artwork…) | **Tidier Settings** — related sections grouped: Display & Sound, Network & Bluetooth, Games & Emulation… |
-| ![Discord channels](docs/discord-channels.png) | ![Quick Menu](docs/quick-menu-grouped.png) |
-| **Pick your voice channels** — Social only shows the ones you turn on in Settings › Accounts › Discord | **Shorter Quick Menu** — Sound and Performance open their own page; long lists scroll |
-
-Also: **Trophies** at the top of Game, a **frame rate overlay** for games (MangoHud), and on a PS5
-**ps5_control** is set up for fan modes and boost.
-
-### Earlier
-
-| | |
-|---|---|
-| ![Live TV](docs/iptv-live-tv.png) | ![Movies](docs/iptv-movies.png) |
-| **IPTV Live TV** — your provider's channels with logos; L1/R1 change channel while watching | **IPTV Movies** — posters shown whole, big categories a page at a time |
-| ![TV Shows](docs/iptv-tv-shows.png) | ![IPTV categories](docs/iptv-settings.png) |
-| **IPTV TV Shows** — seasons and episodes | **Choose what shows** — pick categories in Settings › Media › IPTV |
-| ![Steam updating](docs/steam-starting.png) | ![Now Playing](docs/now-playing.png) |
-| **Steam cold start** — Crossbar waits through Steam's own updates, then starts the game | **Now Playing** — play/pause and skip show the song, anywhere in the menu |
-| ![System settings](docs/settings-system.png) | ![Game settings](docs/game-settings.png) |
-| **Settings › System** — Restart Crossbar, and on a PS5 switch to gaming mode or the desktop | **Free Memory While Gaming** — the menu closes while you play; Quick Menu keeps working |
-
-<sub>Screenshots use the demo library and a stand-in IPTV server with invented channels and titles.</sub>
+What changed in each version: [CHANGELOG.md](CHANGELOG.md) · What's next: [ROADMAP.md](ROADMAP.md)
 
 ## Run it
 
@@ -358,15 +329,24 @@ ask for (join, leave, mute) and never reads or sends messages on its own.
 ## Emulation
 
 **Game › Emulation** has **ROMs** (a folder per system, shown once it has games; A plays) and
-**Emulators** (install / uninstall, from Flathub; DuckStation as its official AppImage). Games
+**Emulators** (install / uninstall, from Flathub; DuckStation and Eden as their official AppImages). Games
 launch like any other: the "Starting…" screen, the memory-saving game mode, and the Quick Menu's
 Close to quit. Folder layout is EmuDeck's, so an existing EmuDeck folder works as-is:
 
 ```
 ~/Emulation/roms/<system>/   nes snes n64 gb gbc gba nds n3ds gc wii wiiu mastersystem genesis segacd
-                             gamegear saturn dreamcast psx ps2 ps3 psp xbox pcengine atari2600 arcade scummvm
+                             gamegear saturn dreamcast psx ps2 ps3 psp switch xbox pcengine atari2600 arcade scummvm
 ~/Emulation/bios/            BIOS / firmware files
+~/Emulation/bios/switch/     keys/prod.keys (+ title.keys) and firmware/*.nca for Switch games
 ```
+
+ROMs show a tag with their system ([SNES], [PS2], [SWITCH]…) like store games do; **Y › Edit Tag…**
+changes or hides it.
+
+**Nintendo Switch** runs on [Eden](https://git.eden-emu.dev/eden-emu/eden): Emulators › Eden installs
+the newest stable AppImage (the Steam Deck build on Zen 2 machines like the PS5). Put your
+`prod.keys` / `title.keys` in `bios/switch/keys` and firmware `.nca` files in `bios/switch/firmware`;
+Crossbar copies them into Eden before each game. BIOS Files shows whether they're there.
 
 **Settings › Games & Emulation › Emulation**: the folder, **BIOS Files** (checked per system, with what's missing),
 **Emulator Settings & Controls** (opens each emulator to map buttons; pads are detected
@@ -475,6 +455,16 @@ in **Store**, and installed games in **Game**.
   GE-Proton, a GE-Proton version you download there, Steam's Proton, or Wine). Per game:
   Y › *Compatibility Tool…*. Each game gets its own prefix in `~/Games/prefixes`.
 - Closing a game from the Quick Menu asks it to quit, and ends it if it hangs.
+- **Lutris**: games you've added in Lutris (the Flathub version or your distro's) show up in Game and
+  start through Lutris, so its runners and Wine settings apply.
+- **Non-Steam games** you've added to Steam show up too (with their Steam grid art) and start through
+  Steam, so Proton settings you gave them there apply.
+- Both can move to another category with **Y › Show In…**. Every game has a tag next to its name
+  ([STEAM], [GOG], [LUTRIS], [NON-STEAM]…): **Y › Edit Tag…** renames or hides it.
+- **Compatibility Tools** (Settings › Games & Emulation › Game Settings › Windows Games): the
+  tools [ProtonUp-Qt](https://github.com/DavidoTek/ProtonUp-Qt) installs — GE-Proton, Proton-CachyOS,
+  Luxtorpeda and Boxtron for Steam; Wine-GE, Kron4ek Wine, Lutris-Wine, DXVK and vkd3d-proton for
+  Lutris — with progress, cancel and remove. ProtonUp-Qt itself is one press away there too.
 
 Launching shows a *Starting…* screen until the game's window appears, then hands over. Steam runs
 in the background with its library window tucked away, and **Steam's overlay works normally**

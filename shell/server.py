@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import apps, artwork, folders, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import apps, artwork, extgames, folders, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -368,10 +368,10 @@ def r_uninstall(b):
 
 
 def r_launch(b):
-    p = emulation.EMU if b["provider"] == "emu" else provider(b["provider"])
+    p = {"emu": emulation.EMU, "lutris": extgames.LUTRIS, "shortcut": extgames.SHORTCUT}.get(b["provider"]) or provider(b["provider"])
     before = {w["con_id"] for w in system.windows()}
     title = b.get("title", "")
-    live = (b["provider"] == "emu" or not demo_on()) and os.environ.get("SWAYSOCK")
+    live = (b["provider"] in ("emu", "lutris", "shortcut") or not demo_on()) and os.environ.get("SWAYSOCK")
 
     def progress(msg):
         if live:
@@ -416,7 +416,7 @@ def r_launch(b):
                 return
         system.release_launch()
         HUB.publish({"type": "launch-timeout", "title": title})
-    if b["provider"] == "steam" or live:
+    if b["provider"] in ("steam", "shortcut") or live:
         threading.Thread(target=run, daemon=True).start()
     else:
         run()
@@ -480,6 +480,8 @@ GET = {
     "/api/bluetooth": lambda q: system.bluetooth_status(),
     "/api/compat": lambda q: {**compat.summary(), "game": compat.tool_for(q["game"]) if q.get("game") else None},
     "/api/compat/ge": lambda q: compat.ge_releases(),
+    "/api/compat/catalogue": lambda q: {"tools": compat.catalogue(), "app": compat.protonup_qt()},
+    "/api/compat/tool": lambda q: compat.tool_releases(q["id"]) if q.get("id") in compat.CATALOGUE else [],
     "/api/files": lambda q: files.listdir(q.get("path") or None, q.get("hidden") == "1"),
     "/api/files/places": lambda q: files.places(),
     "/api/nas": lambda q: nas.drives(),
@@ -517,12 +519,14 @@ GET = {
     "/api/media/scan": lambda q: media.scan(q["kind"]),
     "/api/fs": lambda q: media.browse_dirs(q.get("path") or None, BROWSE_EXT.get(q.get("ext") or "")),
     "/api/apps": lambda q: apps.installed(),
+    "/api/extgames": lambda q: extgames.games(),
     "/api/flathub/collection": lambda q: apps.flathub_collection(q.get("kind", "popular"), int(q.get("page") or 1)),
     "/api/flathub/categories": lambda q: apps.flathub_categories(),
     "/api/flathub/category": lambda q: apps.flathub_category(q["id"], int(q.get("page") or 1)),
     "/api/flathub/search": lambda q: apps.flathub_search(q.get("q", "")),
     "/api/flathub/app": lambda q: apps.flathub_app(q["id"]),
     "/api/xmb/folders": lambda q: folders.list_folders(),
+    "/api/xmb/tags": lambda q: folders.tags(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
     "/api/display": lambda q: display.outputs(),
@@ -626,6 +630,8 @@ def route_post(path, b):
             return folders.delete(b["id"])
         if what == "move":
             return folders.move(b["key"], b["cat"], b.get("folder"))
+        if what == "tag":
+            return folders.set_tag(b["key"], b.get("text"))
         raise KeyError(what)
     if head == "theme":
         what = parts[1] if len(parts) > 1 else ""
@@ -923,6 +929,13 @@ def route_post(path, b):
             return JOBS.start("install", b["tag"], lambda j: compat.install_ge(j, b["tag"]), "proton", b["tag"]).as_dict()
         elif parts[1] == "remove":
             compat.remove_proton(b["tool"])
+        elif parts[1] == "tool-install":
+            if b["tool"] not in compat.CATALOGUE:
+                raise KeyError(b["tool"])
+            name = f'{compat.CATALOGUE[b["tool"]]["name"]} {b["tag"]}'
+            return JOBS.start("install", name, lambda j: compat.install_tool(j, b["tool"], b["tag"]), "compat", f'{b["tool"]}:{b["tag"]}').as_dict()
+        elif parts[1] == "tool-remove":
+            compat.remove_tool(b["tool"], b["tag"])
         return compat.summary()
     if head == "bluetooth":
         if parts[1] == "power":
@@ -1106,8 +1119,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "not found"})
             try:
                 return self._send(200, fn(q))
+            except KeyError as e:
+                return self._send(400, {"error": f"missing: {e.args[0] if e.args else e}"})
             except Exception as e:
-                traceback.print_exc()
+                if not isinstance(e, (util.NetError, RuntimeError, PermissionError, ValueError)):
+                    traceback.print_exc()
                 return self._send(500, {"error": str(e)})
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
         full = os.path.realpath(os.path.join(WEB, rel))

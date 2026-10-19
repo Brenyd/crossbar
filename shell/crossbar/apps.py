@@ -18,6 +18,7 @@ import signal
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -51,7 +52,22 @@ def set_category(key, cat):
 
 
 # ---- installed apps -----------------------------------------------------------------------------
+_fp_cache = [0.0, None]
+
+
+def forget():
+    """Something was installed or removed: list again next time."""
+    _fp_cache[0] = 0.0
+
+
 def _flatpaks():
+    if _fp_cache[1] is not None and time.time() - _fp_cache[0] < 8:
+        return _fp_cache[1]
+    _fp_cache[:] = [time.time(), _flatpaks_now()]
+    return _fp_cache[1]
+
+
+def _flatpaks_now():
     if not util.which("flatpak"):
         return []
     try:
@@ -201,8 +217,10 @@ def uninstall(job, key):
         if not app["user"]:
             raise RuntimeError("Installed for every user: remove it from the desktop's software centre")
         job.set(0.3, "Removing…")
+        forget()
         r = subprocess.run(["flatpak", "uninstall", "--user", "-y", "--noninteractive", key[8:]],
                            capture_output=True, text=True, timeout=600)
+        forget()
         if r.returncode:
             raise RuntimeError((r.stderr or r.stdout).strip()[-200:] or "flatpak uninstall failed")
     elif key.startswith("appimage:"):
@@ -244,8 +262,11 @@ def _get(url, data=None, ttl=600):
     body = key[1].encode() if data is not None else None
     req = urllib.request.Request(url, data=body, headers={"User-Agent": "Crossbar/0.14", "Accept": "application/json",
                                                          **({"Content-Type": "application/json"} if body else {})})
-    with urllib.request.urlopen(req, timeout=20) as r:
-        out = json.loads(r.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            out = json.loads(r.read().decode())
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        raise util.friendly_net_error(url, e) from None
     _cache[key] = (time.time(), out)
     return out
 
@@ -374,6 +395,7 @@ def install_flatpak(job, app_id, category="apps"):
                                                                    left and f"{left.group(1)} left") if x))
         else:
             buf += ch
+    forget()
     if p.wait():
         if job.cancelled():
             return

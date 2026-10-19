@@ -137,16 +137,17 @@ class Steam(Provider):
             st = self._manifests().get(appid)
             if st:
                 flags = int(st.get("StateFlags", "0") or 0)
-                total = int(st.get("BytesToDownload", "0") or 0)
-                done = int(st.get("BytesDownloaded", "0") or 0)
                 if flags & 4 and not flags & (1024 | 2):  # installed, no update pending
                     return
+                done, total, phase = download_progress(st)
                 if total:
-                    job.set_bytes(done, total)
+                    job.set_bytes(done, total, phase)
+                elif phase:
+                    job.set(message=phase)
                 deadline = time.time() + 3600
             elif time.time() > deadline:
                 raise RuntimeError("Steam didn't start the download (is the client signed in?)")
-            time.sleep(2)
+            time.sleep(1)
 
     def uninstall(self, job, appid):
         util.spawn(["steam", f"steam://uninstall/{appid}"])
@@ -169,6 +170,46 @@ class Steam(Provider):
             wait_ready(bpm, progress, quick=True)
         progress("Starting the game…")
         util.spawn(["steam", url])
+
+
+def _allocated(path):
+    """Bytes really written under a folder (allocated blocks: Steam pre-sizes its files, so the
+    plain file sizes would jump to 100% at once)."""
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            try:
+                total += os.lstat(os.path.join(root, f)).st_blocks * 512
+            except OSError:
+                pass
+    return total
+
+
+def download_progress(st):
+    """(done, total, phase) for a download in progress, as close to live as Steam allows.
+
+    Steam rewrites its appmanifest's counters only every so often, which made progress jump and
+    stall. While it downloads, its steamapps/downloading/<appid> folder grows with the data, so
+    progress follows that folder (against BytesToStage, the size it will reach), scaled to the
+    download size; the manifest's own counters are the fallback and the floor."""
+    to_dl = int(st.get("BytesToDownload", "0") or 0)
+    dl = int(st.get("BytesDownloaded", "0") or 0)
+    to_stage = int(st.get("BytesToStage", "0") or 0)
+    staged = int(st.get("BytesStaged", "0") or 0)
+    lib = os.path.dirname(st.get("_path", ""))
+    folder = os.path.join(lib, "downloading", str(st.get("appid", "")))
+    frac = (dl / to_dl) if to_dl else 0.0
+    if to_stage and os.path.isdir(folder):
+        frac = max(frac, min(1.0, max(staged, _allocated(folder)) / to_stage))
+    elif to_stage:
+        frac = max(frac, staged / to_stage)
+    total = to_dl or to_stage
+    phase = ""
+    if total and frac >= 0.999:
+        phase = "Installing"                     # downloaded; Steam is unpacking / verifying
+    elif not total:
+        phase = "Waiting for Steam…"
+    return int(frac * total), total, phase
 
 
 STEAM_LOG = os.path.expanduser("~/.cache/crossbar-steam.log")

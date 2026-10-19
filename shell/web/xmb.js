@@ -432,7 +432,7 @@ function goCat(id) { S.stack = []; S.ci = CATS.findIndex((c) => c.id === id); re
 async function openFolder(item) {
   const frame = { title: item.label, icon: item.icon, items: [{ key: 'loading', label: 'Loading…', icon: 'refresh' }], sel: 0, source: item };
   S.stack.push(frame); Sfx.ok(); render();
-  try { frame.items = await item.children(); }
+  try { frame.items = await item.children(); if (typeof decorate === 'function') frame.items = decorate(frame.items); }
   catch (e) { frame.items = [{ key: 'err', label: 'Couldn’t load', icon: 'info', sub: e.message }]; }
   if (S.stack.at(-1) === frame) renderColumn(true);
 }
@@ -440,7 +440,7 @@ async function reloadFolder() {
   const frame = S.stack.at(-1);
   if (!frame) return;
   const prevKey = frame.items[frame.sel]?.key;
-  try { frame.items = await frame.source.children(); } catch (e) { return; }
+  try { frame.items = await frame.source.children(); if (typeof decorate === 'function') frame.items = decorate(frame.items); } catch (e) { return; }
   if (S.stack.at(-1) !== frame) return;
   const idx = frame.items.findIndex((i) => i.key === prevKey);
   frame.sel = idx >= 0 ? idx : Math.min(frame.sel, frame.items.length - 1);
@@ -813,8 +813,9 @@ async function pollJobs() {
   let jobs;
   try { jobs = await api.get('/api/jobs'); } catch { return; }
   S.jobs = jobs;
-  const sig = JSON.stringify(jobs.map((j) => [j.id, j.status, Math.round(j.progress * 200)]));
-  if (sig === lastJobSig) return;
+  patchJobRows(jobs);                       // live progress text and bars, every poll
+  const sig = JSON.stringify(jobs.map((j) => [j.id, j.status]));
+  if (sig === lastJobSig) return;           // lists only reload when a download starts or ends
   lastJobSig = sig;
   let finished = false;
   for (const j of jobs) {   // show sign-in / pairing steps as they happen
@@ -834,14 +835,37 @@ async function pollJobs() {
   }
   if (finished) { await loadState(); if (S.stack.at(-1)?.source?.key === 'accounts') reloadFolder(); }
   const cur = CATS[S.ci].id;
-  if (S.stack.length) {
-    // update progress text inside an open store folder without losing place
-    const f = S.stack.at(-1);
-    if (finished || f.items.some((i) => i.progress != null || jobs.some((j) => `${j.provider}:${j.game_id}` === i.key))) reloadFolder();
-  } else if (cur === 'game' || cur === 'store' || finished) refresh(cur);
+  if (S.stack.length) { if (finished || S.stack.at(-1).items.some((i) => jobFor(i, jobs))) reloadFolder(); }
+  else refresh(cur);
   if (finished) CATS.forEach((c) => c.id !== cur && refresh(c.id));
 }
-setInterval(pollJobs, 1200);
+
+// the running job a row stands for (a game's tile, a "Downloading…" row, a Flathub app)
+function jobFor(it, jobs) {
+  return jobs.find((j) => j.status === 'running' && (it.key === `job:${j.id}` || it.key === `${j.provider}:${j.game_id}`
+    || (j.provider === 'flatpak' && it.key === `fh:${j.game_id}`)));
+}
+function patchJobRows(jobs) {
+  const items = S.stack.length ? S.stack.at(-1).items : S.items[CATS[S.ci]?.id];
+  if (!items || !jobs.some((j) => j.status === 'running')) return;
+  let changed = false;
+  for (const it of items) {
+    const j = jobFor(it, jobs);
+    if (!j) continue;
+    const sub = `${j.kind === 'uninstall' ? 'Removing…' : 'Downloading…'} ${j.message || ''}`.trim();
+    if (it.sub !== sub || it.progress !== j.progress) { it.sub = sub; it.progress = j.progress; changed = true; }
+  }
+  if (!changed) return;
+  // update just the text and bar of those rows (no rebuild: selection and animation stay put)
+  items.forEach((it, i) => {
+    const el = columnEls[i];
+    if (!el || !jobFor(it, jobs)) return;
+    const sub = el.querySelector('.sub'); if (sub) sub.textContent = gl(it.sub);
+    const bar = el.querySelector('.bar i'); if (bar) bar.style.width = `${(it.progress * 100).toFixed(1)}%`;
+    else if (it.progress != null) { const t = el.querySelector('.txt'); if (t) t.insertAdjacentHTML('beforeend', `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>`); }
+  });
+}
+setInterval(pollJobs, 1000);
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
 setInterval(() => {
   if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state) return;

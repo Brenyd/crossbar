@@ -99,6 +99,14 @@
 - [x] Your own folders in any category
 - [x] Artwork: Local File…; apps can use SteamGridDB too
 
+## 1.0 Alpha
+- [x] Live download progress (Steam staging folder, GOG from the start, in-place rows)
+- [x] Eden (Nintendo Switch) with keys and firmware
+- [x] Editable tags; system tags on ROMs
+- [x] Lutris and Steam non-Steam games
+- [x] ProtonUp-Qt's tool catalogue in the Proton / Wine manager
+- [x] Bug hunt: undefined-name scan, API sweep, full menu crawl; friendlier network errors
+
 ## Next
 
 - IPTV extras: EPG (now/next) for live channels, favourites, search.

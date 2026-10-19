@@ -14,6 +14,7 @@ import glob
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 import time
 import urllib.parse
@@ -182,3 +183,187 @@ def summary():
     return {"tools": tools(), "default": default_tool(), "umu": bool(util.which("umu-run")),
             "games": cfg().get("games") or {}}
 
+
+
+# ---- Compatibility tools (ProtonUp-Qt's catalogue) ------------------------------------------------
+# The tools ProtonUp-Qt (github.com/DavidoTek/ProtonUp-Qt) installs, from the same GitHub releases,
+# into the same places: Steam's compatibilitytools.d, Lutris' runners/wine and runtime folders.
+# kind: "steam" / "lutris-wine" / "lutris-dxvk" / "lutris-vkd3d". pick(name) chooses the asset.
+def _x86_level():
+    try:
+        flags = open("/proc/cpuinfo").read()
+    except OSError:
+        return ""
+    return "_v3" if all(f" {f}" in flags for f in ("avx2", "bmi2", "fma", "movbe")) else ""
+
+
+CATALOGUE = {
+    "ge-proton": {"name": "GE-Proton", "repo": "GloriousEggroll/proton-ge-custom", "kind": "steam",
+                  "about": "Proton with extra fixes and codecs — the usual pick", "pick": lambda n: n.endswith(".tar.gz")},
+    "proton-cachyos": {"name": "Proton-CachyOS", "repo": "CachyOS/proton-cachyos", "kind": "steam",
+                       "about": "CachyOS' Proton, built for newer CPUs",
+                       "pick": lambda n: n.endswith(f"x86_64{_x86_level()}.tar.xz")},
+    "luxtorpeda": {"name": "Luxtorpeda", "repo": "luxtorpeda-dev/luxtorpeda", "kind": "steam",
+                   "about": "Native Linux engines for some Windows games", "pick": lambda n: n.endswith(".tar.xz")},
+    "boxtron": {"name": "Boxtron", "repo": "dreamer/boxtron", "kind": "steam",
+                "about": "DOS games through DOSBox", "pick": lambda n: n.endswith(".tar.xz")},
+    "wine-ge": {"name": "Wine-GE", "repo": "GloriousEggroll/wine-ge-custom", "kind": "lutris-wine",
+                "about": "Wine for Lutris with GE's fixes", "pick": lambda n: n.endswith("x86_64.tar.xz") and "lutris" in n.lower()},
+    "kron4ek": {"name": "Kron4ek Wine", "repo": "Kron4ek/Wine-Builds", "kind": "lutris-wine",
+                "about": "Plain and staging Wine builds for Lutris",
+                "pick": lambda n: n.endswith("-amd64.tar.xz") and "wow64" not in n},
+    "lutris-wine": {"name": "Lutris-Wine", "repo": "lutris/wine", "kind": "lutris-wine",
+                    "about": "Lutris' own Wine", "pick": lambda n: n.endswith("x86_64.tar.xz")},
+    "dxvk": {"name": "DXVK", "repo": "doitsujin/dxvk", "kind": "lutris-dxvk",
+             "about": "Direct3D 9–11 on Vulkan (for Lutris)", "pick": lambda n: re.fullmatch(r"dxvk-[\d.]+\.tar\.gz", n)},
+    "vkd3d": {"name": "vkd3d-proton", "repo": "HansKristian-Work/vkd3d-proton", "kind": "lutris-vkd3d",
+              "about": "Direct3D 12 on Vulkan (for Lutris)", "pick": lambda n: n.endswith(".tar.zst")},
+}
+_cat_cache = {}
+
+
+def _steam_compat_dirs():
+    out = []
+    for root in (os.path.join(util.HOME, ".local/share/Steam"), os.path.join(util.HOME, ".var/app/com.valvesoftware.Steam/data/Steam")):
+        if os.path.isdir(root):
+            out.append(os.path.join(root, "compatibilitytools.d"))
+    return out or [COMPAT_DIR]
+
+
+def _lutris_dirs():
+    return [d for d in (os.path.join(util.HOME, ".local/share/lutris"), os.path.join(util.HOME, ".var/app/net.lutris.Lutris/data/lutris"))
+            if os.path.isdir(d)]
+
+
+def target_dirs(kind):
+    """Where a tool of this kind goes (every Steam / Lutris install found)."""
+    if kind == "steam":
+        return _steam_compat_dirs()
+    sub = {"lutris-wine": "runners/wine", "lutris-dxvk": "runtime/dxvk", "lutris-vkd3d": "runtime/vkd3d"}[kind]
+    return [os.path.join(d, sub) for d in _lutris_dirs()]
+
+
+def _installed_names(kind):
+    names = set()
+    for d in target_dirs(kind):
+        if os.path.isdir(d):
+            names.update(n for n in os.listdir(d) if not n.startswith("."))
+    return names
+
+
+def catalogue():
+    out = []
+    for tid, t in CATALOGUE.items():
+        dirs = target_dirs(t["kind"])
+        out.append({"id": tid, "name": t["name"], "about": t["about"], "for": "Steam" if t["kind"] == "steam" else "Lutris",
+                    "available": bool(dirs), "installed": len(_installed(tid))})
+    return out
+
+
+def _installed(tid):
+    rec = (cfg().get("tools") or {}).get(tid) or {}
+    have = _installed_names(CATALOGUE[tid]["kind"])
+    return {tag: folder for tag, folder in rec.items() if folder in have}
+
+
+def tool_releases(tid):
+    t = CATALOGUE[tid]
+    hit = _cat_cache.get(tid)
+    if not hit or time.time() - hit[0] > 900:
+        data = util.http_json(f"https://api.github.com/repos/{t['repo']}/releases?per_page=15",
+                              headers={"Accept": "application/vnd.github+json"})
+        rel = []
+        for r in data if isinstance(data, list) else []:
+            if r.get("draft"):
+                continue
+            asset = next((a for a in r.get("assets", []) if t["pick"](a["name"])), None)
+            if asset:
+                rel.append({"id": r["tag_name"], "date": (r.get("published_at") or "")[:10], "url": asset["browser_download_url"],
+                            "file": asset["name"], "size": asset.get("size", 0), "pre": bool(r.get("prerelease"))})
+        _cat_cache[tid] = hit = (time.time(), rel)
+    have = _installed(tid)
+    names = _installed_names(t["kind"])
+    return [{**r, "installed": r["id"] in have or any(r["id"] in n for n in names)} for r in hit[1]]
+
+
+def _safe_extract(archive, dest):
+    """Unpack into dest; refuse anything that would land outside it. Returns the top folder."""
+    os.makedirs(dest, exist_ok=True)
+    root = os.path.realpath(dest)
+    if archive.endswith(".zst"):
+        if not util.which("zstd") and not util.which("unzstd"):
+            raise RuntimeError("zstd is needed to unpack this one")
+        lst = subprocess.run(["tar", "-I", "zstd", "-tf", archive], capture_output=True, text=True, timeout=300)
+        names = [n for n in lst.stdout.splitlines() if n]
+        for n in names:
+            if not os.path.realpath(os.path.join(dest, n)).startswith(root + os.sep) and n.rstrip("/") not in ("", "."):
+                raise RuntimeError(f"unexpected path in archive: {n}")
+        r = subprocess.run(["tar", "-I", "zstd", "-xf", archive, "-C", dest, "--no-same-owner"], capture_output=True, text=True, timeout=900)
+        if r.returncode:
+            raise RuntimeError(r.stderr.strip()[-200:] or "unpacking failed")
+    else:
+        with tarfile.open(archive) as tf:
+            members = tf.getmembers()
+            for m in members:
+                target = os.path.realpath(os.path.join(dest, m.name))
+                if not target.startswith(root + os.sep) and m.name.rstrip("/") not in ("", "."):
+                    raise RuntimeError(f"unexpected path in archive: {m.name}")
+                if (m.issym() or m.islnk()) and os.path.isabs(m.linkname):
+                    raise RuntimeError(f"unexpected link in archive: {m.name}")
+            names = [m.name for m in members]
+            tf.extractall(dest, filter="tar") if hasattr(tarfile, "data_filter") else tf.extractall(dest)
+    tops = {n.lstrip("./").split("/")[0] for n in names if n.lstrip("./")}
+    return sorted(tops)[0] if len(tops) == 1 else None
+
+
+def install_tool(job, tid, tag):
+    t = CATALOGUE[tid]
+    rel = next((r for r in tool_releases(tid) if r["id"] == tag), None)
+    if not rel:
+        raise RuntimeError(f"{tag} not found")
+    dirs = target_dirs(t["kind"])
+    if not dirs:
+        raise RuntimeError("Install Lutris first (Store › Install Apps › Flatpak, or your package manager)")
+    tmp_dir = os.path.join(dirs[0], ".crossbar-download")
+    os.makedirs(tmp_dir, exist_ok=True)
+    tmp = os.path.join(tmp_dir, rel["file"])
+    job.cancel_with(lambda: None)                     # stops at the next chunk; the partial file is deleted
+    try:
+        util.download(rel["url"], tmp, on_bytes=lambda d, s: job.set_bytes(d, s or rel["size"]))
+        job.cancellable = False
+        job.speed, job.eta = 0.0, None
+        folder = None
+        for i, d in enumerate(dirs):
+            job.set(0.9 + 0.09 * i / len(dirs), f"Unpacking{' for ' + ('Steam' if t['kind'] == 'steam' else 'Lutris') if len(dirs) > 1 else ''}…")
+            folder = _safe_extract(tmp, d) or folder
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    if folder:
+        util.update_config(lambda c: c.setdefault("compat", {}).setdefault("tools", {}).setdefault(tid, {}).__setitem__(tag, folder))
+    _cat_cache.pop(tid, None)
+
+
+def remove_tool(tid, tag):
+    folder = _installed(tid).get(tag)
+    if not folder:
+        names = [n for n in _installed_names(CATALOGUE[tid]["kind"]) if tag in n]
+        folder = names[0] if len(names) == 1 else None
+    if not folder or "/" in folder or folder.startswith("."):
+        raise RuntimeError("Only versions installed here can be removed")
+    for d in target_dirs(CATALOGUE[tid]["kind"]):
+        p = os.path.join(d, folder)
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+    util.update_config(lambda c: c.setdefault("compat", {}).setdefault("tools", {}).setdefault(tid, {}).pop(tag, None))
+
+
+PUPGUI = "net.davidotek.pupgui2"
+
+
+def protonup_qt():
+    """ProtonUp-Qt itself (the desktop app), if it's installed as a Flatpak."""
+    import subprocess as sp
+    if not util.which("flatpak"):
+        return {"installed": False}
+    r = sp.run(["flatpak", "info", PUPGUI], capture_output=True, text=True)
+    return {"installed": r.returncode == 0, "id": PUPGUI}

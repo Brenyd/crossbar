@@ -705,6 +705,10 @@ def wifi_forget(ssid):
 
 
 def wifi_radio(on=None):
+    if not util.which("nmcli"):
+        if on is None:
+            return False
+        raise RuntimeError("Wi-Fi needs NetworkManager")
     if on is None:
         return subprocess.run(["nmcli", "radio", "wifi"], capture_output=True, text=True).stdout.strip() == "enabled"
     subprocess.run(["nmcli", "radio", "wifi", "on" if on else "off"], capture_output=True)

@@ -75,3 +75,24 @@ def move(key, cat, fid=None):
             target.setdefault("items", []).append(key)
     util.update_config(upd)
     return _all()
+
+
+# ---- tags: the little [STEAM] / [GOG] / [SNES] labels, editable per item ------------------------------
+def tags():
+    t = util.load_config().get("xmb_tags")
+    return t if isinstance(t, dict) else {}
+
+
+def set_tag(key, text):
+    """text: what to show ("" hides the tag); None goes back to the automatic one."""
+    if not key or len(key) > 300:
+        raise ValueError("item")
+
+    def upd(c):
+        t = c.setdefault("xmb_tags", {})
+        if text is None:
+            t.pop(key, None)
+        else:
+            t[key] = str(text).strip()[:20]
+    util.update_config(upd)
+    return tags()

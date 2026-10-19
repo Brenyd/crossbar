@@ -5,13 +5,17 @@
 const APP_CATS = [['apps', 'Apps'], ['game', 'Game'], ['tv', 'TV & Video Services'], ['video', 'Video'],
   ['music', 'Music'], ['photo', 'Photo'], ['party', 'Social']];
 S.apps = [];
+S.ext = [];        // Lutris + Steam's non-Steam games
 S.folders = [];
+S.tags = {};
 
 async function loadApps() {
-  try { S.apps = await api.get('/api/apps'); } catch (e) { S.apps = []; }
+  const [a, x] = await Promise.all([api.get('/api/apps').catch(() => []), api.get('/api/extgames').catch(() => [])]);
+  S.apps = a; S.ext = x;
 }
 async function loadFolders() {
-  try { S.folders = await api.get('/api/xmb/folders'); } catch (e) { S.folders = []; }
+  const [f, t] = await Promise.all([api.get('/api/xmb/folders').catch(() => []), api.get('/api/xmb/tags').catch(() => ({}))]);
+  S.folders = f; S.tags = t;
 }
 
 // Options.show as a question: resolves with the picked value (or null on Back)
@@ -53,7 +57,52 @@ async function uninstallApp(a) {
   if (!(await confirmBox(`Uninstall ${a.name}?${a.kind === 'appimage' ? '\nThe AppImage file is deleted.' : ''}`))) return;
   await call(() => api.post('/api/apps/uninstall', { key: a.key, name: a.name }), `Removing ${a.name}…`);
 }
-function appsIn(cat) { return S.apps.filter((a) => a.category === cat).map(appItem); }
+// Lutris games and Steam's non-Steam games: games like any other (Starting… screen, Quick Menu)
+function extItem(g) {
+  const play = () => { Sfx.ok(); return call(() => api.post('/api/launch', { provider: g.kind, id: g.launch_id, title: g.name })); };
+  return {
+    key: g.key, label: g.name, sub: g.sub, badge: g.tag,
+    ...(g.art ? { art: g.art, artTitle: g.name, ...(g.poster ? { artShape: 'poster' } : {}) } : { art: '', artTitle: g.name }),
+    action: play,
+    options: [
+      { label: 'Play', action: play },
+      { label: 'Show In…', action: async () => {
+        const cat = await pickCategory(g.category);
+        if (!cat || cat === g.category) return;
+        await call(() => api.post('/api/apps/category', { key: g.key, category: cat }), `${g.name} moved`);
+        await loadApps(); refreshAll();
+      } },
+      { label: 'Change Artwork…', action: () => changeArtwork({ key: g.key, title: g.name, custom: !!g.art_custom }) },
+    ],
+  };
+}
+function appsIn(cat) {
+  return [...S.ext.filter((g) => g.category === cat).map(extItem), ...S.apps.filter((a) => a.category === cat).map(appItem)];
+}
+
+// ---- tags: [STEAM] [GOG] [SNES] [LUTRIS]…, editable on anything that has one ---------------------------------
+async function editTag(it) {
+  const auto = it.autoBadge ?? it.badge ?? '';
+  const r = await Dialog.ask({ title: 'Edit Tag', buttons: ['Save', 'Automatic', 'Cancel'],
+    body: `The little label next to ${it.label}. Leave it empty to hide it.`, fields: [{ key: 'text', label: 'Tag', value: it.badge || '' }] });
+  if (r.button === 2 || r.button === null) return;
+  const text = r.button === 1 ? null : r.values.text.trim().toUpperCase();
+  S.tags = await call(() => api.post('/api/xmb/folders/tag', { key: it.key, text })) || S.tags;
+  toast(r.button === 1 ? `Tag back to ${auto || 'none'}` : text ? `Tag: ${text}` : 'Tag hidden', 'info');
+  for (const c of CATS) refresh(c.id);
+  if (S.stack.length) reloadFolder();
+}
+const TAGGABLE = /^(steam|gog|epic|demo|rom|app|lutris|shortcut):/;
+// game-like rows get their tag (yours if you set one) and Y › Edit Tag…
+function decorate(items) {
+  return (items || []).map((it) => {
+    if (!it || !it.key || !TAGGABLE.test(it.key)) return it;
+    const own = S.tags[it.key];
+    const out = { ...it, autoBadge: it.badge || '', badge: own !== undefined ? own : it.badge };
+    if (!(it.options || []).some((o) => o.label === 'Edit Tag…')) out.options = [...(it.options || []), { label: 'Edit Tag…', action: () => editTag(out) }];
+    return out;
+  });
+}
 function refreshAll() { for (const c of CATS) refresh(c.id); if (S.stack.length) reloadFolder(); }
 
 // the XMB version of the app switcher: everything open, A switches, Y closes
@@ -220,6 +269,7 @@ function withFolderOptions(cat, it) {
 // after a category loads: apps placed in it, then your folders (holding the items you put in them)
 function applyExtras(cat, items) {
   if (cat !== 'apps' && cat !== 'settings') items = [...items, ...appsIn(cat)];
+  items = decorate(items);
   if (!FOLDER_CATS.includes(cat)) return items;
   const fs = S.folders.filter((f) => f.cat === cat);
   const inside = new Set(fs.flatMap((f) => f.items));

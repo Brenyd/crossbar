@@ -5,6 +5,7 @@ import re
 import shutil
 import subprocess
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -73,7 +74,40 @@ def update_config(fn):
         return cfg
 
 
+class NetError(RuntimeError):
+    """A web request failed, explained in plain words."""
+
+
+def friendly_net_error(url, e):
+    host = urllib.parse.urlparse(url).netloc or url
+    code = getattr(e, "code", None)
+    reason = getattr(e, "reason", None) or e
+    if code in (403, 429) and "github" in host:
+        err = NetError("GitHub is limiting how often it can be asked right now: try again in an hour")
+    elif code == 404:
+        err = NetError(f"{host} doesn't have that (404)")
+    elif code:
+        err = NetError(f"{host} answered with an error ({code})")
+    elif "timed out" in str(reason).lower() or isinstance(e, TimeoutError):
+        err = NetError(f"{host} didn't answer in time")
+    else:
+        err = NetError(f"Couldn't reach {host}: is the internet connected?")
+    err.code, err.reason = code, reason          # callers that explain errors themselves (IPTV) still can
+    return err
+
+
 def http_json(url, headers=None, data=None, timeout=20):
+    try:
+        return _http_json(url, headers, data, timeout)
+    except urllib.error.HTTPError as e:
+        if e.code in (401,):                    # callers handle sign-in problems themselves
+            raise
+        raise friendly_net_error(url, e) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+        raise friendly_net_error(url, e) from None
+
+
+def _http_json(url, headers=None, data=None, timeout=20):
     body = None
     if data is not None:
         body = urllib.parse.urlencode(data).encode()

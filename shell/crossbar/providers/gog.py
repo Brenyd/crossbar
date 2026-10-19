@@ -120,6 +120,7 @@ class GOG(Provider):
         self._cache = (0, [])
 
     def install(self, job, gid):
+        job.set(0.0, "Getting the download from GOG…")
         info = self._api(f"https://api.gog.com/products/{gid}?expand=downloads")
         title = info.get("title", gid)
         installers = info.get("downloads", {}).get("installers", [])
@@ -136,21 +137,30 @@ class GOG(Provider):
         try:
             # download every part (Windows installers are often setup.exe + .bin files)
             files = inst.get("files", [])
-            total = sum(f.get("size", 0) for f in files) or 1
+            total = sum(int(f.get("size") or 0) for f in files)
+            if not total:                         # sizes missing: use the installer's own total
+                total = int(inst.get("total_size") or 0) or 1
             done, paths = 0, []
             job.cancel_with(lambda: None)        # downloads stop at the next chunk; the cache is removed below
-            for f in files:
+            for n_file, f in enumerate(files, 1):
                 job.check()
+                if len(files) > 1:
+                    job.set(message=f"Getting part {n_file} of {len(files)}…")
                 link = self._api(f["downlink"])["downlink"]
                 name = os.path.basename(urllib.parse.urlparse(link).path) or f"part{len(paths)}"
                 path = os.path.join(cache, name)
-                size = f.get("size", 0)
+                size = int(f.get("size") or 0)
 
-                def on_bytes(n, t, d=done):
-                    job.set_bytes(d + n, total, "Downloading")
+                def on_bytes(n, t, d=done, last=[0.0]):
+                    now = time.time()
+                    if now - last[0] < 0.4 and n != t:       # a few updates a second is plenty
+                        job.check()
+                        return
+                    last[0] = now
+                    job.set_bytes(d + n, total)
                     job.progress = 0.85 * job.progress     # the last 15% is unpacking
                 util.download(link, path, on_bytes=on_bytes)
-                done += size
+                done += size or os.path.getsize(path)
                 paths.append(path)
             job.check()
             job.cancellable = False                # unpacking can't stop half-way cleanly

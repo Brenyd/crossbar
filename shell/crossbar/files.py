@@ -34,6 +34,8 @@ def kind(name, is_dir):
 
 
 def listdir(path=None, hidden=False):
+    if path and os.path.realpath(path) == os.path.realpath(os.path.join(TRASH, "files")):
+        os.makedirs(path, exist_ok=True)            # never deleted anything yet: an empty Trash, not an error
     path = _check(path or util.HOME)
     out = []
     for e in os.scandir(path):

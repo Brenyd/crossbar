@@ -1,4 +1,9 @@
 'use strict';
+// the little tag next to a ROM's name (like [STEAM] on store games); Y › Edit Tag… changes it
+const SYSTEM_TAGS = { nes: 'NES', snes: 'SNES', n64: 'N64', gb: 'GB', gbc: 'GBC', gba: 'GBA', nds: 'DS', n3ds: '3DS', gc: 'GAMECUBE', wii: 'WII',
+  wiiu: 'WII U', switch: 'SWITCH', mastersystem: 'SMS', genesis: 'GENESIS', segacd: 'SEGA CD', gamegear: 'GAME GEAR', saturn: 'SATURN',
+  dreamcast: 'DREAMCAST', psx: 'PS1', ps2: 'PS2', ps3: 'PS3', psp: 'PSP', xbox: 'XBOX', pcengine: 'PC ENGINE', atari2600: '2600',
+  arcade: 'ARCADE', scummvm: 'SCUMMVM' };
 // Game › Emulation (Emulators, ROMs) and Settings › Games & Emulation › Emulation. EmuDeck-style folders:
 // ~/Emulation/roms/<system> for games, ~/Emulation/bios for BIOS files.
 
@@ -68,7 +73,7 @@ function romsFolder() {
         key: `sys:${sys.id}`, label: sys.name, icon: 'folder', sub: `${sys.count} game${sys.count === 1 ? '' : 's'}`,
         options: [{ label: 'Choose Emulator', action: () => chooseEmulator(sys) }],
         children: async () => (await api.get(`/api/emulation/games?system=${sys.id}`)).map((g) => ({
-          key: `rom:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, sub: g.tags || sys.name,
+          key: `rom:${sys.id}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, sub: g.tags || '', badge: SYSTEM_TAGS[sys.id] || sys.id.toUpperCase(),
           action: () => launchRom(sys, g),
           options: [{ label: 'Play', action: () => launchRom(sys, g) }, { label: 'Choose Emulator', action: () => chooseEmulator(sys) },
             { label: 'Change Artwork…', action: () => changeArtwork({ key: `rom:${sys.id}:${g.id}`, title: g.title, custom: !!g.art_custom }) }],

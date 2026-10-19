@@ -27,8 +27,12 @@ const Waves = (() => {
   function wave(x, phase, amp, freq) {
     return Math.sin(x * freq + phase) * amp + Math.sin(x * freq * 0.47 + phase * 1.7) * amp * 0.6;
   }
+  let skip = false;
   function frame() {
-    t += 0.004;
+    // 30 frames a second: the waves move slowly, so it looks the same at half the GPU work
+    skip = !skip;
+    if (skip) { requestAnimationFrame(frame); return; }
+    t += 0.008;
     const [hi, lo] = theme;
     const line = /^#[0-9a-f]{6}$/i.test(cfg.lines || '') ? cfg.lines : '#ffffff';
     ctx.globalAlpha = 1;

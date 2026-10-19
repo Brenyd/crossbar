@@ -242,18 +242,33 @@ const COMPAT_FOLDER = {
     const def = c.tools.find((t) => t.id === c.default);
     return [
       { key: 'default', label: 'Default Tool', icon: 'game', sub: def ? def.name : 'umu-launcher isn\'t installed', action: () => pickCompatTool(null) },
-      { key: 'ge', label: 'Proton Versions', icon: 'download', sub: 'Download GE-Proton releases to use per game',
+      { key: 'tools', label: 'Compatibility Tools', icon: 'download', sub: 'GE-Proton, Proton-CachyOS, Wine-GE, DXVK… (ProtonUp-Qt\'s list)',
         children: async () => {
-          const rel = await api.get('/api/compat/ge');
-          return rel.map((r) => ({
-            key: `ge:${r.id}`, label: r.id, icon: r.installed ? 'check' : 'download',
-            sub: `${r.installed ? 'Installed · ' : ''}${r.date} · ${Math.round(r.size / 1048576)} MB`,
-            action: r.installed
-              ? async () => { if (await confirmBox(`Remove ${r.id}?`)) { await call(() => api.post('/api/compat/remove', { tool: r.id }), `Removed ${r.id}`); reloadFolder(); } }
-              : async () => { await call(() => api.post('/api/compat/install', { tag: r.id }), `Downloading ${r.id}…`); pollJobs(); },
+          const cat = await api.get('/api/compat/catalogue');
+          const items = cat.tools.map((t) => ({
+            key: `tool:${t.id}`, label: t.name, icon: t.installed ? 'check' : 'download', badge: t.for.toUpperCase(),
+            sub: t.available ? `${t.about}${t.installed ? ` · ${t.installed} installed` : ''}` : `${t.about} · needs ${t.for}`,
+            children: async () => {
+              if (!t.available) return [{ key: 'na', label: `Install ${t.for} first`, icon: 'info', sub: 'Store › Install Apps › Flatpak has it' }];
+              const rel = await api.get(`/api/compat/tool?id=${t.id}`);
+              if (!rel.length) return [{ key: 'none', label: 'No releases found', icon: 'info', sub: 'GitHub may be rate-limiting: try again in a while' }];
+              return rel.map((r) => ({
+                key: `compat:${t.id}:${r.id}`, label: r.id, icon: r.installed ? 'check' : 'download', badge: r.pre ? 'PREVIEW' : '',
+                sub: `${r.installed ? 'Installed · {ok} remove · ' : ''}${r.date} · ${Math.round(r.size / 1048576)} MB`,
+                action: r.installed
+                  ? async () => { if (await confirmBox(`Remove ${t.name} ${r.id}?`)) { await call(() => api.post('/api/compat/tool-remove', { tool: t.id, tag: r.id }), `Removed ${r.id}`); reloadFolder(); } }
+                  : async () => { await call(() => api.post('/api/compat/tool-install', { tool: t.id, tag: r.id }), `Downloading ${t.name} ${r.id}…`); pollJobs(); },
+              }));
+            },
           }));
+          items.push(cat.app.installed
+            ? { key: 'pupgui', label: 'Open ProtonUp-Qt', icon: 'window', sub: 'The full app (keyboard and mouse) — Quick Menu to come back',
+                action: () => call(() => api.post('/api/apps/launch', { key: `flatpak:${cat.app.id}`, name: 'ProtonUp-Qt' })) }
+            : { key: 'pupgui', label: 'Get ProtonUp-Qt', icon: 'add', sub: 'The desktop app, from Flathub (shows up in Apps)',
+                action: async () => { if (await call(() => api.post('/api/apps/install-flatpak', { id: 'net.davidotek.pupgui2', name: 'ProtonUp-Qt', category: 'apps' }), 'Installing ProtonUp-Qt…')) pollJobs(); } });
+          return items;
         } },
-      { key: 'how', label: 'How This Works', icon: 'info', action: () => message('Windows games from GOG and Epic run through umu-launcher with Proton, like on a Steam Deck.\nEach game gets its own Wine prefix in Games/prefixes.\nPick a different tool for one game with Y › Compatibility Tool on that game.\nSteam games use Steam\'s own Proton settings.', 'Windows Games') },
+      { key: 'how', label: 'How This Works', icon: 'info', action: () => message('Windows games from GOG and Epic run through umu-launcher with Proton, like on a Steam Deck.\nEach game gets its own Wine prefix in Games/prefixes.\nPick a different tool for one game with Y › Compatibility Tool on that game.\nSteam games use Steam\'s own Proton settings: tools installed for Steam show up there after Steam restarts.\nTools for Lutris show up in Lutris\' runner options.', 'Windows Games') },
     ];
   },
 };
@@ -630,7 +645,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: 'Prototype 0.14', action: () => message('Crossbar — an Arch-based console shell.\nPrototype 0.14', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.0 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.0 Alpha', 'About') },
       ];
     },
   },
