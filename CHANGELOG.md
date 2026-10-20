@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.2.2 Alpha (testing branch)
+## 1.2.2 Alpha
 - **Memory Guard** (Settings › System, on by default): when a game runs the console out of
   memory, Crossbar first closes the menu window to give it room, and if memory still runs out,
   closes the game and says so, instead of the whole console freezing for minutes (sound
@@ -20,7 +20,7 @@
   a broken socket; when split-tunnel rules can't be applied, retries back off to 10 minutes
   instead of starting a privileged helper every 30 s
 
-## 1.2.1 Alpha (testing branch)
+## 1.2.1 Alpha
 - **Friends & Party in the Quick Menu** (both looks, in-game too): your Discord voice channels
   (the ones shown in Social) to join or leave, who's online on Discord and Steam (A calls a Discord
   friend), and, while in voice, mute, deafen, share screen and leave. In the Guide it's the
@@ -58,7 +58,7 @@
   each has a **size**: Automatic follows the screen (so it's readable on a 4K TV), or Small /
   Medium / Large / Huge
 
-## 1.2 Alpha (testing branch)
+## 1.2 Alpha
 - **Dashboard (Xbox 360 style), rebuilt from the ground up** as its own front end rather than the
   XMB re-arranged: lowercase pivots across the top (LB / RB, or ◀ ▶ past the last tile), a
   sideways wall of tiles led by a big hero tile, flat colour and a lifted, outlined selection;
