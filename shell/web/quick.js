@@ -181,10 +181,10 @@ const QuickMenu = {
     if (!t) return [{ key: 'loading', icon: 'refresh', label: 'Loading…', sub: '' }];
     const rows = [];
     if (t.total) {
-      rows.push({ key: 'sum', icon: 'trophy', label: `${t.earned} of ${t.total} unlocked`, sub: t.game, bar: t.earned / t.total });
+      rows.push({ key: 'sum', icon: 'trophy', label: `${t.earned} of ${t.total} unlocked`, sub: [t.game, t.console, t.points ? `${t.points} points` : ''].filter(Boolean).join(' · '), bar: t.earned / t.total });
       for (const [i, a] of (t.achievements || []).entries()) {
         rows.push({ key: `a:${i}`, icon: a.earned ? 'trophy' : 'info', art: a.icon || undefined, label: a.title,
-          sub: [a.earned ? `Unlocked ${a.when}` : 'Locked', a.desc].filter(Boolean).join(' · '),
+          sub: [a.earned ? `Unlocked ${a.when}${a.hardcore ? ' · hardcore' : ''}` : 'Locked', a.points ? `${a.points} pts` : '', a.desc].filter(Boolean).join(' · '),
           ok: () => message(`${a.title}\n\n${a.desc || ''}\n\n${a.earned ? `Unlocked ${a.when}` : 'Not unlocked yet'}`, t.game) });
       }
     } else rows.push({ key: 'none', icon: 'info', label: t.game ? `${t.game}` : 'No game running', sub: t.note || 'No trophies to show' });

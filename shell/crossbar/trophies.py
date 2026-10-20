@@ -41,11 +41,11 @@ def _ra():
     return ra["user"], ra["web_key"]
 
 
-def _ra_call(endpoint, **params):
+def _ra_call(endpoint, _ttl=300, **params):
     user, key = _ra()
     q = urllib.parse.urlencode({"u": user, "y": key, **params})
     try:
-        return _get(f"{RA_API}{endpoint}?{q}")
+        return _get(f"{RA_API}{endpoint}?{q}", ttl=_ttl)
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
             raise RuntimeError("RetroAchievements refused the Web API key") from None
@@ -75,6 +75,33 @@ def ra_consoles():
         c["earned"] += earned
         c["total"] += total
     return sorted(consoles.values(), key=lambda c: c["name"])
+
+
+def _norm(t):
+    t = re.sub(r"\(.*?\)|\[.*?\]", " ", (t or "").lower())        # (USA), [!], (Rev 1)…
+    t = re.sub(r"^~[^~]*~\s*", "", t)                              # RA's "~Hack~ " style prefixes
+    return re.sub(r"[^a-z0-9]+", " ", t.replace("&", " and ")).strip()
+
+
+def ra_current(title):
+    """The RetroAchievements game you're playing now: the one RA saw you start last (its rich
+    presence comes from the emulator while you play), checked against the game's title; or,
+    failing that, the recently played game whose title matches."""
+    user, _ = _ra()
+    s = _ra_call("API_GetUserSummary.php", _ttl=15, g=8, a=0)
+    want = _norm(title)
+    recent = s.get("RecentlyPlayed") or []
+
+    def same(t):
+        n = _norm(t)
+        return bool(want) and bool(n) and (n == want or n.startswith(want) or want.startswith(n))
+    last = s.get("LastGameID")
+    if last:
+        lt = next((g.get("Title") for g in recent if str(g.get("GameID")) == str(last)), None) or (s.get("LastGame") or {}).get("Title")
+        if not want or not lt or same(lt):
+            return int(last)
+    hit = next((g for g in recent if same(g.get("Title"))), None)
+    return int(hit["GameID"]) if hit else None
 
 
 def ra_game(game_id):

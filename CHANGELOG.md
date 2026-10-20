@@ -1,6 +1,9 @@
 # Changelog
 
 ## 1.2.1 Alpha (testing branch)
+- **Quick Menu › Trophies for emulated games**: RetroAchievements trophies of the game you're
+  playing (unlocked count, points, the list) — the game RetroAchievements sees you playing,
+  matched against its title
 - **Dashboard now playing**: the seconds tick smoothly (they jumped as each player report came
   in late and rounded; Spotify's position is no longer rounded down either), on the top bar, the
   tile and its details alike; the song that's playing — with its album art — is the big tile in

@@ -256,8 +256,22 @@ def game_trophies():
             return {**out, "note": f"Couldn't get the achievements: {e}"}
         got = sum(1 for a in d["achievements"] if a["earned"])
         return {**out, "achievements": d["achievements"], "earned": got, "total": len(d["achievements"]), "note": d.get("note", "")}
-    where = {"emu": "RetroAchievements shows them in the game itself (and in Game › Trophies)",
-             "gog": "GOG doesn't let other apps read achievements", "epic": "Epic doesn't let other apps read achievements"}
+    if g["provider"] == "emu":                # RetroAchievements: the game RA sees you playing
+        try:
+            gid = trophies.ra_current(g["title"])
+            if not gid:
+                return {**out, "note": "RetroAchievements doesn't know this game yet — is RetroAchievements on in RetroArch (Settings › Emulation)?"}
+            d = trophies.ra_game(gid)
+        except RuntimeError as e:
+            return {**out, "note": str(e)}
+        except Exception as e:
+            return {**out, "note": f"Couldn't get the trophies: {e}"}
+        got = sum(1 for a in d["achievements"] if a["earned"])
+        pts = sum(a.get("points") or 0 for a in d["achievements"] if a["earned"])
+        return {**out, "game": d.get("title") or g["title"], "console": d.get("console"), "achievements": d["achievements"],
+                "earned": got, "total": len(d["achievements"]), "points": pts,
+                "note": "" if d["achievements"] else "This game has no RetroAchievements yet"}
+    where = {"gog": "GOG doesn't let other apps read achievements", "epic": "Epic doesn't let other apps read achievements"}
     return {**out, "note": where.get(g["provider"], "This game's store doesn't share achievements")}
 
 

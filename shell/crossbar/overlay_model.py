@@ -165,12 +165,13 @@ class Model:
         rows = []
         if t.get("total"):
             rows.append({"key": "sum", "icon": "starred-symbolic", "label": f"{t['earned']} of {t['total']} unlocked",
-                         "sub": t.get("game") or "", "bar": t["earned"] / t["total"]})
+                         "sub": " · ".join(x for x in (t.get("game"), t.get("console"), f"{t['points']} points" if t.get("points") else "") if x),
+                         "bar": t["earned"] / t["total"]})
             for i, a in enumerate(t.get("achievements") or []):
                 rows.append({"key": f"a{i}", "icon": "starred-symbolic" if a.get("earned") else "non-starred-symbolic",
                              "label": a.get("title") or "?",
                              "sub": " · ".join(x for x in ((f"Unlocked {a['when']}" if a.get("when") else "Unlocked") if a.get("earned") else "Locked",
-                                                           a.get("desc") or "") if x)})
+                                                           f"{a['points']} pts" if a.get("points") else "", a.get("desc") or "") if x)})
         else:
             rows.append({"key": "none", "icon": "dialog-information-symbolic", "label": t.get("game") or "No game running",
                          "sub": t.get("note") or "No trophies to show"})
