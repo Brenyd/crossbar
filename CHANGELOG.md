@@ -7,7 +7,7 @@
 - **Split rules follow the VPN**: if the VPN comes up without Crossbar (at boot, or NetworkManager
   reconnects it) the routing rules are put back within half a minute; Check Split Tunneling puts
   them back on the spot and shows the VPN connection, its address and whether the rules are there
-- **Torrent search**: Search is one item again. {ok} searches, Y / △ (Options) lists your
+- **Torrent search**: Search is one item again: press it to search; Y / △ (Options) lists your
   plugins to turn on or off (✓ on, – off), all on / all off, and Get More Plugins
 - **Dialogs**: the menu behind a dialog fades back, so its text no longer reads through
 - **Spotify**: one speaker only. A speaker left over from before an update or restart is stopped
