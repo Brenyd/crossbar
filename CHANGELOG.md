@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.5 Alpha
+- **Update Branch** (Settings › System): pick which GitHub branch Update Crossbar installs — main
+  (stable) or a test branch such as testing/xbox-360-interface — and switch back the same way.
+  Picking one offers to install it right away; About shows the branch you're on
+
 ## 1.1.4 Alpha
 - **VPN apps' DNS**: their lookups went to the system's local resolver (127.0.0.53), which the
   firewall tried to send out of the tunnel; the kernel refuses that, so lookups hung (test app
