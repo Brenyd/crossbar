@@ -1,117 +1,130 @@
 # Crossbar roadmap
 
-## Now (0.7) — make the basics solid
-- [x] Quick Menu as a true overlay above every app (native GTK4 layer-shell window, no web engine)
-- [x] Quick Menu on a button combo (Select + Start) so Guide/PS stays with Steam's overlay
-- [x] Controller service reads every pad, grabs it while Crossbar/overlay is in front, releases it to games
-- [x] Steam Input's virtual pad held during the overlay but never double-read
-- [x] Controller mapping works even when only the browser can see the pad (remap fallback)
-- [x] Discord voice channels in Social: join / leave / mute / deafen / who's in
-- [x] Settings: Network (Wi-Fi on/off, forget), Bluetooth pairing, Date & Time, Game Settings
-- [x] Built-in terminal (no separate window), updates and installer run in it
-- [x] Game launch handoff: "Starting…" screen, Steam's client window hidden, back to the menu on exit
-- [x] Shareable support report
-- [ ] **Confirm on real hardware** — overlay, controller grab, YouTube keys (needs a report from a real machine)
+Where Crossbar is going, what's broken right now, and what each version brought.
+The details of every change are in [CHANGELOG.md](CHANGELOG.md).
 
-## 0.8
-- [x] Proton / Wine picker (umu-launcher), GE-Proton download manager, per-game tool
-- [x] GOG Windows games (innoextract + goggame .info launch tasks); Epic through umu too
-- [x] File browser (copy / cut / paste / rename / Trash / delete)
-- [x] Network drives: SMB / NFS via a polkit-authorised root helper, fstab automount, root-only credentials
-- [x] IPTV (Xtream Codes): Live TV, Movies, TV Shows; choose categories, hide channels
-- [x] Steam games via Big Picture, Steam hidden again afterwards; store accounts in Settings
-- [x] Discord linking: Discord window brought forward, progress shown, crashes reported
+✅ works · ⚠️ shipped, but not working right yet · 🔧 being worked on · 🧪 needs testing on real hardware
 
-## 0.9
-- [x] Crossbar cleans up after itself: a new session stops leftovers from the last one; the backend exits with sway
-- [x] Quick Menu must confirm it's on screen, otherwise the controller is handed back (no more invisible menu)
-- [x] Settings › System: Restart Crossbar / Exit Crossbar
-- [x] Power in the Quick Menu is its own page with Cancel selected; power confirms default to No
-- [x] App switcher in the Quick Menu: switch, close, force close
-- [x] Game mode: the menu closes while a game runs to free memory; Quick Menu, music, Spotify, voice keep working
-- [x] Display: screens that report no modes get common sizes (custom modes), rate shown as Auto instead of 0.00
-- [x] IPTV: player user agent, tries the usual Xtream ports, clearer errors
-- [x] Discord: explains the App Testers step when Discord refuses with invalid_scope
+---
 
-## 0.9.1
-- [x] Music/Spotify play-pause shows "Now Playing · song" (Spotify's new non-JSON replies broke it)
-- [x] Steam: start Steam first, wait through updates/sign-in, then send the game
-- [x] IPTV on demand: all episode-list shapes, movie extension lookup, paging, stream reconnects
-- [x] Update Crossbar restarts in place instead of exiting the session
-- [x] install-cachyos.sh: install on CachyOS/Arch (PS5), boot straight into Crossbar, Switch to Desktop / Return to Crossbar
+## Now: fix what's broken
 
-## 0.9.2
-- [x] Per-app volume in the Quick Menu (and Settings › Sound › App Volume)
-- [x] Button glyphs: Automatic / Xbox / PlayStation / Nintendo, everywhere incl. video playback and remapping
+These shipped but don't work properly yet. They come before any new features.
 
-## 0.9.3
-- [x] GOG: launch targets that are Windows shortcuts (.lnk) resolved; fixes itself for installed games
-- [x] GOG/Epic: real error message when a game quits right away (log in ~/.cache/crossbar-games.log)
-- [x] NAS: test the connection before saving, plain-language reasons, SMB1 fallback, any address format
-- [x] Steam: leaves Big Picture after a game; never left showing behind the menu (no double input)
-- [x] Session: one supervisor at a time, never a black screen (error screen + retry), logged restarts
-- [x] PS5 hardware: temperatures, overlay HUD, fan target, fan mode/boost, front light
-- [x] PlayStation glyphs drawn as centred shapes
-
-## 0.10
-- [x] Emulation: ROMs by system, emulator installs (Flathub/AppImage), BIOS checks, defaults, RetroAchievements
-- [x] Trophies: RetroAchievements by console, Steam achievements
-- [x] On-screen keyboard: QWERTY, in Crossbar and system-wide (input method + Quick Menu), closes on real keyboard/mouse
-- [x] Discord rebuilt on its own web client: voice channels in Social without a developer app
-- [x] XMB spacing: rows below a big highlighted tile, rows under the button hints
-
-## 0.11
-- [x] Quick Menu grouped into pages (Sound, Performance, Settings); long pages scroll instead of overflowing
-- [x] Settings column grouped (Display & Sound, Network & Bluetooth, Games & Emulation, Theme & Time, System)
-- [x] Trophies at the top of Game
-- [x] Discord: voice channels hidden by default, chosen in Settings › Accounts › Discord
-- [x] SteamGridDB artwork: change any game's or ROM's picture, fill in missing art
-- [x] Frame rate overlay (MangoHud) from the Quick Menu
-- [x] PS5: ps5_control built at install/update time (services left off)
-
-## 0.11.1
-- [x] Social › Friends: Steam (online, now playing) and Discord (A calls them); Social › Party for voice channels
-- [x] On-screen keyboard: never two at once, never types into the menu behind it, keeps the controller
-- [x] Only one Quick Menu overlay process can run
-- [x] Game › Return to… lists only games and emulators; other apps stay in the Quick Menu's Switch App
-- [x] Trophies: GOG / Epic entries removed
-
-## 0.12
-- [x] Game › Steam Big Picture
-- [x] Downloads: speed and time left; Cancel Download (stops and deletes what was downloaded)
-- [x] Controller-friendly browser: link-to-link navigation, keyboard typing into pages, tabs, pointer mode, bookmarks, TV-sized
-- [x] Discord: calling friends opens the DM properly; looser call-button match plus Discord's Ctrl+' shortcut
-
-## 0.12.1
-- [x] Discord: Share Screen (Social / Quick Menu), with the wlroots screen-capture portal set up for the Crossbar session
-- [x] Discord: calling friends through Discord's own start-call (rings them; creates the DM if needed)
-
-## 0.13
-- [x] Themes: colours, waves, background picture/video, font, icons, sounds, keyboard and Quick Menu; four stock themes; install from folder/.zip; docs/THEMES.md
-- [x] On-screen keyboard: PlayStation-style buttons (□ backspace, △ space, L1/R1 cursor, L2 shift, L3 symbols, R2 done, ○ close)
-- [x] Start-up: the splash goes once the Game column is ready (max 10 s), not after every category
-- [x] Screen capture setup restored when leaving Crossbar; KDE repairs leftovers at login
-- [x] Discord: Share Screen found at desktop layout size; calling via Discord's own functions, with a Discord Check report
-
-## 0.14
-- [x] Apps category: open apps (switch / close / force close), Flatpaks and AppImages
-- [x] Store › Install Apps: Flathub browser (search, popular, trending, new, updated, categories, details) and AppImage installer, with a category choice
-- [x] Your own folders in any category
-- [x] Artwork: Local File…; apps can use SteamGridDB too
-
-## 1.0 Alpha
-- [x] Live download progress (Steam staging folder, GOG from the start, in-place rows)
-- [x] Eden (Nintendo Switch) with keys and firmware
-- [x] Editable tags; system tags on ROMs
-- [x] Lutris and Steam non-Steam games
-- [x] ProtonUp-Qt's tool catalogue in the Proton / Wine manager
-- [x] Bug hunt: undefined-name scan, API sweep, full menu crawl; friendlier network errors
+| | Area | What's wrong | Since |
+|---|---|---|---|
+| 🔧 | **VPN split tunnelling** | Apps chosen to use the VPN don't reliably go through it, and the leak tests and Check Split Tunneling still fail on a real install | 1.1 |
+| 🔧 | **VPN port forwarding** | PIA port forwarding doesn't get or keep a port, so Torrents can't use a forwarded port | 1.1 |
+| 🔧 | **Torrent search plugins** | Searching through qBittorrent's plugins doesn't return results. Adding a `.torrent` file or a magnet link works | 1.1 |
+| 🧪 | **Heavy games on the PS5** | Cyberpunk 2077 froze the console while loading, then left a black screen. 1.2.2 adds Memory Guard, the black-screen fix and quieter background work; it needs confirming on the PS5 | 1.2.2 |
+| 🧪 | **Quick Menu and controller on every machine** | Overlay, controller hand-off and YouTube keys need reports from more hardware | 0.7 |
 
 ## Next
 
-- IPTV extras: EPG (now/next) for live channels, favourites, search.
+- **More memory for big games:** an optional compressed swap in RAM (zram) set up from Settings,
+  undoable, so heavy games have room before Memory Guard has to step in.
+- **More console skins:** new looks built on the looks system (see [docs/LOOKS.md](docs/LOOKS.md)),
+  from the project or from anyone using the starter template.
 
-## Later
-- **Other desktop backends** — option to run Crossbar on KDE Plasma (KWin) and use KDE's settings backends
-  (kscreen, bluedevil, plasma-nm), or on lighter compositors.
-- Trophies/achievements view, friends list, screenshots/video capture.
+---
+
+## Version history
+
+Newest first. Each version lists what it added; ⚠️ marks features that still need work (see *Now* above).
+
+### 1.2 series: two interfaces, and staying out of the game's way
+
+**1.2.2 Alpha**
+- ✅ **Memory Guard:** closes a game that runs the console out of memory, instead of letting everything freeze
+- ✅ Go to Home and Restart Crossbar bring the menu back after a game, even with its window still around
+- ✅ Closing a Steam game ends every Proton process, not just the window
+- ✅ The menu goes quiet behind games: animations pause, the backdrop stops, polling slows
+- ✅ Lighter background work: cached status checks, a bounded DNS relay, split-rule retries that back off
+- ✅ New README with screenshots of both interfaces, and the full reference in [docs/GUIDE.md](docs/GUIDE.md)
+
+**1.2.1 Alpha**
+- ✅ **Looks system:** each console skin is a folder (look.json, look.js, look.css), with a starter template and [docs/LOOKS.md](docs/LOOKS.md)
+- ✅ The Dashboard's big tile is what you used last: the game, the video with its poster, the live channel with its logo, the song that's playing
+- ✅ Now Playing centred along the top of the Dashboard, with smooth seconds
+- ✅ **Trophies in the Quick Menu:** Steam, and RetroAchievements for emulated games
+- ✅ **Friends & Party in the Quick Menu:** join voice channels, see who's online, call friends, mute, deafen, share the screen
+- ✅ The in-game Quick Menu matches the look: a centred, 360-sized Guide with five tabs for the Dashboard
+- ✅ Frame-rate and temperature overlays have separate corners and sizes (readable on a 4K TV)
+- ✅ The system keyboard matches the Dashboard in other apps
+
+**1.2 Alpha**
+- ✅ **Dashboard (Xbox 360 style)** rebuilt from the ground up: pivots, a tile wall with a big tile, lists with a details pane, an Options flyout, panel dialogs
+- ✅ **Interface switch** from Settings or the Quick Menu, applied live
+- ✅ Settings › Theme reorganised: Interface first, then that look's own settings, then theme packs
+
+### 1.1 series: torrents, VPN, network
+
+**1.1.5 Alpha**
+- ✅ **Update Branch:** install main or a test branch, and switch back and forth
+
+**1.1.4 Alpha**
+- ✅ First Xbox 360 interface (Blades / NXE / Metro eras), replaced by the 1.2 Dashboard
+- ⚠️ VPN apps' DNS through a tunnel relay, IPv6 blocked for VPN apps, PIA port forwarding over the tunnel address
+
+**1.1.3 Alpha**
+- ⚠️ Split tunnelling on Arch (through `newgrp`); split rules follow the VPN when it reconnects
+- ⚠️ Torrent search back to one item, with plugins switched on and off from Options
+- ✅ Spotify: only ever one speaker (no more double audio)
+
+**1.1.2 Alpha**
+- ⚠️ Split tunnelling through a `crossbar-vpn` group; Check Split Tunneling and Check My Address show both addresses
+- ⚠️ Torrent search through qBittorrent's own search runner
+
+**1.1.1 Alpha**
+- ✅ VPN connects to PIA (certificate check fixed)
+- ⚠️ Split tunnelling as an on/off switch, with DNS through the VPN
+- ✅ Leak tests: a torrent IP leak test and a DNS leak test
+- ✅ Speed test download fixed
+
+**1.1 Alpha**
+- ✅ **Torrents:** a controller client on qBittorrent's engine; `.torrent` files and magnet links, transfers, settings
+- ⚠️ Torrent search through qBittorrent search plugins (official and community)
+- ✅ **VPN** from the controller: WireGuard and OpenVPN; sign-in for PIA, Mullvad and NordVPN; config import for the rest
+- ⚠️ VPN port forwarding and split tunnelling
+- ✅ Internet speed test
+- ✅ Windows Components per game (winetricks / protontricks)
+
+### 1.0 series: first alpha
+
+**1.0.2 Alpha**
+- ✅ **Launch Options** per game: environment variables, a launch command, the Proton / Wine version, common switches
+- ✅ Frame-rate overlay in Steam games; icons per ROM system; tags for apps
+
+**1.0.1 Alpha**
+- ✅ Hide any game, app or ROM
+- ✅ Flathub installs fixed; Discord calling and screen share with Discord's current client
+
+**1.0 Alpha**
+- ✅ Live download progress (Steam, GOG)
+- ✅ **Eden** (Nintendo Switch) with keys and firmware
+- ✅ Editable tags; Lutris games and Steam non-Steam games
+- ✅ ProtonUp-Qt's tool catalogue in the Proton / Wine manager
+
+### 0.x: building the console
+
+**0.14:** Apps category (open apps, Flatpaks, AppImages) · Flathub browser and AppImage installer · your own folders · local artwork
+
+**0.13:** Theme packs (colours, waves, background, font, icons, sounds) · PlayStation-style on-screen keyboard · faster start-up
+
+**0.12 / 0.12.1:** Steam Big Picture in Game · download speed, time left and cancel · a controller-made web browser · Discord screen share and calling
+
+**0.11 / 0.11.1:** Quick Menu pages (Sound, Performance, Settings) · grouped Settings · SteamGridDB artwork · frame-rate overlay (MangoHud) · Steam and Discord friends · Party
+
+**0.10:** Emulation (ROMs, emulator installs, BIOS checks, RetroAchievements) · Trophies · on-screen keyboard, in Crossbar and system-wide · Discord voice on its own web client
+
+**0.9 – 0.9.3:**
+- Game mode (the menu closes during games)
+- Restart and Exit Crossbar · an app switcher · per-app volume · button glyphs
+- Install on CachyOS / Arch and the PS5 · PS5 temperatures, fan and front light
+- More reliable Steam, GOG and NAS
+
+**0.8:**
+- The Proton / Wine picker (umu-launcher) and GE-Proton downloads · GOG and Epic Windows games
+- A file browser · network drives (SMB / NFS) · IPTV (live TV, movies, series)
+
+**0.7:** The Quick Menu as a true overlay · the controller service · Discord voice channels · Wi-Fi, Bluetooth, Date & Time · a built-in terminal · launch hand-off · support reports
