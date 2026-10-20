@@ -1,6 +1,10 @@
 # Changelog
 
 ## 1.2.1 Alpha (testing branch)
+- **Dashboard now playing**: the seconds tick smoothly (they jumped as each player report came
+  in late and rounded; Spotify's position is no longer rounded down either), on the top bar, the
+  tile and its details alike; the song that's playing — with its album art — is the big tile in
+  Music
 - **Looks are modular now (console skins)**: each look is a folder — look.json (name, settings,
   colours, Quick Menu style), look.js (its drawing code) and look.css — in shell/web/looks/ or
   ~/.local/share/crossbar/looks/, picked up automatically. Settings › Theme builds each look's

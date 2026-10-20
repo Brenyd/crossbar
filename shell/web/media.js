@@ -108,6 +108,7 @@ function musicNowItem(m) {
   };
   return {
     key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING', recent: Date.now() / 1000,
+    nowPlaying: true,
     sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(m.position)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
     progress: m.duration ? m.position / m.duration : null,
     action: ctl('toggle'),
@@ -138,7 +139,8 @@ function spotifyNowItem(n, key = 'sp-now') {
   ];
   if (!n.here) opts.unshift({ label: 'Play on Crossbar', action: spotifyTransfer });
   if (n.lost) opts.splice(0, opts.length, { label: 'Stop', action: ctl('toggle') }, { label: 'Reconnect (keeps playing)', action: spotifyTransfer });
-  return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY',
+  return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY', recent: n.playing ? Date.now() / 1000 : 0,
+    nowPlaying: true,
     sub: `${n.artist} · ${fmtTime(n.position)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.lost ? ' · Spotify lost the speaker: {menu} to reconnect' : n.playing ? '' : ' · Paused'}`,
     progress: n.duration ? n.position / n.duration : null, action: ctl('toggle'), options: opts };
 }

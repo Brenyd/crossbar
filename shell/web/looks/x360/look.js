@@ -80,20 +80,52 @@ const X360 = {
       }
       n = this.sp ? { ...this.sp, pos: this.sp.pos + (this.sp.paused ? 0 : (Date.now() - this.sp.at) / 1000) } : null;
     }
-    this.now = n ? { ...n, at: Date.now() } : null;
+    this.sample(n);
     this.drawNow();
+  },
+  // The track's position, ticking smoothly. Players and Spotify report it every few seconds,
+  // rounded and a little late; following each report made the seconds jump. A report only
+  // resets the clock on a new track, play / pause, or when it's more than 2 s out.
+  sample(n) {
+    if (!n) { this.now = null; return; }
+    const c = this.now;
+    if (c && c.title === n.title && c.paused === !!n.paused && Math.abs(this.pos() - n.pos) < 2) {
+      c.dur = n.dur || c.dur; c.by = n.by; return;
+    }
+    this.now = { ...n, paused: !!n.paused, at: Date.now() };
+  },
+  pos() {
+    const n = this.now; if (!n) return 0;
+    return Math.min(n.dur || Infinity, n.pos + (n.paused ? 0 : (Date.now() - n.at) / 1000));
   },
   drawNow() {
     const el = $('.x-now'); if (!el) return;
     const n = this.now;
     el.hidden = !n;
     if (!n) return;
-    const pos = Math.min(n.dur || 0, n.pos + (n.paused ? 0 : (Date.now() - n.at) / 1000));
+    const pos = this.pos();
     $('.x-now-title').textContent = `${n.paused ? '❚❚  ' : '♪  '}${n.title}`;
     $('.x-now-by').textContent = n.by ? `  —  ${n.by}` : '';
     $('.x-now-pos').textContent = fmtTime(pos);
     $('.x-now-dur').textContent = n.dur ? fmtTime(n.dur) : '';
     $('.x-now-bar i').style.width = n.dur ? `${(pos / n.dur * 100).toFixed(1)}%` : '0';
+    this.tickPlaying();
+  },
+  // the now-playing tile and its details follow the same clock, every second
+  tickPlaying() {
+    const n = this.now; if (!n) return;
+    const pos = this.pos(), frac = n.dur ? `${Math.min(100, pos / n.dur * 100).toFixed(1)}%` : null;
+    list().forEach((it, i) => {
+      if (!it.nowPlaying || it.label !== n.title) return;
+      const bar = columnEls[i]?.querySelector('.bar i');
+      if (bar && frac) bar.style.width = frac;
+      if (i === sel()) {
+        const sub = $('.x-d-sub');
+        if (sub) sub.textContent = sub.textContent.replace(/\d+:\d\d \/ /, `${fmtTime(pos)} / `);
+        const dbar = $('.x-d-bar i');
+        if (dbar && frac) dbar.style.width = frac;
+      }
+    });
   },
   teardown() {
     clearInterval(this.tick); clearInterval(this.nowTick); clearInterval(this.nowPoll);
@@ -182,7 +214,9 @@ const X360 = {
     const items = list();
     const mode = this.pickMode();
     // the hero is what you used last here; the first time you come to a pivot, you start on it
-    this.hero = mode === 'home' && items.length > 2 ? Math.max(0, Recent.top(CATS[S.ci].id, items)) : -1;
+    // (something playing right now always leads its section)
+    const playing = items.findIndex((it) => it.nowPlaying && it.recent);
+    this.hero = mode === 'home' && items.length > 2 ? (playing >= 0 ? playing : Math.max(0, Recent.top(CATS[S.ci].id, items))) : -1;
     if (mode === 'home' && this.hero >= 0 && S.catSel[CATS[S.ci].id] === undefined) S.catSel[CATS[S.ci].id] = this.hero;
     if (rebuild || mode !== this.mode) this.scroll = 0;
     this.mode = mode;
@@ -263,6 +297,7 @@ const X360 = {
     const bar = $('.x-d-bar');
     bar.hidden = it.progress == null;
     if (it.progress != null) bar.firstElementChild.style.width = `${(it.progress * 100).toFixed(1)}%`;
+    if (it.nowPlaying) this.tickPlaying();
     const art = $('.x-d-art');
     if (this.mode === 'list') {
       art.hidden = false;
@@ -270,7 +305,7 @@ const X360 = {
       else { art.className = 'x-d-art ic'; art.style.backgroundImage = ''; art.innerHTML = icon(it.icon || 'info'); }
     } else art.hidden = true;
   },
-  patched() { this.detail(); },
+  patched() { this.detail(); this.tickPlaying(); },
 
   hint() {
     const it = list()[sel()];
