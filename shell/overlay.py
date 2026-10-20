@@ -64,6 +64,42 @@ class Api:
             return None
 
 
+def guide_css(scale, look):
+    """The Guide (a look whose look.json has "overlay": {"style": "guide"}): a dark panel, tabs
+    across the top, rows lit in the look's accent colour."""
+    px = lambda n: f"{max(1, round(n * scale))}px"  # noqa: E731
+    acc, acc2 = look.get("accent", "#107c10"), look.get("accent2", look.get("accent", "#5dc21e"))
+    p1, p2 = look.get("panel", "#26272b"), look.get("panel2", "#1c1d20")
+    text, dim = look.get("text", "#ffffff"), look.get("dim", "rgba(255,255,255,0.62)")
+    return f"""
+    .panel.guide {{ background: linear-gradient({p1}, {p2}); padding: 0; border-radius: 0;
+      box-shadow: 0 {px(20)} {px(60)} rgba(0,0,0,0.6); }}
+    .panel.guide .g-top {{ padding: {px(20)} {px(30)} {px(10)}; }}
+    .panel.guide .g-pic {{ background: linear-gradient(135deg, {acc2}, {acc}); color: white; font-size: {px(28)};
+      min-width: {px(56)}; min-height: {px(56)}; }}
+    .panel.guide .g-name {{ color: {text}; font-size: {px(24)}; }}
+    .panel.guide .g-now, .panel.guide .g-time {{ color: {dim}; font-size: {px(18)}; }}
+    .panel.guide .g-time {{ font-size: {px(24)}; }}
+    .panel.guide .g-tabs {{ padding: 0 {px(24)}; border-bottom: 1px solid rgba(255,255,255,0.12); }}
+    .panel.guide .g-tab {{ padding: {px(10)} 0 {px(12)}; color: rgba(255,255,255,0.45); border-bottom: {px(4)} solid transparent; }}
+    .panel.guide .g-tab label {{ font-size: {px(17)}; }}
+    .panel.guide .g-tab.on {{ color: {text}; border-bottom-color: {acc2}; }}
+    .panel.guide .g-head {{ color: {dim}; font-size: {px(20)}; padding: {px(12)} {px(32)} 0; }}
+    .panel.guide .rows {{ padding: {px(8)} 0; }}
+    .panel.guide .g-tab image {{ -gtk-icon-size: {px(28)}; }}
+    .panel.guide .row {{ border-radius: 0; padding: {px(7)} {px(30)}; color: rgba(255,255,255,0.86); }}
+    .panel.guide .label {{ font-size: {px(21)}; }}
+    .panel.guide .sub {{ font-size: {px(15)}; }}
+    .panel.guide .row.on {{ background: {acc}; color: white; box-shadow: none; }}
+    .panel.guide .row.on .sub {{ color: rgba(255,255,255,0.85); }}
+    .panel.guide .row.danger.on {{ background: #a4161a; }}
+    .panel.guide .label {{ font-weight: 400; }}
+    .panel.guide progressbar progress {{ background: {acc2}; }}
+    .panel.guide .foot {{ padding: {px(10)} {px(30)} {px(14)}; border-top: 1px solid rgba(255,255,255,0.12); margin: 0; }}
+    .panel.guide .notice {{ padding: 0 {px(32)}; }}
+    """
+
+
 def css(scale, theme=None):
     px = lambda n: f"{max(1, round(n * scale))}px"  # noqa: E731
     t = theme or {}
@@ -125,13 +161,46 @@ class Overlay(Gtk.Application):
             self.theme = {}
         provider = Gtk.CssProvider()
         self.provider, self.css_scale = provider, scale
-        self._load_css(provider, css(scale, self.theme))
+        self._load_css(provider, css(scale, self.theme) + guide_css(scale, {}))
         Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         root = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         panel.add_css_class("panel")
         panel.set_size_request(int(min(width * 0.40, 760 * scale)), -1)
+        # the Guide's header (profile, time) and tabs: shown only for a look with a Guide
+        self.g_top = Gtk.Box(spacing=int(18 * scale))
+        self.g_top.add_css_class("g-top")
+        self.g_pic = Gtk.Label(label="P")
+        self.g_pic.add_css_class("g-pic")
+        who = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        who.set_hexpand(True)
+        self.g_name = Gtk.Label(label="Player", xalign=0)
+        self.g_name.add_css_class("g-name")
+        self.g_now = Gtk.Label(label="", xalign=0)
+        self.g_now.add_css_class("g-now")
+        self.g_now.set_ellipsize(Pango.EllipsizeMode.END)
+        who.append(self.g_name)
+        who.append(self.g_now)
+        self.g_time = Gtk.Label(label="")
+        self.g_time.add_css_class("g-time")
+        for w in (self.g_pic, who, self.g_time):
+            self.g_top.append(w)
+        self.g_tabs = Gtk.Box(homogeneous=True)
+        self.g_tabs.add_css_class("g-tabs")
+        self.g_tab_widgets = {}
+        from crossbar.overlay_model import GUIDE_TABS
+        for key, label, icon in GUIDE_TABS:
+            t = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=int(4 * scale))
+            t.add_css_class("g-tab")
+            img = Gtk.Image.new_from_icon_name(icon)
+            img.set_pixel_size(int((34 if key == "main" else 28) * scale))
+            t.append(img)
+            t.append(Gtk.Label(label=label.lower()))
+            self.g_tabs.append(t)
+            self.g_tab_widgets[key] = t
+        self.g_head = Gtk.Label(label="", xalign=0)
+        self.g_head.add_css_class("g-head")
         self.kicker = Gtk.Label(label="QUICK MENU", xalign=0)
         self.kicker.add_css_class("kicker")
         self.title = Gtk.Label(label="Crossbar", xalign=0)
@@ -145,13 +214,27 @@ class Overlay(Gtk.Application):
         self.notice.add_css_class("notice")
         self.foot = Gtk.Label(label="", xalign=0)
         self.foot.add_css_class("foot")
-        for w in (self.kicker, self.title, sep, self.rows, self.notice, self.foot):
+        self.sep = sep
+        self.rows.add_css_class("rows")
+        for w in (self.g_top, self.g_tabs, self.g_head, self.kicker, self.title, sep, self.rows, self.notice, self.foot):
             panel.append(w)
+        self.panel, self.look_sig = panel, None
+        # layout: the XMB's panel runs down the left edge; the Guide sits centred, a fixed size
+        # like the 360's (style_for_look switches): [shade-left] [column: panel] [shade]
         shade = Gtk.Box()
         shade.add_css_class("shade")
         shade.set_hexpand(True)
-        root.append(panel)
+        shade_l = Gtk.Box()
+        shade_l.add_css_class("shade")
+        shade_l.set_hexpand(True)
+        shade_l.set_visible(False)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(panel)
+        root.append(shade_l)
+        root.append(col)
         root.append(shade)
+        self.shade_l, self.col, self.screen = shade_l, col, (width, height)
+        self.panel_w = int(min(width * 0.40, 760 * scale))
         win.set_child(root)
 
         keys = Gtk.EventControllerKey()
@@ -160,7 +243,8 @@ class Overlay(Gtk.Application):
 
         self.win, self.scale = win, scale
         # rows that fit between the header and the footer; the list scrolls past that
-        self.max_rows = max(4, int((height - 330 * scale) / (92 * scale)))
+        self.max_rows = self.panel_rows = max(4, int((height - 330 * scale) / (92 * scale)))
+        self.guide_rows = 6
         self.offset = 0
         self.make_hud(scale)
         self.glyph_data = {}
@@ -185,7 +269,8 @@ class Overlay(Gtk.Application):
             self.theme = self.api.get("/api/theme") or {}
         except Exception:
             return False
-        self._load_css(self.provider, css(self.css_scale, self.theme))
+        self.look_sig = None                      # restyled with the look on the next draw
+        self._load_css(self.provider, css(self.css_scale, self.theme) + guide_css(self.css_scale, {}))
         self.osk.set_theme(self.theme)
         return False
 
@@ -198,13 +283,8 @@ class Overlay(Gtk.Application):
         LayerShell.set_keyboard_mode(hud, LayerShell.KeyboardMode.NONE)
         LayerShell.set_exclusive_zone(hud, -1)
         css = Gtk.CssProvider()
-        text = (f".hud {{ background: rgba(0,0,0,0.55); border-radius: {int(10 * scale)}px; padding: {int(6 * scale)}px {int(12 * scale)}px; }}"
-                f" .hud label {{ color: #eee; font-size: {int(17 * scale)}px; font-family: 'Noto Sans', sans-serif; }}"
-                " .hud .warm { color: #ffc56b; } .hud .hot { color: #ff7b7b; }")
-        if hasattr(css, "load_from_string"):
-            css.load_from_string(text)
-        else:
-            css.load_from_data(text.encode())
+        self.hud_css, self.hud_size = css, None
+        self.hud_style("auto")
         Gtk.StyleContext.add_provider_for_display(Gdk.Display.get_default(), css, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
         box = Gtk.Box(spacing=int(14 * scale))
         box.add_css_class("hud")
@@ -213,6 +293,21 @@ class Overlay(Gtk.Application):
         if hasattr(hud, "set_can_target"):
             box.set_can_target(False)                          # clicks and input go straight through
         threading.Thread(target=self.hud_loop, daemon=True).start()
+
+    HUD_SCALE = {"small": 0.8, "auto": 1.0, "medium": 1.4, "large": 2.0, "huge": 2.8}
+
+    def hud_style(self, size):
+        """Text size (Quick Menu › Performance › Temperature Size): readable on a big TV too."""
+        if size == self.hud_size:
+            return
+        self.hud_size = size
+        k = self.scale * self.HUD_SCALE.get(size, 1.0)
+        text = (f".hud {{ background: rgba(0,0,0,0.55); border-radius: {int(10 * k)}px; padding: {int(6 * k)}px {int(12 * k)}px; }}"
+                f" .hud label {{ color: #eee; font-size: {int(17 * k)}px; font-family: 'Noto Sans', sans-serif; }}"
+                " .hud .warm { color: #ffc56b; } .hud .hot { color: #ff7b7b; }")
+        self._load_css(self.hud_css, text)
+        if getattr(self, "hud_box", None):
+            self.hud_box.set_spacing(int(14 * k))
 
     def hud_loop(self):
         while True:
@@ -227,7 +322,8 @@ class Overlay(Gtk.Application):
         if not (p.get("available") and p.get("hud")):
             self.hud.set_visible(False)
             return False
-        corner = p.get("hud_corner") or "top-right"
+        self.hud_style(p.get("hud_size") or "auto")
+        corner = p.get("hud_corner") or "top-left"
         if corner != self.hud_corner:
             for edge, on in ((LayerShell.Edge.TOP, "top" in corner), (LayerShell.Edge.BOTTOM, "bottom" in corner),
                              (LayerShell.Edge.LEFT, "left" in corner), (LayerShell.Edge.RIGHT, "right" in corner)):
@@ -280,10 +376,53 @@ class Overlay(Gtk.Application):
         """Controller glyphs ({ok} -> A / ✕ / B) in the style chosen in Settings."""
         return glyphs.render(text, self.model.data.get("glyphs"))
 
+    def style_for_look(self):
+        """Panel or Guide, in the look's colours (looks.py overlay(), via /api/quick)."""
+        look = self.model.data.get("look") or {}
+        sig = json.dumps(look, sort_keys=True)
+        if sig == self.look_sig:
+            return look
+        self.look_sig = sig
+        self._load_css(self.provider, css(self.css_scale, self.theme) + guide_css(self.css_scale, look))
+        guide = look.get("style") == "guide"
+        (self.panel.add_css_class if guide else self.panel.remove_css_class)("guide")
+        # the Guide: centred on the screen, 960 × 640 at 1080p (the 360's Guide is a box in the
+        # middle, about half the screen wide); the panel: full height down the left
+        s = self.scale
+        self.shade_l.set_visible(guide)
+        (self.col.add_css_class if guide else self.col.remove_css_class)("shade")
+        self.panel.set_valign(Gtk.Align.CENTER if guide else Gtk.Align.FILL)
+        self.panel.set_vexpand(True)              # (with CENTER: the spare height splits above and below)
+        self.panel.set_size_request(int(960 * s) if guide else self.panel_w, int(640 * s) if guide else -1)
+        self.max_rows = self.guide_rows if guide else self.panel_rows
+        for w in (self.g_top, self.g_tabs):
+            w.set_visible(guide)
+        for w in (self.kicker, self.title, self.sep):
+            w.set_visible(not guide)
+        return look
+
     def render(self):
         m = self.model
+        look = self.style_for_look()
+        guide = look.get("style") == "guide"
         self.title.set_text(m.title())
-        self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  Back to {m.back_to()}"))
+        if guide:
+            d = m.data
+            user = d.get("user") or "Player"
+            self.g_pic.set_text(user[:1].upper())
+            self.g_name.set_text(user)
+            app = d.get("app")
+            self.g_now.set_text(f"Playing {app['title']}" if app else "In Crossbar")
+            self.g_time.set_text(time.strftime("%-I:%M %p"))
+            for key, w in self.g_tab_widgets.items():
+                (w.add_css_class if key == m.tab() else w.remove_css_class)("on")
+            head = None if m.is_tab() else m.title()
+            self.g_head.set_visible(bool(head))
+            self.g_head.set_text((head or "").lower())
+            self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  {'Close' if m.is_tab() else 'Back'}      LB RB  Tabs"))
+        else:
+            self.g_head.set_visible(False)
+            self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  Back to {m.back_to()}"))
         self.notice.set_text(self.g(m.notice))
         child = self.rows.get_first_child()
         while child:
@@ -392,7 +531,10 @@ class Overlay(Gtk.Application):
                         elif ev.get("type") == "osk":
                             if ev.get("open"):
                                 try:
-                                    self.glyph_data = (self.api.get("/api/quick") or {}).get("glyphs") or {}
+                                    q = self.api.get("/api/quick") or {}
+                                    self.glyph_data = q.get("glyphs") or {}
+                                    look = q.get("look") or {}
+                                    GLib.idle_add(lambda look=look: self.osk.set_theme(self.theme, look) and False)
                                 except Exception:
                                     pass
                             GLib.idle_add(self.osk.show, bool(ev.get("open")))

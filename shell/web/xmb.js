@@ -1,10 +1,11 @@
 'use strict';
-// Crossbar XMB shell. Categories run horizontally, items vertically; folders
+// Crossbar shell. The XMB look: categories run horizontally, items vertically; folders
 // push a new column. Keyboard: arrows, Enter, Esc, Tab. Gamepad: d-pad/stick, A, B, Y.
+// Only the *drawing* half is swappable (see "shell seam" below); everything else —
+// the item model, folders, Options, dialogs, input, polling — is shared by every look.
 
 const $ = (s) => document.querySelector(s);
 const STAGE = $('#stage');
-const CAT_X = 560, CAT_GAP = 230;
 
 // ---------------------------------------------------------------- utilities
 const api = {
@@ -77,7 +78,7 @@ const PS_SVG = {
 const glb = (a) => {
   const g = gl(`{${a}}`);
   const svg = PS_SVG[g] ? `<svg viewBox="0 0 24 24" aria-label="${g}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">${PS_SVG[g]}</svg>` : esc(g);
-  return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}${PS_SVG[g] ? ' sym' : ''}" data-g="${esc(g)}">${svg}</b>`;
+  return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}${PS_SVG[g] ? ' sym' : ''}" data-g="${esc(g)}" data-a="${esc(a)}">${svg}</b>`;
 };
 function applyGlyphs() {   // the few hints that live in the page itself
   $('#viewer .v-hint').innerHTML = `<b>◀ ▶</b>Browse ${glb('ok')}Slideshow ${glb('back')}Back ${glb('menu')}Hide info`;
@@ -123,6 +124,7 @@ const Dialog = {
     $('.dlg-fields').innerHTML = fields.map((f, i) =>
       `<label>${esc(f.label)}</label><input data-k="${esc(f.key)}" type="${f.secret ? 'password' : 'text'}" value="${esc(f.value || '')}" spellcheck="false">`).join('');
     this.renderButtons();
+    $('.dlg-buttons').classList.remove('dim');      // left over from a dialog that had text fields
     $('#dialog').hidden = false;
     const first = $('.dlg-fields input');
     this.fi = first ? 0 : -1;               // controller focus: a field index, or -1 = the buttons
@@ -175,9 +177,10 @@ const Dialog = {
       else if (action === 'back') this.close(null);
       return;
     }
-    if (action === 'up' && n) { this.fi = n - 1; this.padFocus(); Sfx.move(); }
-    else if (action === 'left') this.move(-1);
-    else if (action === 'right') this.move(1);
+    const vert = Shell.active?.dialogVertical;
+    if (action === 'up' && n && (!vert || this.sel === 0)) { this.fi = n - 1; this.padFocus(); Sfx.move(); }
+    else if (action === (vert ? 'up' : 'left')) this.move(-1);
+    else if (action === (vert ? 'down' : 'right')) this.move(1);
     else if (action === 'ok') this.close(this.sel);
     else if (action === 'back') this.close(null);
   },
@@ -218,12 +221,18 @@ function groupOptions(list) {
   const risky = out.filter((o) => /^(Delete|Uninstall|Remove)/.test(o.label));
   return [...out.filter((o) => !risky.includes(o)), ...risky];
 }
+// what an Options panel opened from the menu is about (the highlighted row)
+function list_title() { try { return list()[sel()]?.label || ''; } catch (e) { return ''; } }
 const Options = {
   open: false, sel: 0, list: [],
   offset: 0,
   show(list, sel = 0, parent = null) {
     if (!list?.length) return;
-    if (!parent) list = groupOptions(list);
+    if (!parent) {
+      list = groupOptions(list);
+      $('#options').dataset.title = this.title || (QuickMenu.open ? '' : list_title());
+      this.title = '';
+    }
     this.parent = parent;
     this.list = list; this.sel = sel; this.offset = 0; this.open = true;
     $('#options').hidden = false; this.render(); Sfx.ok();
@@ -235,7 +244,7 @@ const Options = {
       this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}${o.group ? ' grp' : ''}">${esc(gl(o.label))}</div>`).join('');
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
-    const TOP = 380, MIN = 140, MAX = 960;
+    const { TOP, MIN, MAX } = Shell.active?.optionsGeom || { TOP: 380, MIN: 140, MAX: 960 };
     const row = el.children[this.sel + (this.parent ? 1 : 0)];
     const y = TOP + this.offset + row.offsetTop;
     if (y < MIN) this.offset += MIN - y;
@@ -273,7 +282,7 @@ function jobOptions(j) { return j && j.cancellable ? [{ label: 'Cancel Download'
 function gameItem(g, inStore) {
   const job = S.jobs.find((j) => j.kind === 'install' && j.provider === g.provider && j.game_id === g.id && j.status === 'running');
   const it = {
-    key: `${g.provider}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, badge: STORE_NAMES[g.provider],
+    key: `${g.provider}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, badge: STORE_NAMES[g.provider], recent: g.last_played || 0,
     sub: job ? `Downloading… ${job.message}` : g.installed ? (inStore ? 'Installed' : 'Play') : (g.note || 'Download'),
     progress: job ? job.progress : null,
   };
@@ -449,6 +458,27 @@ async function searchStores() {
 }
 
 // ---------------------------------------------------------------- navigation
+// What you used last in each category (a look can lead with it: the Dashboard's big tile).
+// Items can say when they were last used themselves (games: last played; Video: the last
+// video); otherwise it's when you picked that top-level item here. Kept in this browser.
+const Recent = {
+  data: (() => { try { return JSON.parse(localStorage.getItem('crossbar.recent') || '{}'); } catch (e) { return {}; } })(),
+  touch(cat, key) {
+    if (!cat || !key || key === 'loading') return;
+    const c = (this.data[cat] ||= {});
+    c[key] = Date.now() / 1000;
+    const keep = Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 40);
+    this.data[cat] = Object.fromEntries(keep);
+    try { localStorage.setItem('crossbar.recent', JSON.stringify(this.data)); } catch (e) { /* private mode */ }
+  },
+  when(cat, it) { return Math.max(it.recent || 0, this.data[cat]?.[it.key] || 0); },
+  top(cat, items) {
+    let best = -1, t = 0;
+    items.forEach((it, i) => { const w = this.when(cat, it); if (w > t) { t = w; best = i; } });
+    return best;
+  },
+};
+
 function list() { return S.stack.length ? S.stack.at(-1).items : (S.items[CATS[S.ci].id] || []); }
 function sel() { return S.stack.length ? S.stack.at(-1).sel : (S.catSel[CATS[S.ci].id] ?? 0); }
 function setSel(i) { if (S.stack.length) S.stack.at(-1).sel = i; else S.catSel[CATS[S.ci].id] = i; }
@@ -509,115 +539,80 @@ function ensureArt(el, it) {
   img.src = it.art;
 }
 
-function itemEl(it) {
-  const el = document.createElement('div');
-  el.className = 'item';
-  let slot;
-  if (it.art !== undefined) {
-    const h = hashHue(it.artTitle || it.label);
-    slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
-  } else slot = `<div class="ico">${icon(it.icon)}</div>`;
-  el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
-    <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
-  if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
-  return el;
-}
-
-function renderCats() {
-  const wrap = $('#cats');
-  if (!wrap.children.length) {
-    CATS.forEach((c, i) => {
-      const el = document.createElement('div');
-      el.className = 'cat';
-      el.style.left = `${CAT_X + i * CAT_GAP}px`;
-      el.innerHTML = `<div class="ico">${icon(c.icon)}</div><div class="lbl">${esc(c.label)}</div>`;
-      wrap.appendChild(el);
-    });
-  }
-  wrap.style.transform = `translateX(${-S.ci * CAT_GAP}px)`;
-  [...wrap.children].forEach((el, i) => el.classList.toggle('on', i === S.ci));
-}
-
+// ---------------------------------------------------------------- shell seam
+// The front end is swappable: Settings › Theme › Interface picks a *look* — the XMB (looks/xmb),
+// or another look from web/looks/ (docs/LOOKS.md). A look draws the menu and dresses the shared pieces;
+// everything underneath — the item model, folders, actions, Options, dialogs, the Quick
+// Menu's rows, input, polling — is one implementation, so both looks run the same commands.
+//
+// A look provides: setup teardown resetCats render renderCats renderColumn position itemEl
+// hint moveV moveH, and may add:
+//   configure(state)   apply its settings (called on every state update: keep it cheap)
+//   bumper(d)          LB / RB on the menu; return true if used (else they skip tracks)
+//   patched()          a running download changed some rows' text / progress
+//   dialogVertical     dialog buttons stack vertically (up / down choose)
+//   optionsGeom        {TOP, MIN, MAX}: where the Options list sits and may slide to
+//   renderQuick(q)     draw the Quick Menu (q = QuickMenu: rows, sel, page, data); true if drawn
+//   quickTabs          the Quick Menu has tabs (LB / RB, QuickMenu.bumper)
+//
+// It must also keep to the *item node contract*, because the shared code reaches into
+// the nodes a look built:
+//   · the root element has class "item"                    (ensureArt, patchJobRows)
+//   · it holds a .txt wrapper containing a .sub, and a .bar > i when progress != null
+//   · columnEls[i] is the node for list()[i] — index-parallel, whatever the visual order
+// Break the last one and a running download's progress bar lands on the wrong game.
 let columnEls = [];
-function renderColumn(rebuild = true) {
-  const col = $('#column');
-  if (!S.stack.length && !S.items[CATS[S.ci].id]) S.items[CATS[S.ci].id] = [{ key: 'loading', label: 'Loading…', icon: 'refresh' }];
-  const items = list();
-  if (rebuild) col.classList.add('swap');
-  col.innerHTML = '';
-  columnEls = items.map((it) => { const el = itemEl(it); col.appendChild(el); return el; });
-  position();
-  if (rebuild) requestAnimationFrame(() => requestAnimationFrame(() => col.classList.remove('swap')));
-  hint();
-}
+const Shell = {
+  id: 'xmb', impls: {},
+  artWindow: 8,                             // rows either side of the cursor that load artwork
+  register(id, impl) { this.impls[id] = impl; },
+  get active() { return this.impls[this.id]; },
+  // Called from applyState, so on every /api/state: rebuilds only when the look changed;
+  // configure() (background, accent…) runs every time and must be cheap.
+  apply(iface) {
+    const id = this.impls[iface] ? iface : 'xmb';     // unknown look (old config, new backend): XMB
+    document.body.dataset.shell = id;        // set before the early return, so a theme reload can never lose the CSS scope
+    if (id === this.id) { this.active?.configure?.(S.state); return; }
+    this.active?.teardown?.();
+    if (Options.open) Options.hide();
+    this.id = id; columnEls = [];
+    this.active.setup?.();
+    this.active.configure?.(S.state);
+    // only the DOM is rebuilt: S.stack/S.ci/S.catSel/S.items survive, so you keep your place
+    if (S.state) render();
+    if (QuickMenu.open) QuickMenu.render();
+  },
+  resetCats() { this.active?.resetCats?.(); },
+};
 
-function position() {
-  const items = list(), s = sel();
-  // the rows below make room for the *highlighted* row's size (a 140px artwork tile, a progress
-  // bar), not their own: otherwise an icon row tucks under a big tile
-  const selArt = items[s]?.art !== undefined;
-  const selExtra = items[s]?.progress != null ? 18 : 0;
-  columnEls.forEach((el, i) => {
-    const on = i === s;
-    const isArt = items[i].art !== undefined;
-    const square = isArt && items[i].artShape === 'square';       // app icons: centred like icons
-    const slotW = square ? (on ? 120 : 72) : isArt ? (on ? 300 : 150) : (on ? 104 : 72);
-    let y;
-    if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
-    else if (i === s) y = selArt ? 500 : 480;
-    else y = (selArt ? 648 : 596) + selExtra + (i - s - 1) * 100;
-    const x = CAT_X - slotW / 2;
-    el.style.transform = `translate(${x}px, ${y}px)`;
-    el.classList.toggle('on', on);
-    el.classList.toggle('dim', !on);
-    el.style.opacity = y < -60 || y > 900 ? 0 : '';     // > 900 would run under the button hints
-    if (Math.abs(i - s) <= 8) ensureArt(el, items[i]);
-  });
-}
 
-function render() {
-  const inFolder = S.stack.length > 0;
-  document.body.classList.toggle('infolder', inFolder);
-  $('#crumb').hidden = !inFolder;
-  if (inFolder) {
-    const f = S.stack.at(-1);
-    $('#crumb .crumb-ico').innerHTML = icon(f.icon);
-    $('#crumb .crumb-label').textContent = f.title;
-  }
-  renderCats();
-  renderColumn(true);
-}
 
-function hint() {
-  const it = list()[sel()];
-  const parts = [];
-  if (it && (it.action || it.children)) parts.push(`${glb('ok')}Enter`);
-  if (S.stack.length) parts.push(`${glb('back')}Back`);
-  if (it?.options?.length) parts.push(`${glb('menu')}Options`);
-  $('#hint').innerHTML = parts.join(' ');
-}
+// The rest of the shell (and every module) calls these by name; they follow whichever
+// look is active. Declarations, not arrow consts, so they hoist like the functions they replace.
+function itemEl(it)              { return Shell.active.itemEl(it); }
+function renderCats()            { Shell.active?.renderCats(); }
+function renderColumn(r = true)  { Shell.active?.renderColumn(r); }
+function position()              { Shell.active?.position(); }
+function render()                { Shell.active?.render(); }
+function hint()                  { Shell.active?.hint(); }
+function moveV(d)                { Shell.active?.moveV(d); }
+function moveH(d)                { Shell.active?.moveH(d); }
 
-// ---------------------------------------------------------------- input
-function moveV(d) {
-  const n = list().length; if (!n) return;
-  const i = Math.max(0, Math.min(n - 1, sel() + d));
-  if (i !== sel()) { setSel(i); Sfx.move(); position(); hint(); }
-}
-function moveH(d) {
-  if (S.stack.length) { if (d < 0) back(); return; }
-  const i = Math.max(0, Math.min(CATS.length - 1, S.ci + d));
-  if (i === S.ci) return;
-  S.ci = i; Sfx.move(); render();
-  refresh(CATS[i].id);
-}
+// ---------------------------------------------------------------- acting on a row
 function confirm() {
   const it = list()[sel()];
   if (!it) return;
+  if (!S.stack.length) Recent.touch(CATS[S.ci].id, it.key);     // only top-level picks: deeper ones say so themselves
   if (it.children) return openFolder(it);
   if (it.action) { Sfx.ok(); it.action(); }
 }
 function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
-function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
+function options() {
+  const it = list()[sel()];
+  if (!it?.options) return;
+  Options.title = it.label || '';       // the Dashboard's options flyout is headed by what it's for
+  Options.show(it.options);
+}
 
 function handle(action) {
   if (Osk.open) return Osk.handle(action);
@@ -626,8 +621,9 @@ function handle(action) {
   if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
     if (Dialog.fields().length) return Dialog.pad(action);
-    if (action === 'left') Dialog.move(-1);
-    else if (action === 'right') Dialog.move(1);
+    const vert = Shell.active?.dialogVertical && Dialog.buttons.length > 1;   // the 360 stacks its buttons
+    if (action === (vert ? 'up' : 'left')) Dialog.move(-1);
+    else if (action === (vert ? 'down' : 'right')) Dialog.move(1);
     else if (action === 'up' || action === 'down') Dialog.scroll(action === 'down' ? 1 : -1);   // long text
     else if (action === 'ok') Dialog.close(Dialog.sel);
     else if (action === 'back') Dialog.close(null);
@@ -663,6 +659,10 @@ const ACTION = { menu: 'opt' };
 function act(action) {
   if (Osk.open) return Osk.handle(action);            // the keyboard has the controller while it's up
   if (action === 'home') return QuickMenu.toggle();
+  if ((action === 'prev' || action === 'next') && !Dialog.open && !Options.open && !Osk.open) {
+    const d = action === 'next' ? 1 : -1;
+    if (QuickMenu.open ? QuickMenu.bumper?.(d) : (!Viewer.open && !Term.open && Shell.active?.bumper?.(d))) return;
+  }
   if ((action === 'prev' || action === 'next' || action === 'toggle') && !Dialog.open) return mediaKey(action);
   handle(ACTION[action] || action);
 }
@@ -699,6 +699,18 @@ const PAD_INDEX = ['BTN_SOUTH', 'BTN_EAST', 'BTN_WEST', 'BTN_NORTH', 'BTN_TL', '
 const AXIS_INDEX = ['ABS_X', 'ABS_Y', 'ABS_RX', 'ABS_RY'];
 const pad = { prev: new Set(), next: {}, consumed: new Set(), capture: null, lastReport: '' };
 S.xmbFocused = true;
+
+// "Away": a game or app is in front, or a game is loading behind the launch screen. The menu
+// then does next to nothing — animations pause, the backdrop stops drawing, polling slows right
+// down — so every bit of CPU, GPU and memory bandwidth goes to the game.
+function isAway() { return !S.xmbFocused || document.hidden || !$('#launch').hidden; }
+function syncAway() {
+  const a = isAway();
+  if (a !== document.body.classList.contains('away')) document.body.classList.toggle('away', a);
+  return a;
+}
+document.addEventListener('visibilitychange', syncAway);
+setInterval(syncAway, 2000);
 
 function backendHasPads() { return !!(S.state?.pads?.devices?.length); }
 function browserPadsWanted() { return !backendHasPads() && S.xmbFocused && document.hasFocus(); }
@@ -762,7 +774,9 @@ function pollPads(now) {
     }
   }
   pad.prev = held;
-  requestAnimationFrame(pollPads);
+  // away from the menu the backend reads the controller; check far less often
+  if (document.body.classList.contains('away') && !pad.capture) setTimeout(() => requestAnimationFrame(pollPads), 250);
+  else requestAnimationFrame(pollPads);
 }
 function fire(a) {
   S.lastInput = 'pad';
@@ -790,19 +804,26 @@ function connectEvents() {
     const ev = JSON.parse(m.data);
     if (ev.type === 'launching') {
       $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
-      clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
+      clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; syncAway(); }, 320000); syncAway(); return;
     }
     if (ev.type === 'art') { refresh('game'); return; }
     if (ev.type === 'notice') { toast(ev.text, ev.icon || 'info'); return; }        // backend notices (torrent finished…)
     if (ev.type === 'vpn') { const f = S.stack.at(-1); if (f && /^(vpn|network)/.test(f.source.key)) reloadFolder(); return; }
     if (ev.type === 'theme') { Theme.load(); return; }
+    if (ev.type === 'interface') { loadState(); return; }   // Interface / Dashboard Era changed
     if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
-    if (ev.type === 'launched') { $('#launch').hidden = true; return; }
-    if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
+    if (ev.type === 'launched') { $('#launch').hidden = true; syncAway(); return; }
+    if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; syncAway(); toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
     if (ev.type === 'term-exit') { if (ev.id === Term.id) { Term.id = null; if (Term.open) Term.hide(); } return; }
     if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
-    if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
+    if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; syncAway(); return; }
+    if (ev.type === 'open-cat') {          // from the Quick Menu overlay: a category, maybe a folder in it
+      if (QuickMenu.open) QuickMenu.close(false);
+      if (CATS.some((c) => c.id === ev.cat)) goCat(ev.cat);
+      if (ev.folder === 'trophies' && typeof TROPHIES_FOLDER !== 'undefined') openFolder(TROPHIES_FOLDER);
+      return;
+    }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
     // meant for the overlay window or the system keyboard on top: the menu underneath must not act on it
     if (ev.type === 'input' && (ev.to === 'overlay' || ev.to === 'osk')) return;
@@ -846,6 +867,7 @@ async function mediaKey(action) {
 
 // ---------------------------------------------------------------- polling
 function applyState() {
+  Shell.apply(S.state.interface);   // Settings › Theme › Interface; rebuilds only if it changed
   Waves.setTheme(S.state.theme);
   applyGlyphs();
   $('#demo-badge').hidden = !S.state.demo;
@@ -913,16 +935,20 @@ function patchJobRows(jobs) {
     const bar = el.querySelector('.bar i'); if (bar) bar.style.width = `${(it.progress * 100).toFixed(1)}%`;
     else if (it.progress != null) { const t = el.querySelector('.txt'); if (t) t.insertAdjacentHTML('beforeend', `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>`); }
   });
+  Shell.active?.patched?.();                // a look with a detail panel refreshes it
 }
-setInterval(pollJobs, 1000);
+let jobTicks = 0;
+setInterval(() => { if (!syncAway() || ++jobTicks % 10 === 0) pollJobs(); }, 1000);   // every 10 s while away
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
 setInterval(() => {
-  if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state) return;
+  if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state || isAway()) return;
   const f = S.stack.at(-1);
   if (f) { if (f.source.live) reloadFolder(); }
   else if (CATS[S.ci].live) refresh(CATS[S.ci].id);
 }, 2000);
+let stateTicks = 0;
 setInterval(async () => {   // pick up windows opening/closing (games, Discord)
+  if (isAway() && ++stateTicks % 4) return;   // every 16 s while away
   const before = JSON.stringify(S.state?.windows || []);
   try { await loadState(); } catch { return; }
   if (JSON.stringify(S.state.windows) !== before && !S.stack.length && ['game', 'party'].includes(CATS[S.ci].id)) refresh(CATS[S.ci].id);
@@ -930,6 +956,7 @@ setInterval(async () => {   // pick up windows opening/closing (games, Discord)
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  await Looks.load();                         // every look (console skin) is ready before the first draw
   connectEvents();
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');
@@ -946,7 +973,7 @@ async function boot() {
   // categories added by later scripts (Apps) take their place in the bar
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');
-  $('#cats').innerHTML = '';
+  Shell.resetCats();
   if (typeof loadApps === 'function') await Promise.race([Promise.all([loadApps(), loadFolders()]), new Promise((r) => setTimeout(r, 3000))]);
   S.items = {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

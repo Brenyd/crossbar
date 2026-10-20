@@ -107,7 +107,8 @@ function musicNowItem(m) {
     refresh('music');
   };
   return {
-    key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING',
+    key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING', recent: Date.now() / 1000,
+    nowPlaying: true,
     sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(m.position)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
     progress: m.duration ? m.position / m.duration : null,
     action: ctl('toggle'),
@@ -138,7 +139,8 @@ function spotifyNowItem(n, key = 'sp-now') {
   ];
   if (!n.here) opts.unshift({ label: 'Play on Crossbar', action: spotifyTransfer });
   if (n.lost) opts.splice(0, opts.length, { label: 'Stop', action: ctl('toggle') }, { label: 'Reconnect (keeps playing)', action: spotifyTransfer });
-  return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY',
+  return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY', recent: n.playing ? Date.now() / 1000 : 0,
+    nowPlaying: true,
     sub: `${n.artist} · ${fmtTime(n.position)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.lost ? ' · Spotify lost the speaker: {menu} to reconnect' : n.playing ? '' : ' · Paused'}`,
     progress: n.duration ? n.position / n.duration : null, action: ctl('toggle'), options: opts };
 }
@@ -247,6 +249,16 @@ CATS.push(
         items.push({ key: `vw:${w.con_id}`, label: `Return to ${w.title}`, icon: 'play', sub: 'Now playing',
           action: () => api.post('/api/window/focus', { con_id: w.con_id }) });
       }
+      // the last video you played, to carry on with (the Dashboard's big tile)
+      const rv = S.state.recent_video;
+      if (rv) {
+        const play = rv.iptv ? () => iptvPlay(rv.iptv, rv.title, rv.art)
+          : async () => { if (await call(() => api.post('/api/video/play', { paths: [rv.path], index: 0 }))) toast(`Playing ${rv.title}`, 'play'); };
+        items.push({ key: 'recent-video', label: rv.title, recent: rv.at, badge: 'CONTINUE',
+          ...(rv.iptv ? (rv.art ? { art: rv.art, artTitle: rv.title, artShape: 'poster' } : { icon: 'video' }) : { art: thumb(rv.path), artTitle: rv.title }),
+          sub: rv.iptv ? 'Continue watching · IPTV' : 'Continue watching', action: play,
+          options: [{ label: 'Play', action: play }, { label: 'Information', action: () => message(`${rv.title}\n${rv.path || 'IPTV'}`, 'Information') }] });
+      }
       if (S.state.iptv?.linked) items.push(iptvTopFolder('vod'), iptvTopFolder('series'));
       items.push(allItem('video', 'All Videos'));
       return items.concat(await mediaItems('video'));
@@ -262,6 +274,13 @@ CATS.push(
                   { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${t.name}?`)) { S.state = await api.post('/api/tv/remove', { index: i }); refresh('tv'); } } }],
       }));
       if (S.state.iptv?.linked) items.unshift(iptvTopFolder('live'));
+      // the last channel you watched, with its logo (the Dashboard's big tile)
+      const rl = S.state.recent_live;
+      if (rl?.iptv && S.state.iptv?.linked) {
+        const watch = () => iptvPlay(rl.iptv, rl.title, rl.art);
+        items.unshift({ key: 'recent-live', label: rl.title, recent: rl.at, badge: 'LIVE', sub: 'Watch again · Live TV',
+          ...(rl.art ? { art: rl.art, artTitle: rl.title, artShape: 'poster' } : { icon: 'tv' }), action: watch, options: [{ label: 'Watch', action: watch }] });
+      }
       else items.push({ key: 'iptv-in', label: 'IPTV', icon: 'tv', sub: 'Sign in with Xtream Codes to watch live TV here', action: () => openIptvSettings('live') });
       items.push({ key: 'browser', label: 'Internet Browser', icon: 'browser', sub: 'Made for the controller · Y in the browser for its menu',
         action: () => call(() => api.post('/api/browser/open', {}), 'Opening the browser — Y for its menu, Select + Start for the Quick Menu') });

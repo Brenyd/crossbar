@@ -496,7 +496,7 @@ class Spotify:
         t = self._track(d["item"]) if d["item"].get("type") == "track" else {
             "uri": d["item"]["uri"], "name": d["item"]["name"], "artist": "", "album": "", "art": None,
             "duration": d["item"].get("duration_ms", 0) // 1000}
-        out = {**t, "playing": d.get("is_playing", False), "position": (d.get("progress_ms") or 0) // 1000,
+        out = {**t, "playing": d.get("is_playing", False), "position": round((d.get("progress_ms") or 0) / 1000, 1),
                "device": (d.get("device") or {}).get("name", ""), "here": (d.get("device") or {}).get("name") == DEVICE_NAME,
                "shuffle": d.get("shuffle_state", False), "repeat": d.get("repeat_state", "off")}
         self._last = {**out, "seen": time.time()} if out["here"] else None

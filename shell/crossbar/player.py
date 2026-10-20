@@ -191,6 +191,12 @@ def play_video(paths, index=0, mpv_gamepad=False, entries=None, user_agent=None)
         lines = [p for p in paths if os.path.isfile(p)]
     if not lines:
         raise RuntimeError("Nothing to play")
+    if not entries:
+        try:
+            pick = lines[max(0, min(int(index), len(lines) - 1))]
+            util.update_config(lambda c: c.__setitem__("recent_video", {"path": pick, "at": time.time()}))
+        except (ValueError, OSError):
+            pass
     pause_music()
     cfg = util.load_config()["video"]
     m3u = os.path.join(RUNTIME, "crossbar-video.m3u")

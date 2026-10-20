@@ -15,6 +15,7 @@ from . import util
 
 RUNTIME = os.environ.get("XDG_RUNTIME_DIR") or "/tmp"
 FLAG = os.path.join(RUNTIME, "crossbar-gamemode")
+HOME_HOLD = os.path.join(RUNTIME, "crossbar-home-hold")   # you asked for the menu: don't close it again on our own
 _lock = threading.Lock()
 
 
@@ -27,9 +28,38 @@ def game_mode():
     return os.path.exists(FLAG)
 
 
-def enter_game_mode(reason=""):
+def hold_home(seconds=120):
+    """You went Home (or restarted Crossbar): for a while, a game window that's still around
+    (a hung one, Big Picture coming back) mustn't close the menu again by itself. A file, so
+    it survives a backend restart."""
+    try:
+        with open(HOME_HOLD, "w") as f:
+            f.write(str(time.time() + seconds))
+    except OSError:
+        pass
+
+
+def clear_home_hold():
+    try:
+        os.remove(HOME_HOLD)
+    except OSError:
+        pass
+
+
+def home_held():
+    try:
+        return time.time() < float(open(HOME_HOLD).read().strip() or 0)
+    except (OSError, ValueError):
+        return False
+
+
+def enter_game_mode(reason="", auto=False):
+    """auto: the window watcher noticed a game in front (rather than a launch from the menu);
+    skipped while you've just asked for Home."""
     from . import quick
     if not util.load_config().get("free_memory_in_games", True):
+        return False
+    if auto and home_held():
         return False
     if not quick.overlay_available():
         return False                      # without the overlay there'd be no way back
@@ -45,16 +75,39 @@ def enter_game_mode(reason=""):
 def leave_game_mode(wait=10):
     """Bring the XMB back. Returns once its window exists (or after `wait` seconds)."""
     from . import system
+    hold_home()
     with _lock:
-        if not game_mode():
+        if game_mode():
+            try:
+                os.remove(FLAG)
+            except OSError:
+                pass
+            print("session: game mode off", flush=True)
+        elif system.ensure_xmb_mark():
             return
-        os.remove(FLAG)
-    print("session: game mode off", flush=True)
     end = time.time() + wait
     while time.time() < end:
         if system.ensure_xmb_mark():
             return
         time.sleep(0.25)
+    ensure_supervisor()
+
+
+def supervisor_running():
+    r = subprocess.run(["pgrep", "-u", str(os.getuid()), "-f", r"^(/usr)?(/bin/)?(ba)?sh /usr/local/bin/crossbar-shell$|^crossbar-shell$"],
+                       capture_output=True)
+    if r.returncode == 0:
+        return True
+    return subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "crossbar-shell"], capture_output=True).returncode == 0
+
+
+def ensure_supervisor():
+    """The menu window is still missing: if the piece that keeps it running is gone (killed when
+    memory ran out), start a new one through sway."""
+    if not os.environ.get("SWAYSOCK") or not os.path.exists("/usr/local/bin/crossbar-shell") or supervisor_running():
+        return
+    print("session: crossbar-shell isn't running; starting it again", flush=True)
+    subprocess.run(["swaymsg", "exec", "/usr/local/bin/crossbar-shell"], capture_output=True)
 
 
 # ---- restart / exit ------------------------------------------------------------
@@ -64,6 +117,8 @@ def restart():
         os.remove(FLAG)
     except OSError:
         pass
+    hold_home()
+    ensure_supervisor()
     me = os.getpid()
     # [x] patterns so pkill can't match this helper's own command line
     subprocess.Popen(["sh", "-c", f"sleep 0.4; pkill -u {os.getuid()} -f '^python3 /usr/lib/crossbar/overlay[.]py'; "

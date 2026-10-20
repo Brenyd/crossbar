@@ -1,11 +1,98 @@
 # Changelog
 
+## 1.2.2 Alpha (testing branch)
+- **Memory Guard** (Settings › System, on by default): when a game runs the console out of
+  memory, Crossbar first closes the menu window to give it room, and if memory still runs out,
+  closes the game and says so, instead of the whole console freezing for minutes (sound
+  stuttering, no picture, no controller)
+- **Black screen after a game fixed**: with a game window still around (a hung one, or Big
+  Picture coming back), Go to Home and Restart Crossbar would bring the menu back and then close
+  it straight away again for "game mode". Going Home now keeps the menu, Restart brings it to the
+  front, and if the piece that runs the menu window was killed it's started again
+- **Close a Steam game** ends all of it (Proton runs a game as many processes), not just its window
+- **The menu goes quiet behind games**: while a game is loading or in front, animations
+  pause, the backdrop stops drawing, the controller is read by the backend only, and status
+  polling drops from several times a second to every 10–16 s
+- The Dashboard's backdrop no longer moves (a blurred layer moving repainted the whole 4K screen
+  every frame)
+- Cheaper status checks: the screen size and the list of looks are cached
+- VPN: the DNS relay uses a fixed set of workers (not a thread per question) and can't spin on
+  a broken socket; when split-tunnel rules can't be applied, retries back off to 10 minutes
+  instead of starting a privileged helper every 30 s
+
+## 1.2.1 Alpha (testing branch)
+- **Friends & Party in the Quick Menu** (both looks, in-game too): your Discord voice channels
+  (the ones shown in Social) to join or leave, who's online on Discord and Steam (A calls a Discord
+  friend), and, while in voice, mute, deafen, share screen and leave. In the Guide it's the
+  Social tab
+- **Big tiles for IPTV**: the last film or episode you watched is Video's big tile with its
+  poster, and the last live channel is TV's, with the channel logo (Watch again)
+- **The system keyboard matches the Dashboard** in other apps too (it drew in the theme pack's
+  colours)
+- The in-game Guide is centred vertically as well
+- **Quick Menu › Trophies for emulated games**: RetroAchievements trophies of the game you're
+  playing (unlocked count, points, the list) — the game RetroAchievements sees you playing,
+  matched against its title
+- **Dashboard now playing**: the seconds tick smoothly (they jumped as each player report came
+  in late and rounded; Spotify's position is no longer rounded down either), on the top bar, the
+  tile and its details alike; the song that's playing — with its album art — is the big tile in
+  Music
+- **Looks are modular now (console skins)**: each look is a folder — look.json (name, settings,
+  colours, Quick Menu style), look.js (its drawing code) and look.css — in shell/web/looks/ or
+  ~/.local/share/crossbar/looks/, picked up automatically. Settings › Theme builds each look's
+  settings from its look.json; a starter look to copy is in looks/_template, and docs/LOOKS.md
+  explains the whole contract. The XMB and the Dashboard are both looks now
+- **Dashboard**: the big tile in each section is what you used last there — the game you
+  played, the video you watched (with its picture), the setting you opened — and it's where
+  you start. Tiles no longer overlap it when selected. What's playing (music or Spotify) shows
+  centred along the top with its progress
+- **Video › Continue watching**: the last video you played, first in Video (both looks)
+- **The in-game Quick Menu matches the look**: with the Dashboard it's a Guide — your profile
+  and the time, five tabs (Games & Apps, Media, Home, Social, Settings) walked with LB / RB,
+  rows lit in your accent colour. The Dashboard's own Guide uses the same five tabs
+- **Trophies in the Quick Menu** (both looks): the running game's trophies (Steam
+  achievements: unlocked count and the list), and All Trophies, which opens Game › Trophies
+- **Interface** switch in the in-game Quick Menu too
+- **Performance overlays**: the frame-rate and temperature overlays have their own positions
+  (they no longer move together and cover each other — temperatures default to top left), and
+  each has a **size**: Automatic follows the screen (so it's readable on a 4K TV), or Small /
+  Medium / Large / Huge
+
+## 1.2 Alpha (testing branch)
+- **Dashboard (Xbox 360 style), rebuilt from the ground up** as its own front end rather than the
+  XMB re-arranged: lowercase pivots across the top (LB / RB, or ◀ ▶ past the last tile), a
+  sideways wall of tiles led by a big hero tile, flat colour and a lifted, outlined selection;
+  folders of pictures open as tile walls and every other folder as a list with a solid highlight
+  bar and a details pane (long descriptions wrap there instead of running off the screen); your
+  profile and the time in the corner; coloured A / B / Y hints; Options (Y) as a flyout from the
+  right; dialogs as panels with stacked buttons; toasts rising from the bottom; a matching
+  on-screen keyboard. Replaces the earlier Blades / NXE / Metro versions
+- **The Quick Menu has a matching Guide** in the Dashboard: your profile, tabs (Home, Sound,
+  Performance — LB / RB) and the same rows and commands. A new **Interface** row swaps between
+  the two looks from anywhere (◀ ▶ or A), in either look
+- **Settings › Theme makes sense now**: Interface first, then that look's own settings —
+  Dashboard: **Background** (Light, Dark, Green, or your theme pack's picture) and **Accent
+  Colour** (green, blue, orange, pink, purple, red, silver); cross-media bar: Wave Colour — then
+  **Theme Packs** (in their own folder), Install a Theme…, Make Your Own
+- Underneath, both looks are one menu: the same items, actions, folders, Options, dialogs and
+  controller mapping. The shell seam in xmb.js now lets a look draw the Quick Menu, stack dialog
+  buttons, use LB / RB and refresh a details pane (documented above `Shell`)
+- Fixed: a dialog after one with text fields could show its buttons dimmed
+
 ## 1.1.5 Alpha
 - **Update Branch** (Settings › System): pick which GitHub branch Update Crossbar installs — main
   (stable) or a test branch such as testing/xbox-360-interface — and switch back the same way.
   Picking one offers to install it right away; About shows the branch you're on
 
 ## 1.1.4 Alpha
+- **Xbox 360 interface**: Settings › Theme & Time › Theme › **Interface** switches the menu between
+  the cross-media bar and an Xbox 360 dashboard, and **Dashboard Era** picks which 360: Blades
+  (2005, slanted coloured blades with the list in the open one), the New Xbox Experience (2008,
+  channels down the left and a row of big tiles — ▲ ▼ changes channel, ◀ ▶ walks the tiles) or
+  Metro (2011, a three-row grid of flat tiles that pages between categories). It changes the
+  moment you pick it, with no restart, and you keep your place in the menu. Your games, apps,
+  folders, Options menu, dialogs, Quick Menu, keyboard and controller mapping are all unchanged,
+  and theme packs recolour the dashboards too (new `--x360-*` CSS variables in docs/THEMES.md)
 - **VPN apps' DNS**: their lookups went to the system's local resolver (127.0.0.53), which the
   firewall tried to send out of the tunnel; the kernel refuses that, so lookups hung (test app
   timed out, "Couldn't reach bash.ws", torrent search found nothing). Those lookups now go to a

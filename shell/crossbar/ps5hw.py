@@ -82,7 +82,7 @@ def status():
     return {"available": True, "temps": temps(), "fan_target": fan_target(), "target_range": list(TARGET_RANGE),
             "leds": names, "led": on, "ps5_control": bool(util.which("ps5_control") or os.access("/usr/local/sbin/ps5_control", os.X_OK)),
             "fan_mode": cfg.get("fan_mode", "auto"), "boost": cfg.get("boost", False),
-            "hud": cfg.get("hud", False), "hud_corner": cfg.get("hud_corner", "top-right")}
+            "hud": cfg.get("hud", False), "hud_corner": cfg.get("hud_corner", "top-left"), "hud_size": cfg.get("hud_size", "auto")}
 
 
 def _admin(action, req):
@@ -129,8 +129,13 @@ def set_boost(on):
     _remember(boost=bool(on))
 
 
-def set_hud(on=None, corner=None):
+HUD_SIZES = ("auto", "small", "medium", "large", "huge")
+
+
+def set_hud(on=None, corner=None, size=None):
     kw = {}
+    if size in HUD_SIZES:
+        kw["hud_size"] = size
     if on is not None:
         kw["hud"] = bool(on)
     if corner in ("top-left", "top-right", "bottom-left", "bottom-right"):

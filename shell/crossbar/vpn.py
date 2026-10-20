@@ -1011,6 +1011,9 @@ class _DnsRelay:
     def __init__(self):
         self.started = False
         self._lock = threading.Lock()
+        # a fixed set of workers, not a thread per question (a game's launcher can ask hundreds)
+        from concurrent.futures import ThreadPoolExecutor
+        self._pool = ThreadPoolExecutor(max_workers=12, thread_name_prefix="dnsrelay")
 
     def _upstream(self):
         return _state.get("dns") or _nm_dns(), _vpn_addr()
@@ -1039,8 +1042,9 @@ class _DnsRelay:
             try:
                 q, peer = srv.recvfrom(4096)
             except OSError:
+                time.sleep(0.2)                  # never spin on a broken socket
                 continue
-            threading.Thread(target=self._udp_one, args=(srv, q, peer), daemon=True).start()
+            self._pool.submit(self._udp_one, srv, q, peer)
 
     def _udp_one(self, srv, q, peer):
         dns, src = self._upstream()
@@ -1061,8 +1065,9 @@ class _DnsRelay:
             try:
                 c, _ = srv.accept()
             except OSError:
+                time.sleep(0.2)
                 continue
-            threading.Thread(target=self._tcp_one, args=(c,), daemon=True).start()
+            self._pool.submit(self._tcp_one, c)
 
     def _tcp_one(self, c):
         dns, src = self._upstream()
@@ -1153,12 +1158,17 @@ def split_watch():
     """Background: keep the split rules in step with the connection."""
     def run():
         time.sleep(15)
+        fails = 0
         while True:
             try:
                 ensure_split()
+                fails = 0
             except Exception as e:
+                fails += 1
                 print(f"vpn: split rules: {e}", flush=True)
-            time.sleep(30)
+            # failing (the helper can't run, no password agent…): back off up to 10 minutes rather
+            # than starting a privileged helper every 30 s
+            time.sleep(min(600, 30 * 2 ** min(fails, 5)))
     threading.Thread(target=run, daemon=True).start()
 
 

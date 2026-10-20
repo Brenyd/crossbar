@@ -66,8 +66,8 @@ const Theme = {
     } else if (link) link.remove();
 
     document.body.dataset.theme = t.id;
-    const cats = document.getElementById('cats');
-    if (cats) cats.innerHTML = '';                 // the category row is built once: rebuild it with the new icons
+    // the category row is built once: let the active look rebuild it with the new icons
+    if (typeof Shell !== 'undefined') { Shell.resetCats(); if (S.state) Shell.active?.configure?.(S.state); }
     if (typeof render === 'function' && S.state) render();
   },
 

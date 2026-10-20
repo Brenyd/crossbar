@@ -98,6 +98,8 @@ def overlay_switch(con_id):
     if not con_id:
         system.show_shell()
         return True
+    from . import session
+    session.clear_home_hold()                 # back to the game: game mode may close the menu again
     system.bring_to_front(int(con_id))
     return True
 
@@ -116,6 +118,13 @@ def overlay_open_settings(folder):
     close_overlay(resume=False)
     system.show_shell()
     HUB.publish({"type": "open-settings", "folder": folder})
+
+
+def overlay_open(cat, folder=""):
+    """A category of the menu (and a folder in it: "trophies"), from the Quick Menu."""
+    close_overlay(resume=False)
+    system.show_shell()
+    HUB.publish({"type": "open-cat", "cat": str(cat)[:24], "folder": str(folder)[:24]})
 
 
 def home_pressed():
@@ -223,10 +232,66 @@ def info():
         "ps5": ps5hw.status() if ps5hw.available() else None,
         "perf": perf.status(),
         "glyphs": glyphs.current(),
+        "look": _look(),
+        "looks": _looks(),
+        "user": util.load_config().get("user", "Player"),
         "output": next((d for d in devices["outputs"] if d["default"]), None),
         "outputs": devices["outputs"],
         "shot": os.path.exists(SHOT),
     }
+
+
+def game_trophies():
+    """The running game's trophies (Quick Menu › Trophies): Steam achievements for a Steam game;
+    others say where their trophies are, if anywhere."""
+    from . import trophies
+    g = STATE.get("game")
+    if not g or not (_app() or any(not system.is_xmb(w) for w in system.windows())):
+        return {"game": None, "note": "Start a game to see its trophies here"}
+    out = {"game": g["title"], "provider": g["provider"]}
+    if g["provider"] == "steam":
+        try:
+            d = trophies.steam_game(g["id"])
+        except RuntimeError as e:
+            return {**out, "note": str(e)}
+        except Exception as e:
+            return {**out, "note": f"Couldn't get the achievements: {e}"}
+        got = sum(1 for a in d["achievements"] if a["earned"])
+        return {**out, "achievements": d["achievements"], "earned": got, "total": len(d["achievements"]), "note": d.get("note", "")}
+    if g["provider"] == "emu":                # RetroAchievements: the game RA sees you playing
+        try:
+            gid = trophies.ra_current(g["title"])
+            if not gid:
+                return {**out, "note": "RetroAchievements doesn't know this game yet — is RetroAchievements on in RetroArch (Settings › Emulation)?"}
+            d = trophies.ra_game(gid)
+        except RuntimeError as e:
+            return {**out, "note": str(e)}
+        except Exception as e:
+            return {**out, "note": f"Couldn't get the trophies: {e}"}
+        got = sum(1 for a in d["achievements"] if a["earned"])
+        pts = sum(a.get("points") or 0 for a in d["achievements"] if a["earned"])
+        return {**out, "game": d.get("title") or g["title"], "console": d.get("console"), "achievements": d["achievements"],
+                "earned": got, "total": len(d["achievements"]), "points": pts,
+                "note": "" if d["achievements"] else "This game has no RetroAchievements yet"}
+    where = {"gog": "GOG doesn't let other apps read achievements", "epic": "Epic doesn't let other apps read achievements"}
+    return {**out, "note": where.get(g["provider"], "This game's store doesn't share achievements")}
+
+
+def _looks():
+    try:
+        from . import looks
+        return [{"id": m["id"], "name": m["name"]} for m in looks.all_looks()]
+    except Exception:
+        return []
+
+
+def _look():
+    try:
+        from . import looks
+        return looks.overlay()
+    except Exception as e:
+        print(f"quick: look: {e}", flush=True)
+        return {"id": "xmb", "style": "panel"}
 
 
 def next_output():

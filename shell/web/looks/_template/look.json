@@ -1,0 +1,14 @@
+{
+  "id": "starter",
+  "name": "Starter (copy me)",
+  "short": "Starter",
+  "description": "The smallest working look: categories down the left, items on the right",
+  "author": "You",
+  "order": 90,
+  "settings": [
+    { "key": "accent", "label": "Accent Colour", "icon": "palette", "default": "blue",
+      "choices": [["blue", "Blue"], ["red", "Red"]] }
+  ],
+  "colors": { "accent": { "blue": ["#2563eb", "#60a5fa"], "red": ["#b91c1c", "#f87171"] } },
+  "overlay": { "style": "panel" }
+}

@@ -1,0 +1,3 @@
+/* The cross-media bar is Crossbar's base look: its styles are style.css (which every look builds
+   on: dialogs, toasts, the keyboard…). Rules only the XMB needs and new XMB styling go here,
+   scoped to body[data-shell="xmb"]. */

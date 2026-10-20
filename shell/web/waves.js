@@ -32,6 +32,8 @@ const Waves = (() => {
     // 30 frames a second: the waves move slowly, so it looks the same at half the GPU work
     skip = !skip;
     if (skip) { requestAnimationFrame(frame); return; }
+    // the 360 paints its own backdrop; away from the menu (a game in front or loading) nothing is drawn
+    if (document.body.dataset.shell === 'x360' || document.body.classList.contains('away')) { setTimeout(() => requestAnimationFrame(frame), 250); return; }
     t += 0.008;
     const [hi, lo] = theme;
     const line = /^#[0-9a-f]{6}$/i.test(cfg.lines || '') ? cfg.lines : '#ffffff';

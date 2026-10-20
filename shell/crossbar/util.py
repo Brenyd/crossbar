@@ -19,6 +19,8 @@ DEFAULT_CONFIG = {
     "user": "Player",
     "theme": "auto",           # "auto" = colour follows the month, like the original
     "sounds": True,
+    "interface": "xmb",        # which look draws the menu: a folder in web/looks/ (xmb, x360) or your own
+    "look_settings": {},       # each look's own settings (crossbar/looks.py, the look's look.json)
     "steam": {"api_key": "", "steamid": ""},
     "party": {"service": "discord", "channels": []},
     "last_played": {},

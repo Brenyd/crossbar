@@ -4,6 +4,9 @@
 
 const check = (on) => (on ? '✓ ' : '');
 
+// Settings › Theme › Interface lists the looks (console skins) that loaded — web/looks.js — and
+// each look's own settings come from its look.json, so a new look needs nothing here.
+
 // Open a Settings sub-folder directly (used by "Wi-Fi" in Network, missing-folder hints…).
 function openSettingsFolder(id) {
   const f = SETTINGS_FOLDERS.find((x) => x.key === id);
@@ -306,6 +309,10 @@ const GAMES_FOLDER = {
       { key: 'freemem', label: 'Free Memory While Gaming', icon: 'game',
         sub: st.free_memory_in_games !== false ? 'On — the menu closes while a game runs; Quick Menu, music and voice keep working' : 'Off — the menu stays open behind games',
         action: async () => { await setSetting({ free_memory_in_games: st.free_memory_in_games === false }); reloadFolder(); } },
+      { key: 'memguard', label: 'Memory Guard', icon: 'game',
+        sub: (st.memory_guard !== false ? 'On — a game that runs out of memory is closed instead of freezing the console' : 'Off — running out of memory can freeze everything')
+          + (st.memory?.killed?.length ? ` · last closed: ${st.memory.killed.at(-1).name}` : ''),
+        action: async () => { await setSetting({ memory_guard: st.memory_guard === false }); reloadFolder(); } },
       { key: 'fps', label: 'Frame Rate Overlay', icon: 'display',
         sub: !st.perf?.available ? 'Needs MangoHud (installed with Crossbar 0.11)' : `${({ off: 'Off', fps: 'FPS only', graph: 'FPS + frame time graph', full: 'Full: FPS, CPU, GPU, temperatures' })[st.perf.fps] || st.perf.fps} · ${st.perf.corner.replace('-', ' ')} — also in the Quick Menu`,
         children: async () => {
@@ -420,6 +427,27 @@ const BROWSER_SETTINGS = {
   },
 };
 
+// Settings › Theme › Theme Packs: colours, waves, background picture, font, icons, sounds.
+// The XMB uses all of it; the Dashboard uses a pack's picture (Background › Theme picture).
+function themePacksFolder(cur, look) {
+  return {
+    key: 'packs', label: 'Theme Packs', icon: 'palette',
+    sub: `${cur.name}${look !== 'xmb' ? ' · colours, font and sounds; its picture can be a background' : ''}`,
+    children: async () => {
+      const [packs, now] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
+      const use = async (t) => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } };
+      return packs.map((t) => ({
+        key: `t:${t.id}`, label: t.name, badge: t.id === now.id ? 'IN USE' : t.user ? 'YOURS' : '',
+        sub: `${t.description}${t.author ? ' · by ' + t.author : ''}`,
+        ...(t.preview ? { art: t.preview, artTitle: t.name } : { icon: t.id === now.id ? 'check' : 'palette' }),
+        action: () => use(t),
+        options: [{ label: 'Use This Theme', action: () => use(t) },
+          ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
+      }));
+    },
+  };
+}
+
 // Settings › Theme › Install a Theme…: browse to a theme folder (has theme.json) or a .zip
 async function themeBrowse(path) {
   const r = await api.get(`/api/fs?ext=.zip${path ? `&path=${encodeURIComponent(path)}` : ''}`);
@@ -494,25 +522,34 @@ const SETTINGS_FOLDERS = [
   CONTROLS_FOLDER,
   GAMES_FOLDER,
   {
-    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Theme packs, colour, adding your own',
+    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Interface, background, colours, theme packs',
     children: async () => {
       const st = S.state;
-      const [list, cur] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
-      const items = list.map((t) => ({
-        key: `t:${t.id}`, label: t.name, badge: t.id === cur.id ? 'ON' : t.user ? 'YOURS' : '',
-        sub: `${t.description}${t.author ? ' · by ' + t.author : ''}`,
-        ...(t.preview ? { art: t.preview, artTitle: t.name } : { icon: t.id === cur.id ? 'check' : 'palette' }),
-        action: async () => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } },
-        options: [{ label: 'Use This Theme', action: async () => { await call(() => api.post('/api/theme/set', { id: t.id })); await Theme.load(); reloadFolder(); } },
-          ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
-      }));
-      if (cur.waves.mode === 'month') {
-        const c = st.theme === 'auto' ? 0 : st.theme + 1;
-        const opts = [{ label: `${check(c === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]
-          .concat(MONTHS.map((m, i) => ({ label: `${check(c === i + 1)}${m} colour`, action: () => setSetting({ theme: i }).then(reloadFolder) })));
-        items.push({ key: 'color', label: 'Wave Colour', icon: 'palette', sub: st.theme === 'auto' ? 'Automatic (changes monthly)' : `${MONTHS[st.theme]} colour`,
-          action: () => Options.show(opts, c) });
+      const cur = await api.get('/api/theme');
+      const look = Shell.impls[st.interface] ? st.interface : 'xmb';
+      const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
+      // a one-of-several choice: ✓ on the current one, applied the moment it's picked
+      const pick = (rows, k, set) => Options.show(
+        rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
+        Math.max(0, rows.findIndex(([v]) => v === k)));
+      const items = [];
+      const looks = Looks.names();
+      if (looks.length > 1) {
+        items.push({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, look),
+          action: () => pick(looks, look, (v) => ({ interface: v })) });
       }
+      // the look's own settings, straight from its look.json…
+      const vals = Looks.settings(look);
+      for (const s of Looks.byId[look]?.settings || []) {
+        const rows = s.choices.filter((c) => Looks.choiceOk(c, cur)).map((c) => [c[0], c[1]]);
+        if (!rows.length) continue;
+        const v = rows.some(([x]) => x === vals[s.key]) ? vals[s.key] : rows[0][0];
+        items.push({ key: `look:${s.key}`, label: s.label, icon: s.icon, sub: named(rows, v),
+          action: () => pick(rows, v, (x) => ({ look_settings: { [look]: { [s.key]: x } } })) });
+      }
+      // …and any it adds itself (the XMB: Wave Colour)
+      items.push(...(Shell.impls[look]?.settingsRows?.(st, cur) || []));
+      items.push(themePacksFolder(cur, look));
       items.push({ key: 'install', label: 'Install a Theme…', icon: 'add', sub: 'From a folder or .zip (USB stick, Downloads, network drive)', themeBrowse: true, children: () => themeBrowse(null) });
       items.push({ key: 'how', label: 'Make Your Own', icon: 'info', sub: 'A folder with theme.json — see docs/THEMES.md on GitHub',
         action: () => message('A theme is a folder with a theme.json file (colours, waves, background, font, keyboard),\nplus optional pictures: background.jpg, icons/<name>.svg, sounds/<name>.ogg, theme.css.\n\nPut it in ~/.local/share/crossbar/themes/ or install it from here.\nFull guide: github.com/Brenyd/crossbar/blob/main/docs/THEMES.md', 'Themes') });
@@ -672,8 +709,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.1.5 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.1.5 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.2 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.2 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

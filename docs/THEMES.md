@@ -129,6 +129,34 @@ Plain CSS for the menu page, loaded last. Useful CSS variables:
 (scanlines over everything) is a small example. CSS only styles the menu; the Quick Menu and the
 system keyboard use the colours from `theme.json`.
 
+### The Dashboard (Xbox 360 style) and other looks
+
+Looks (console skins) are their own thing — see [LOOKS.md](LOOKS.md) to make one.
+
+With **Settings › Theme › Interface › Dashboard (Xbox 360 style)** the menu is a different front
+end with its own colours: **Background** (Light, Dark, Green, or *Theme picture* — your pack's
+`background` image behind the tiles) and **Accent Colour** (its look.json settings). So of a theme pack, the Dashboard
+uses the picture; the waves, colours and icons are the cross-media bar's. `body` carries
+`data-shell="x360"`, `data-xbg="light" | "dark" | "green" | "picture"` and
+`data-xmode="home" | "grid" | "list"` (the page layout), and `theme.css` loads last, so it can
+restyle the Dashboard too:
+
+```css
+/* a warmer light background */
+body[data-shell="x360"][data-xbg="light"] #x-bg { background: linear-gradient(160deg, #fffaf2, #e8dcc8); }
+/* rounder tiles */
+body[data-shell="x360"] #column .item { border-radius: 8px; }
+```
+
+| Variable | What it does |
+|---|---|
+| `--x-accent`, `--x-accent-2` | the highlight colour (dark / light end); set from Accent Colour |
+| `--x-fg`, `--x-fg2`, `--x-fg3` | text: main, secondary, faint (pivots you're not on) |
+| `--x-panel`, `--x-panel-fg` | dialogs and the Options flyout |
+| `--x-tile`, `--x-pane` | plain tiles; the details pane beside lists |
+
+Themes can't ship JavaScript, so the Dashboard's *layout* isn't themeable — only what CSS can reach.
+
 ## Stock themes
 
 | Theme | Shows off |
