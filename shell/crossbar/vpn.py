@@ -1419,7 +1419,7 @@ def resume():
     if split_on():
         DNS_RELAY.start()
         try:
-            ensure_split()
+            ensure_split(force=True)           # once per start: an update may bring new rules (1.2.5: MSS clamping)
         except Exception as e:
             print(f"vpn: split rules: {e}", flush=True)
     try:
