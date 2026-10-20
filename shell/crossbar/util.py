@@ -19,9 +19,8 @@ DEFAULT_CONFIG = {
     "user": "Player",
     "theme": "auto",           # "auto" = colour follows the month, like the original
     "sounds": True,
-    "interface": "xmb",        # "xmb" (PS3 cross-media bar) or "x360" (Xbox 360 dashboard)
-    "x360_bg": "light",        # Xbox 360 look: background "light" | "dark" | "green" | "picture" (the theme pack's)
-    "x360_accent": "green",    # Xbox 360 look: highlight colour
+    "interface": "xmb",        # which look draws the menu: a folder in web/looks/ (xmb, x360) or your own
+    "look_settings": {},       # each look's own settings (crossbar/looks.py, the look's look.json)
     "steam": {"api_key": "", "steamid": ""},
     "party": {"service": "discord", "channels": []},
     "last_played": {},

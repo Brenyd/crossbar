@@ -129,11 +129,13 @@ Plain CSS for the menu page, loaded last. Useful CSS variables:
 (scanlines over everything) is a small example. CSS only styles the menu; the Quick Menu and the
 system keyboard use the colours from `theme.json`.
 
-### The Dashboard (Xbox 360 style)
+### The Dashboard (Xbox 360 style) and other looks
+
+Looks (console skins) are their own thing — see [LOOKS.md](LOOKS.md) to make one.
 
 With **Settings › Theme › Interface › Dashboard (Xbox 360 style)** the menu is a different front
 end with its own colours: **Background** (Light, Dark, Green, or *Theme picture* — your pack's
-`background` image behind the tiles) and **Accent Colour**. So of a theme pack, the Dashboard
+`background` image behind the tiles) and **Accent Colour** (its look.json settings). So of a theme pack, the Dashboard
 uses the picture; the waves, colours and icons are the cross-media bar's. `body` carries
 `data-shell="x360"`, `data-xbg="light" | "dark" | "green" | "picture"` and
 `data-xmode="home" | "grid" | "list"` (the page layout), and `theme.css` loads last, so it can

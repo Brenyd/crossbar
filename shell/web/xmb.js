@@ -282,7 +282,7 @@ function jobOptions(j) { return j && j.cancellable ? [{ label: 'Cancel Download'
 function gameItem(g, inStore) {
   const job = S.jobs.find((j) => j.kind === 'install' && j.provider === g.provider && j.game_id === g.id && j.status === 'running');
   const it = {
-    key: `${g.provider}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, badge: STORE_NAMES[g.provider],
+    key: `${g.provider}:${g.id}`, label: g.title, art: g.art || '', artTitle: g.title, badge: STORE_NAMES[g.provider], recent: g.last_played || 0,
     sub: job ? `Downloading… ${job.message}` : g.installed ? (inStore ? 'Installed' : 'Play') : (g.note || 'Download'),
     progress: job ? job.progress : null,
   };
@@ -458,6 +458,27 @@ async function searchStores() {
 }
 
 // ---------------------------------------------------------------- navigation
+// What you used last in each category (a look can lead with it: the Dashboard's big tile).
+// Items can say when they were last used themselves (games: last played; Video: the last
+// video); otherwise it's when you picked that top-level item here. Kept in this browser.
+const Recent = {
+  data: (() => { try { return JSON.parse(localStorage.getItem('crossbar.recent') || '{}'); } catch (e) { return {}; } })(),
+  touch(cat, key) {
+    if (!cat || !key || key === 'loading') return;
+    const c = (this.data[cat] ||= {});
+    c[key] = Date.now() / 1000;
+    const keep = Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 40);
+    this.data[cat] = Object.fromEntries(keep);
+    try { localStorage.setItem('crossbar.recent', JSON.stringify(this.data)); } catch (e) { /* private mode */ }
+  },
+  when(cat, it) { return Math.max(it.recent || 0, this.data[cat]?.[it.key] || 0); },
+  top(cat, items) {
+    let best = -1, t = 0;
+    items.forEach((it, i) => { const w = this.when(cat, it); if (w > t) { t = w; best = i; } });
+    return best;
+  },
+};
+
 function list() { return S.stack.length ? S.stack.at(-1).items : (S.items[CATS[S.ci].id] || []); }
 function sel() { return S.stack.length ? S.stack.at(-1).sel : (S.catSel[CATS[S.ci].id] ?? 0); }
 function setSel(i) { if (S.stack.length) S.stack.at(-1).sel = i; else S.catSel[CATS[S.ci].id] = i; }
@@ -519,8 +540,8 @@ function ensureArt(el, it) {
 }
 
 // ---------------------------------------------------------------- shell seam
-// The front end is swappable: Settings › Theme › Interface picks a *look* — the XMB below,
-// or the Xbox 360 dashboard (x360.js). A look draws the menu and dresses the shared pieces;
+// The front end is swappable: Settings › Theme › Interface picks a *look* — the XMB (looks/xmb),
+// or another look from web/looks/ (docs/LOOKS.md). A look draws the menu and dresses the shared pieces;
 // everything underneath — the item model, folders, actions, Options, dialogs, the Quick
 // Menu's rows, input, polling — is one implementation, so both looks run the same commands.
 //
@@ -564,113 +585,7 @@ const Shell = {
   resetCats() { this.active?.resetCats?.(); },
 };
 
-const XmbShell = {
-  CAT_X: 560, CAT_GAP: 230,
-  setup() {},                               // #cats/#column/#crumb are already in index.html
-  teardown() { $('#cats').innerHTML = ''; $('#column').innerHTML = ''; $('#crumb').hidden = true; },
-  resetCats() { $('#cats').innerHTML = ''; },
 
-  itemEl(it) {
-    const el = document.createElement('div');
-    el.className = 'item';
-    let slot;
-    if (it.art !== undefined) {
-      const h = hashHue(it.artTitle || it.label);
-      slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
-    } else slot = `<div class="ico">${icon(it.icon)}</div>`;
-    el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
-      <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
-    if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
-    return el;
-  },
-
-  renderCats() {
-    const wrap = $('#cats');
-    if (!wrap.children.length) {
-      CATS.forEach((c, i) => {
-        const el = document.createElement('div');
-        el.className = 'cat';
-        el.style.left = `${this.CAT_X + i * this.CAT_GAP}px`;
-        el.innerHTML = `<div class="ico">${icon(c.icon)}</div><div class="lbl">${esc(c.label)}</div>`;
-        wrap.appendChild(el);
-      });
-    }
-    wrap.style.transform = `translateX(${-S.ci * this.CAT_GAP}px)`;
-    [...wrap.children].forEach((el, i) => el.classList.toggle('on', i === S.ci));
-  },
-
-  renderColumn(rebuild = true) {
-    const col = $('#column');
-    if (!S.stack.length && !S.items[CATS[S.ci].id]) S.items[CATS[S.ci].id] = [{ key: 'loading', label: 'Loading…', icon: 'refresh' }];
-    const items = list();
-    if (rebuild) col.classList.add('swap');
-    col.innerHTML = '';
-    columnEls = items.map((it) => { const el = this.itemEl(it); col.appendChild(el); return el; });
-    this.position();
-    if (rebuild) requestAnimationFrame(() => requestAnimationFrame(() => col.classList.remove('swap')));
-    this.hint();
-  },
-
-  position() {
-    const items = list(), s = sel();
-    // the rows below make room for the *highlighted* row's size (a 140px artwork tile, a progress
-    // bar), not their own: otherwise an icon row tucks under a big tile
-    const selArt = items[s]?.art !== undefined;
-    const selExtra = items[s]?.progress != null ? 18 : 0;
-    columnEls.forEach((el, i) => {
-      const on = i === s;
-      const isArt = items[i].art !== undefined;
-      const square = isArt && items[i].artShape === 'square';       // app icons: centred like icons
-      const slotW = square ? (on ? 120 : 72) : isArt ? (on ? 300 : 150) : (on ? 104 : 72);
-      let y;
-      if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
-      else if (i === s) y = selArt ? 500 : 480;
-      else y = (selArt ? 648 : 596) + selExtra + (i - s - 1) * 100;
-      const x = this.CAT_X - slotW / 2;
-      el.style.transform = `translate(${x}px, ${y}px)`;
-      el.classList.toggle('on', on);
-      el.classList.toggle('dim', !on);
-      el.style.opacity = y < -60 || y > 900 ? 0 : '';     // > 900 would run under the button hints
-      if (Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
-    });
-  },
-
-  render() {
-    const inFolder = S.stack.length > 0;
-    document.body.classList.toggle('infolder', inFolder);
-    $('#crumb').hidden = !inFolder;
-    if (inFolder) {
-      const f = S.stack.at(-1);
-      $('#crumb .crumb-ico').innerHTML = icon(f.icon);
-      $('#crumb .crumb-label').textContent = f.title;
-    }
-    this.renderCats();
-    this.renderColumn(true);
-  },
-
-  hint() {
-    const it = list()[sel()];
-    const parts = [];
-    if (it && (it.action || it.children)) parts.push(`${glb('ok')}Enter`);
-    if (S.stack.length) parts.push(`${glb('back')}Back`);
-    if (it?.options?.length) parts.push(`${glb('menu')}Options`);
-    $('#hint').innerHTML = parts.join(' ');
-  },
-
-  moveV(d) {
-    const n = list().length; if (!n) return;
-    const i = Math.max(0, Math.min(n - 1, sel() + d));
-    if (i !== sel()) { setSel(i); Sfx.move(); this.position(); this.hint(); }
-  },
-  moveH(d) {
-    if (S.stack.length) { if (d < 0) back(); return; }
-    const i = Math.max(0, Math.min(CATS.length - 1, S.ci + d));
-    if (i === S.ci) return;
-    S.ci = i; Sfx.move(); this.render();
-    refresh(CATS[i].id);
-  },
-};
-Shell.register('xmb', XmbShell);
 
 // The rest of the shell (and every module) calls these by name; they follow whichever
 // look is active. Declarations, not arrow consts, so they hoist like the functions they replace.
@@ -687,6 +602,7 @@ function moveH(d)                { Shell.active?.moveH(d); }
 function confirm() {
   const it = list()[sel()];
   if (!it) return;
+  if (!S.stack.length) Recent.touch(CATS[S.ci].id, it.key);     // only top-level picks: deeper ones say so themselves
   if (it.children) return openFolder(it);
   if (it.action) { Sfx.ok(); it.action(); }
 }
@@ -888,6 +804,12 @@ function connectEvents() {
     if (ev.type === 'term-exit') { if (ev.id === Term.id) { Term.id = null; if (Term.open) Term.hide(); } return; }
     if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
     if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
+    if (ev.type === 'open-cat') {          // from the Quick Menu overlay: a category, maybe a folder in it
+      if (QuickMenu.open) QuickMenu.close(false);
+      if (CATS.some((c) => c.id === ev.cat)) goCat(ev.cat);
+      if (ev.folder === 'trophies' && typeof TROPHIES_FOLDER !== 'undefined') openFolder(TROPHIES_FOLDER);
+      return;
+    }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
     // meant for the overlay window or the system keyboard on top: the menu underneath must not act on it
     if (ev.type === 'input' && (ev.to === 'overlay' || ev.to === 'osk')) return;
@@ -1017,6 +939,7 @@ setInterval(async () => {   // pick up windows opening/closing (games, Discord)
 
 // ---------------------------------------------------------------- boot
 async function boot() {
+  await Looks.load();                         // every look (console skin) is ready before the first draw
   connectEvents();
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');

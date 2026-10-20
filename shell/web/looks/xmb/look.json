@@ -1,0 +1,10 @@
+{
+  "id": "xmb",
+  "name": "Cross-media bar (PS3 style)",
+  "short": "PS3",
+  "description": "Categories across, items down, flowing waves",
+  "author": "Crossbar",
+  "order": 0,
+  "settings": [],
+  "overlay": { "style": "panel" }
+}

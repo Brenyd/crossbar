@@ -1,4 +1,4 @@
-/* The Dashboard look (x360.js) — modelled on the Xbox 360's 2011 dashboard.
+/* The Dashboard look (looks/x360/look.js) — modelled on the Xbox 360's 2011 dashboard.
    Everything here is scoped to body[data-shell="x360"], so the XMB is untouched.
    Colours come from a small set of variables per background (Settings › Theme ›
    Background), and the highlight from --x-accent (Settings › Theme › Accent Colour). */
@@ -107,9 +107,11 @@ body[data-shell="x360"] #column .item.hero.x-ic .ico { width: 110px; height: 110
 body[data-shell="x360"] #column .item.hero .label { font-size: 30px; }
 body[data-shell="x360"] #column .item.hero .txt { padding: 40px 26px 18px; }
 /* the selected tile: lifted, with a bright edge */
-body[data-shell="x360"] #column .item.item.hero.on { scale: 1.015; }
-body[data-shell="x360"] #column .item.on { z-index: 2; scale: 1.03;
-  box-shadow: 0 0 0 4px #fff, 0 0 0 7px var(--x-accent), 0 18px 36px var(--x-shadow); }
+/* (no scaling: a grown tile would cover its neighbours — the edge is drawn inside, plus a thin
+   outer ring that stays within the 16px gap) */
+body[data-shell="x360"] #column .item.on { z-index: 2;
+  box-shadow: inset 0 0 0 4px #fff, 0 0 0 3px var(--x-accent), 0 14px 30px var(--x-shadow); }
+body[data-shell="x360"] #column .item.on .art { filter: brightness(1.08); }
 
 /* ---- list pages (settings and other folders without pictures) ---- */
 body[data-shell="x360"][data-xmode="list"] #column .item.item { display: flex; align-items: center; gap: 22px; padding: 0 26px; background: transparent; box-shadow: none; }
@@ -257,3 +259,17 @@ body[data-shell="x360"] #osk { border-radius: 0; }
 body[data-shell="x360"] .osk-key.on { box-shadow: none; transform: none; }
 #stage:has(#quick:not([hidden])) #hint, #stage:has(#dialog:not([hidden])) #hint { opacity: .25; }
 #stage:has(#dialog:not([hidden])) #x-root { opacity: .3; filter: blur(2px); transition: opacity .2s, filter .2s; }
+
+/* ---- now playing, centred along the top ---- */
+#x-root .x-now { position: absolute; left: 50%; top: 30px; width: 780px; transform: translateX(-50%); text-align: center; color: var(--x-fg);
+  animation: x-pivot .3s var(--ease); }
+#x-root .x-now-t { font-size: 24px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#x-root .x-now-by { color: var(--x-fg2); }
+#x-root .x-now-row { display: flex; align-items: center; gap: 14px; margin-top: 8px; font-size: 17px; color: var(--x-fg2); }
+#x-root .x-now-bar { flex: 1; height: 5px; background: var(--x-fg3); }
+#x-root .x-now-bar i { display: block; height: 100%; background: var(--x-accent-2); transition: width 1s linear; }
+
+/* the Guide: five tabs across, Home in the middle */
+.xg-tab { flex: 1; width: auto; }
+.xg-tab.home .xg-ti { width: 54px; height: 54px; margin-top: -4px; }
+.xg-head { padding: 14px 36px 0; font-size: 22px; color: rgba(255,255,255,.6); text-transform: lowercase; }

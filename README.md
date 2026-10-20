@@ -1,4 +1,4 @@
-# Crossbar — 1.2 Alpha
+# Crossbar — 1.2.1 Alpha
 
 **A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
 cross-media bar — categories across, items down, flowing waves behind — and runs everything from a
@@ -223,7 +223,8 @@ Underneath it's one menu: the same games, apps, folders, Options entries, dialog
 controller mapping and commands, whichever you pick. Each has its own look settings in
 **Settings › Theme**: the cross-media bar has theme packs and wave colour; the Dashboard has
 **Background** (Light, Dark, Green or your theme pack's picture) and **Accent Colour**. See
-[docs/THEMES.md](docs/THEMES.md) to restyle either.
+[docs/THEMES.md](docs/THEMES.md) to restyle either, and [docs/LOOKS.md](docs/LOOKS.md) to add a
+whole new console skin (a folder with three files; a working starter is included).
 
 ## Button glyphs
 
@@ -634,7 +635,7 @@ shell/crossbar/party.py       voice services + channels
 shell/mpv/crossbar-osc.lua    the controller-friendly video control panel
 shell/crossbar/login_helper.py  web-view window for GOG/Epic sign-in
 shell/web/                    the menu: xmb.js (core), media.js (Photo/Music/Video/TV/Network), quick.js, settings.js
-shell/web/x360.js, x360.css   the Dashboard (Xbox 360 style) front end, an alternative to the XMB
+shell/web/looks/<id>/          looks (console skins): xmb (PS3 style), x360 (Xbox 360 style), _template — docs/LOOKS.md
 iso/                          archiso overlay: packages, autologin, sway session, boot setup
 ```
 
@@ -645,8 +646,10 @@ The front end is swappable. `xmb.js` holds a "shell seam": the item model, folde
 Options, dialogs, the Quick Menu's rows, input routing and polling are shared, and a *look*
 draws them — the menu (`render` / `position` / `moveV` / `moveH`…) and, optionally, its own
 Quick Menu (`renderQuick`), stacked dialog buttons, LB / RB handling and so on. `XmbShell` (in
-`xmb.js`) is the cross-media bar; `x360.js` registers the Dashboard. Adding a look means
-registering one more object — the contract is in the comment above `Shell` in `xmb.js`.
+`looks/xmb/look.js`) is the cross-media bar; `looks/x360/look.js` is the Dashboard. A look is a
+folder (look.json, look.js, look.css) in `shell/web/looks/` or `~/.local/share/crossbar/looks/`
+and is picked up automatically — [docs/LOOKS.md](docs/LOOKS.md) explains making one, starting
+from `looks/_template`.
 
 ## Known gaps (next steps)
 

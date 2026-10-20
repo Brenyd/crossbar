@@ -13,6 +13,11 @@ from . import util
 CONF = os.path.expanduser("~/.config/MangoHud/MangoHud.conf")
 MODES = ("off", "fps", "graph", "full")
 CORNERS = ("top-right", "top-left", "bottom-left", "bottom-right")
+# Text size. MangoHud draws in the game's own pixels, so a size that reads on a 1080p screen is
+# tiny on a 4K TV: "auto" follows the screen's height; the others are fixed multiples of it.
+SIZES = ("auto", "small", "medium", "large", "huge")
+SIZE_SCALE = {"small": 0.8, "auto": 1.0, "medium": 1.4, "large": 2.0, "huge": 2.8}
+SIZE_NAMES = {"auto": "Automatic", "small": "Small", "medium": "Medium", "large": "Large", "huge": "Huge"}
 
 LINES = {
     "off": ["no_display"],
@@ -33,16 +38,32 @@ def prefs():
 def status():
     p = prefs()
     return {"available": available(), "fps": p.get("fps", "off"), "last": p.get("last", "fps"),
-            "corner": p.get("corner", "top-right")}
+            "corner": p.get("corner", "top-right"), "size": p.get("size", "auto"), "font_size": font_size()}
+
+
+def screen_height():
+    try:
+        from . import display
+        hs = [o["current"]["height"] for o in display.outputs() if o["current"].get("height")]
+        return max(hs) if hs else 1080
+    except Exception:
+        return 1080
+
+
+def font_size():
+    """MangoHud's font size in pixels: 24 at 1080p, scaled to the screen, times the chosen size."""
+    s = prefs().get("size", "auto")
+    return max(14, round(24 * (screen_height() / 1080) * SIZE_SCALE.get(s, 1.0)))
 
 
 def write_conf():
     p = prefs()
     mode, corner = p.get("fps", "off"), p.get("corner", "top-right")
+    fs = font_size()
     os.makedirs(os.path.dirname(CONF), exist_ok=True)
     lines = ["# Written by Crossbar (Quick Menu › Performance). Changes here are overwritten.",
-             "legacy_layout=false", f"position={corner}", "font_size=22", "background_alpha=0.35",
-             "round_corners=8", "toggle_hud=Shift_R+F12", "reload_cfg=Shift_L+F4", *LINES.get(mode, LINES["off"])]
+             "legacy_layout=false", f"position={corner}", f"font_size={fs}", f"font_size_text={fs}",
+             "background_alpha=0.35", f"round_corners={max(6, fs // 3)}", f"offset_x={fs // 2}", f"offset_y={fs // 2}", "toggle_hud=Shift_R+F12", "reload_cfg=Shift_L+F4", *LINES.get(mode, LINES["off"])]
     with open(CONF, "w") as f:
         f.write("\n".join(lines) + "\n")
 
@@ -61,6 +82,16 @@ def set_corner(corner, reload_key=None):
     if corner not in CORNERS:
         raise ValueError(corner)
     util.update_config(lambda c: c.setdefault("perf", {}).__setitem__("corner", corner))
+    write_conf()
+    if reload_key:
+        reload_key()
+    return status()
+
+
+def set_size(size, reload_key=None):
+    if size not in SIZES:
+        raise ValueError(size)
+    util.update_config(lambda c: c.setdefault("perf", {}).__setitem__("size", size))
     write_conf()
     if reload_key:
         reload_key()

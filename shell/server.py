@@ -26,7 +26,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import looks, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -129,8 +129,8 @@ def state():
         "theme_pack": themes.current_id(),
         "sounds": cfg["sounds"],
         "interface": cfg.get("interface", "xmb"),
-        "x360_bg": cfg.get("x360_bg", "light"),
-        "x360_accent": cfg.get("x360_accent", "green"),
+        "recent_video": recent_video(cfg),
+        "look_settings": looks.settings(cfg),
         "providers": [{"id": p.id, "name": p.name, "login_fields": p.login_fields,
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
                       for p in providers().values()],
@@ -380,6 +380,7 @@ def r_launch(b):
     before = {w["con_id"] for w in system.windows()}
     title = b.get("title", "")
     live = (b["provider"] in ("emu", "lutris", "shortcut") or not demo_on()) and os.environ.get("SWAYSOCK")
+    quick.STATE["game"] = {"provider": b["provider"], "id": str(b["id"]), "title": title, "at": time.time()}   # its trophies, in the Quick Menu
 
     def progress(msg):
         if live:
@@ -438,22 +439,23 @@ def r_login(pid, b):
     return JOBS.start("login", p.name, lambda job: p.login(job, b), p.id).as_dict()
 
 
-X360_BGS = ("light", "dark", "green", "picture")
-X360_ACCENTS = ("green", "blue", "orange", "pink", "purple", "red", "silver")
+def recent_video(cfg):
+    r = cfg.get("recent_video") or {}
+    p = r.get("path")
+    if not p or not os.path.isfile(p):
+        return None
+    return {"path": p, "title": os.path.splitext(os.path.basename(p))[0], "at": r.get("at", 0)}
 
 
 def r_settings(b):
     allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
-               "glyphs", "interface", "x360_bg", "x360_accent"}
+               "glyphs", "interface"}
 
     if "glyphs" in b and b["glyphs"] not in ("auto", *glyphs.STYLES):
         raise ValueError("glyphs must be auto, xbox, playstation or nintendo")
-    if "interface" in b and b["interface"] not in ("xmb", "x360"):
-        raise ValueError("interface must be xmb or x360")
-    if "x360_bg" in b and b["x360_bg"] not in X360_BGS:
-        raise ValueError("x360_bg must be one of " + ", ".join(X360_BGS))
-    if "x360_accent" in b and b["x360_accent"] not in X360_ACCENTS:
-        raise ValueError("x360_accent must be one of " + ", ".join(X360_ACCENTS))
+    if "interface" in b and not looks.get(b["interface"]):
+        raise ValueError(f"No look called {b['interface']} (Settings › Theme › Interface lists them)")
+    look_patch = looks.validate(b["look_settings"]) if "look_settings" in b else None
 
     def apply(c):
         for k, v in b.items():
@@ -461,10 +463,12 @@ def r_settings(b):
                 c[k] = v
             elif k == "video" and isinstance(v, dict):
                 c["video"].update({kk: vv for kk, vv in v.items() if kk in ("resume", "subtitles")})
+        if look_patch:
+            looks.merge(c, look_patch)
     util.update_config(apply)
     if "glyphs" in b:
         player.write_glyphs()          # a playing video picks the new style up within seconds
-    if {"interface", "x360_bg", "x360_accent"} & set(b):
+    if {"interface", "look_settings"} & set(b):
         HUB.publish({"type": "interface"})     # any other open page follows along
     return state()
 
@@ -574,6 +578,8 @@ GET = {
     "/api/ps5": lambda q: ps5hw.status(),
     "/api/emulation": lambda q: emulation.status(),
     "/api/trophies": lambda q: trophies.status(),
+    "/api/quick/trophies": lambda q: quick.game_trophies(),
+    "/api/looks": lambda q: looks.public(),
     "/api/trophies/ra": lambda q: {**trophies.ra_summary(), "consoles": trophies.ra_consoles()},
     "/api/trophies/ra/game": lambda q: trophies.ra_game(q["id"]),
     "/api/trophies/steam": lambda q: trophies.steam_games(),
@@ -814,6 +820,8 @@ def route_post(path, b):
             return {"ok": quick.overlay_close_app()}
         elif parts[1] == "settings":
             quick.overlay_open_settings(b.get("folder", ""))
+        elif parts[1] == "open":
+            quick.overlay_open(b.get("cat", ""), b.get("folder", ""))
         return {"ok": True}
     if head == "quick":
         if parts[1] == "resume":
@@ -933,10 +941,10 @@ def route_post(path, b):
                 PADS.type_keys(special="f4", shift=True)
         if parts[1] == "fps":
             return perf.set_mode(b["mode"], reload_key)
-        if parts[1] == "corner":
-            ps5hw.set_hud(corner=b["corner"])          # the temperature overlay moves with it
-            HUB.publish({"type": "ps5-hud"})
+        if parts[1] == "corner":                       # the temperature overlay has its own (ps5/hud)
             return perf.set_corner(b["corner"], reload_key)
+        if parts[1] == "size":
+            return perf.set_size(b["size"], reload_key)
         raise KeyError(parts[1])
     if head == "osk":
         what = parts[1] if len(parts) > 1 else ""
@@ -981,7 +989,7 @@ def route_post(path, b):
         elif what == "boost":
             ps5hw.set_boost(bool(b.get("on")))
         elif what == "hud":
-            ps5hw.set_hud(b.get("on"), b.get("corner"))
+            ps5hw.set_hud(b.get("on"), b.get("corner"), b.get("size"))
             HUB.publish({"type": "ps5-hud"})
         else:
             raise KeyError(what)
@@ -1216,6 +1224,12 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self._send(404, b"not found", "text/plain")
             return self._send_file(p, mimetypes.guess_type(p)[0] or "image/png", cache=True)
+        if path.startswith("/look/"):             # a look (console skin) you installed: its script, css, pictures
+            parts = urllib.parse.unquote(path[len("/look/"):]).split("/", 1)
+            hit = looks.file_path(parts[0], parts[1]) if len(parts) == 2 else None
+            if not hit:
+                return self._send(404, b"not found", "text/plain")
+            return self._send_file(hit[0], hit[1], cache=False)
         if path.startswith("/theme/"):            # a theme's pictures, fonts, sounds, css
             parts = urllib.parse.unquote(path[len("/theme/"):]).split("/", 1)
             hit = themes.file_path(parts[0], parts[1]) if len(parts) == 2 else None

@@ -4,10 +4,8 @@
 
 const check = (on) => (on ? '✓ ' : '');
 
-// Settings › Theme › Interface (and the Quick Menu's Interface row). A look with no shell
-// registered in xmb.js's Shell seam is hidden, and falls back to the XMB, so a half-installed
-// build still boots.
-const LOOKS = [['xmb', 'Cross-media bar (PS3 style)'], ['x360', 'Dashboard (Xbox 360 style)']];
+// Settings › Theme › Interface lists the looks (console skins) that loaded — web/looks.js — and
+// each look's own settings come from its look.json, so a new look needs nothing here.
 
 // Open a Settings sub-folder directly (used by "Wi-Fi" in Network, missing-folder hints…).
 function openSettingsFolder(id) {
@@ -430,7 +428,7 @@ const BROWSER_SETTINGS = {
 function themePacksFolder(cur, look) {
   return {
     key: 'packs', label: 'Theme Packs', icon: 'palette',
-    sub: `${cur.name}${look === 'x360' ? ' · its picture can be the background' : ''}`,
+    sub: `${cur.name}${look !== 'xmb' ? ' · colours, font and sounds; its picture can be a background' : ''}`,
     children: async () => {
       const [packs, now] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
       const use = async (t) => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } };
@@ -531,28 +529,23 @@ const SETTINGS_FOLDERS = [
         rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
         Math.max(0, rows.findIndex(([v]) => v === k)));
       const items = [];
-      const looks = LOOKS.filter(([v]) => Shell.impls[v]);
+      const looks = Looks.names();
       if (looks.length > 1) {
         items.push({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, look),
           action: () => pick(looks, look, (v) => ({ interface: v })) });
       }
-      if (look === 'x360') {
-        const bgs = Object.entries(X360_BG_NAMES).filter(([v]) => v !== 'picture' || cur.background?.image);
-        const bg = bgs.some(([v]) => v === st.x360_bg) ? st.x360_bg : 'light';
-        items.push({ key: 'xbg', label: 'Background', icon: 'photo', sub: named(bgs, bg),
-          action: () => pick(bgs, bg, (v) => ({ x360_bg: v })) });
-        const acc = Object.entries(X360_ACCENT_NAMES);
-        items.push({ key: 'xacc', label: 'Accent Colour', icon: 'palette', sub: named(acc, st.x360_accent || 'green'),
-          action: () => pick(acc, st.x360_accent || 'green', (v) => ({ x360_accent: v })) });
+      // the look's own settings, straight from its look.json…
+      const vals = Looks.settings(look);
+      for (const s of Looks.byId[look]?.settings || []) {
+        const rows = s.choices.filter((c) => Looks.choiceOk(c, cur)).map((c) => [c[0], c[1]]);
+        if (!rows.length) continue;
+        const v = rows.some(([x]) => x === vals[s.key]) ? vals[s.key] : rows[0][0];
+        items.push({ key: `look:${s.key}`, label: s.label, icon: s.icon, sub: named(rows, v),
+          action: () => pick(rows, v, (x) => ({ look_settings: { [look]: { [s.key]: x } } })) });
       }
+      // …and any it adds itself (the XMB: Wave Colour)
+      items.push(...(Shell.impls[look]?.settingsRows?.(st, cur) || []));
       items.push(themePacksFolder(cur, look));
-      if (look === 'xmb' && cur.waves.mode === 'month') {
-        const c = st.theme === 'auto' ? 0 : st.theme + 1;
-        const opts = [{ label: `${check(c === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]
-          .concat(MONTHS.map((m, i) => ({ label: `${check(c === i + 1)}${m} colour`, action: () => setSetting({ theme: i }).then(reloadFolder) })));
-        items.push({ key: 'color', label: 'Wave Colour', icon: 'palette', sub: st.theme === 'auto' ? 'Automatic (changes monthly)' : `${MONTHS[st.theme]} colour`,
-          action: () => Options.show(opts, c) });
-      }
       items.push({ key: 'install', label: 'Install a Theme…', icon: 'add', sub: 'From a folder or .zip (USB stick, Downloads, network drive)', themeBrowse: true, children: () => themeBrowse(null) });
       items.push({ key: 'how', label: 'Make Your Own', icon: 'info', sub: 'A folder with theme.json — see docs/THEMES.md on GitHub',
         action: () => message('A theme is a folder with a theme.json file (colours, waves, background, font, keyboard),\nplus optional pictures: background.jpg, icons/<name>.svg, sounds/<name>.ogg, theme.css.\n\nPut it in ~/.local/share/crossbar/themes/ or install it from here.\nFull guide: github.com/Brenyd/crossbar/blob/main/docs/THEMES.md', 'Themes') });
@@ -712,8 +705,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.1 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.1 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

@@ -1,0 +1,21 @@
+{
+  "id": "x360",
+  "name": "Dashboard (Xbox 360 style)",
+  "short": "Xbox 360",
+  "description": "Pivots across the top, a wall of tiles, a Guide with tabs",
+  "author": "Crossbar",
+  "order": 10,
+  "settings": [
+    { "key": "bg", "label": "Background", "icon": "photo", "default": "light",
+      "choices": [["light", "Light"], ["dark", "Dark"], ["green", "Green"], ["picture", "Theme picture", { "needs": "theme_picture" }]] },
+    { "key": "accent", "label": "Accent Colour", "icon": "palette", "default": "green",
+      "choices": [["green", "Green"], ["blue", "Blue"], ["orange", "Orange"], ["pink", "Pink"], ["purple", "Purple"], ["red", "Red"], ["silver", "Silver"]] }
+  ],
+  "colors": {
+    "accent": {
+      "green": ["#107c10", "#5dc21e"], "blue": ["#0b5fbf", "#3b9cff"], "orange": ["#c4520c", "#ff8a2b"],
+      "pink": ["#b7166f", "#f04ea5"], "purple": ["#5c2d91", "#9b5de5"], "red": ["#a4161a", "#e5383b"], "silver": ["#5a6066", "#9aa3ab"]
+    }
+  },
+  "overlay": { "style": "guide", "accent_setting": "accent", "panel": "#26272b", "panel2": "#1c1d20", "text": "#ffffff", "dim": "rgba(255,255,255,0.62)" }
+}

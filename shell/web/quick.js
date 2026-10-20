@@ -41,24 +41,54 @@ const QuickMenu = {
     this.render();
   },
 
-  // Pages keep the list short: Sound and Performance open their own page (B comes back).
+  // Pages: the XMB's Quick Menu is one list ('main') with Sound / Performance / Trophies pages;
+  // a look with quickTabs (the Dashboard's Guide) splits it into tabs walked with LB / RB —
+  // the same rows and commands, grouped like the 360's Guide. B on a sub-page goes back to
+  // where you opened it from.
   go(page) {
-    if (page !== 'main') this.backTo = this.rows[this.sel]?.key;      // B returns to the row you came from
+    if (!this.isTab(page)) { this.parent = this.page; this.backTo = this.rows[this.sel]?.key; }
+    else this.parent = null;
     this.page = page; Sfx.ok();
+    if (page === 'trophies') this.loadTrophies();
     this.rows = this.build(this.data);
-    this.sel = page === 'main' ? Math.max(0, this.rows.findIndex((r) => r.key === this.backTo)) : 0;
+    this.sel = this.isTab(page) ? Math.max(0, this.rows.findIndex((r) => r.key === this.backTo)) : 0;
+    this.render();
+  },
+  isTab(page) { return page === 'main' || this.tabs().some(([p]) => p === page); },
+  back() {
+    const to = this.parent || 'main';
+    this.parent = null;
+    this.page = to; Sfx.back();
+    this.rows = this.build(this.data);
+    this.sel = Math.max(0, this.rows.findIndex((r) => r.key === this.backTo));
     this.render();
   },
 
   build(d) {
-    if (this.page === 'sound') return this.buildSound(d);
-    if (this.page === 'perf') return this.buildPerf(d);
-    const rows = [];
-    const after = () => setTimeout(() => this.refresh(), 300);
-    if (d.app) {
-      const what = d.app.video ? 'Video' : 'Game';
-      rows.push({ key: 'resume', icon: 'play', label: `Resume ${what}`, sub: d.app.title, ok: () => this.close(true) });
-      rows.push({ key: 'close', icon: 'power', label: `Close ${what}`, sub: d.app.title, ok: async () => {
+    const tabs = !!Shell.active?.quickTabs;
+    switch (this.page) {
+      case 'sound': return this.buildSound(d);
+      case 'perf': return this.buildPerf(d);
+      case 'trophies': return this.buildTrophies();
+      case 'games': return [...this.rowsApp(d), this.rowTrophies(d), this.rowAllTrophies(), this.rowGo('game', 'Games', 'game', 'Your library')];
+      case 'media': return [...this.rowsMedia(d), this.rowSound(d), this.rowGo('music', 'Music', 'music', 'Songs, Spotify'), this.rowGo('video', 'Video', 'video', 'Films, shows, IPTV')];
+      case 'social': return [...this.rowsVoice(d), this.rowGo('party', 'Social', 'party', 'Friends, chat, voice')];
+      case 'settings': return [this.rowLook(), this.rowPerf(d), this.rowSettings(), this.rowPower()].filter(Boolean);
+      default:
+        if (tabs) return [...this.rowsApp(d), this.rowHome(d), ...this.rowsMedia(d).slice(0, 1), this.rowLook(), this.rowPower()].filter(Boolean);
+        return [...this.rowsApp(d), this.rowHome(d), d.app ? this.rowTrophies(d) : null, ...this.rowsMedia(d), this.rowSound(d),
+          this.rowPerf(d), this.rowTrophies(d, true), this.rowLook(), this.rowSettings(), this.rowPower()].filter(Boolean);
+    }
+  },
+  after() { setTimeout(() => this.refresh(), 300); },
+
+  // ---- rows, shared by every layout
+  rowsApp(d) {
+    if (!d.app) return [];
+    const what = d.app.video ? 'Video' : 'Game';
+    return [
+      { key: 'resume', icon: 'play', label: `Resume ${what}`, sub: d.app.title, ok: () => this.close(true) },
+      { key: 'close', icon: 'power', label: `Close ${what}`, sub: d.app.title, ok: async () => {
         this.open = false;          // let the confirm dialog take input
         const yes = await confirmBox(`Close ${d.app.title}?${d.app.video ? '' : '\nUnsaved game progress may be lost.'}`);
         this.open = true;
@@ -67,53 +97,98 @@ const QuickMenu = {
         toast(`Closed ${d.app.title}`, 'power');
         this.close(false);
         setTimeout(loadState, 500);
-      } });
-    }
-    rows.push({ key: 'home', icon: 'users', label: 'Go to Home', sub: d.app ? `${d.app.title} stays open` : 'Back to the menu',
-      ok: () => this.close(false) });
-
-    // Now playing: local music first, then Spotify
-    const m = d.music, sp = d.spotify;
+      } }];
+  },
+  rowHome(d) {
+    return { key: 'home', icon: 'users', label: 'Go to Home', sub: d.app ? `${d.app.title} stays open` : 'Back to the menu', ok: () => this.close(false) };
+  },
+  // the running game's trophies (Steam achievements), or where to find them
+  rowTrophies(d, onlyWithoutGame = false) {
+    if (onlyWithoutGame && d.app) return null;
+    return d.app && !d.app.video
+      ? { key: 'trophies', icon: 'trophy', label: 'Trophies ▸', sub: `${d.app.title}: what you've unlocked`, ok: () => this.go('trophies') }
+      : { key: 'trophies', icon: 'trophy', label: 'Trophies', sub: 'RetroAchievements and Steam', ok: () => this.openTrophiesFolder() };
+  },
+  rowAllTrophies() { return { key: 'all-trophies', icon: 'trophy', label: 'All Trophies', sub: 'Every game, RetroAchievements and Steam', ok: () => this.openTrophiesFolder() }; },
+  openTrophiesFolder() {
+    this.close(false); goCat('game');
+    if (typeof TROPHIES_FOLDER !== 'undefined') openFolder(TROPHIES_FOLDER);
+  },
+  rowGo(cat, label, ico, sub) { return { key: `go:${cat}`, icon: ico, label, sub, ok: () => { this.close(false); goCat(cat); } }; },
+  rowsMedia(d) {
+    const rows = [], m = d.music, sp = d.spotify;
     if (m) {
-      const ctl = (action) => async () => { await api.post('/api/music/control', { action }); after(); };
+      const ctl = (action) => async () => { await api.post('/api/music/control', { action }); this.after(); };
       rows.push({ key: 'media', icon: 'music', art: thumb(m.path), label: m.title,
         sub: `${m.artist ? m.artist + ' · ' : ''}${m.paused ? 'Paused' : 'Playing'} · ${fmtTime(m.position)} / ${fmtTime(m.duration)}`,
         bar: m.duration ? m.position / m.duration : null, hint: '◀ ▶ skip · {ok} play/pause',
         ok: ctl('toggle'), adjust: (dir) => ctl(dir > 0 ? 'next' : 'prev')() });
     } else if (sp) {
-      const ctl = (action) => async () => { await call(() => api.post('/api/spotify/control', { action })); after(); };
+      const ctl = (action) => async () => { await call(() => api.post('/api/spotify/control', { action })); this.after(); };
       rows.push({ key: 'media', icon: 'spotify', art: sp.art, label: sp.name,
         sub: `Spotify · ${sp.artist}${sp.here ? '' : ` · on ${sp.device}`} · ${sp.playing ? 'Playing' : 'Paused'}`,
         bar: sp.duration ? sp.position / sp.duration : null, hint: '◀ ▶ skip · {ok} play/pause',
         ok: ctl('toggle'), adjust: (dir) => ctl(dir > 0 ? 'next' : 'prev')() });
     }
-
     const out = d.audio?.output || {};
     if (out.volume != null) {
       rows.push({ key: 'vol', icon: 'sound', label: 'Volume', sub: out.muted ? 'Muted' : `${out.volume}%`,
         bar: out.muted ? 0 : Math.min(1, out.volume / 100), hint: '◀ ▶ adjust · {ok} mute',
-        ok: async () => { await api.post('/api/audio', { target: 'output', mute: true }); after(); },
-        adjust: async (dir) => { await api.post('/api/audio', { target: 'output', delta: dir * 5 }); after(); } });
+        ok: async () => { await api.post('/api/audio', { target: 'output', mute: true }); this.after(); },
+        adjust: async (dir) => { await api.post('/api/audio', { target: 'output', delta: dir * 5 }); this.after(); } });
     }
+    return rows;
+  },
+  rowSound(d) {
     const nApps = (d.apps_audio || []).length;
-    rows.push({ key: 'sound', icon: 'sound', label: 'Sound ▸', sub: [d.output?.name, d.audio?.mic?.muted ? 'mic muted' : '', nApps ? `${nApps} app${nApps === 1 ? '' : 's'} playing` : ''].filter(Boolean).join(' · ') || 'Output, microphone, app volume',
-      ok: () => this.go('sound') });
-    if (d.perf?.available || d.ps5?.available) {
-      rows.push({ key: 'perf', icon: 'display', label: 'Performance ▸', sub: 'Frame rate and temperature overlays', ok: () => this.go('perf') });
-    }
-    // swap the whole look from here: same menu, same everything, different console
-    const looks = (typeof LOOKS !== 'undefined' ? LOOKS : []).filter(([v]) => Shell.impls[v]);
-    if (looks.length > 1) {
-      const cur = Math.max(0, looks.findIndex(([v]) => v === Shell.id));
-      const swap = (dir) => setSetting({ interface: looks[(cur + dir + looks.length) % looks.length][0] });
-      rows.push({ key: 'look', icon: 'palette', label: 'Interface', sub: looks[cur][1], hint: '◀ ▶ or {ok} switch',
-        ok: () => swap(1), adjust: (dir) => swap(dir) });
-    }
-    rows.push({ key: 'settings', icon: 'settings', label: 'Settings', sub: 'Controller, network, everything else', ok: () => { this.close(false); goCat('settings'); } });
-    rows.push({ key: 'power', icon: 'power', label: 'Power', sub: 'Turn off or restart', ok: () => Options.show([
+    return { key: 'sound', icon: 'sound', label: 'Sound ▸', sub: [d.output?.name, d.audio?.mic?.muted ? 'mic muted' : '', nApps ? `${nApps} app${nApps === 1 ? '' : 's'} playing` : ''].filter(Boolean).join(' · ') || 'Output, microphone, app volume',
+      ok: () => this.go('sound') };
+  },
+  rowsVoice(d) {
+    const v = d.voice;
+    if (!v?.channel) return [];
+    return [{ key: 'voice', icon: 'voice', label: `Voice: ${v.channel.name}`, sub: `${v.channel.guild || 'Discord'} · ${v.deaf ? 'Deafened' : v.mute ? 'Muted' : 'Mic on'}`,
+      hint: '{ok} mute', ok: async () => { await call(() => api.post('/api/discord/mute', {})); this.after(); } }];
+  },
+  rowPerf(d) {
+    if (!(d.perf?.available || d.ps5?.available)) return null;
+    return { key: 'perf', icon: 'display', label: 'Performance ▸', sub: 'Frame rate and temperature overlays', ok: () => this.go('perf') };
+  },
+  // swap the whole look from here: same menu, same everything, different console
+  rowLook() {
+    const looks = typeof Looks !== 'undefined' ? Looks.names() : [];
+    if (looks.length < 2) return null;
+    const cur = Math.max(0, looks.findIndex(([v]) => v === Shell.id));
+    const swap = (dir) => setSetting({ interface: looks[(cur + dir + looks.length) % looks.length][0] });
+    return { key: 'look', icon: 'palette', label: 'Interface', sub: looks[cur][1], hint: '◀ ▶ or {ok} switch', ok: () => swap(1), adjust: (dir) => swap(dir) };
+  },
+  rowSettings() { return { key: 'settings', icon: 'settings', label: 'Settings', sub: 'Controller, network, everything else', ok: () => { this.close(false); goCat('settings'); } }; },
+  rowPower() {
+    return { key: 'power', icon: 'power', label: 'Power', sub: 'Turn off or restart', ok: () => Options.show([
       { label: 'Turn Off System', action: async () => { if (await confirmSafe('Turn off the system?')) api.post('/api/power/poweroff'); } },
       { label: 'Restart System', action: async () => { if (await confirmSafe('Restart the system?')) api.post('/api/power/reboot'); } },
-    ]) });
+    ]) };
+  },
+
+  // ---- Trophies: the running game's list
+  async loadTrophies() {
+    this.troph = null;
+    try { this.troph = await api.get('/api/quick/trophies'); } catch (e) { this.troph = { note: e.message }; }
+    if (this.open && this.page === 'trophies') { this.rows = this.build(this.data); this.render(); }
+  },
+  buildTrophies() {
+    const t = this.troph;
+    if (!t) return [{ key: 'loading', icon: 'refresh', label: 'Loading…', sub: '' }];
+    const rows = [];
+    if (t.total) {
+      rows.push({ key: 'sum', icon: 'trophy', label: `${t.earned} of ${t.total} unlocked`, sub: t.game, bar: t.earned / t.total });
+      for (const [i, a] of (t.achievements || []).entries()) {
+        rows.push({ key: `a:${i}`, icon: a.earned ? 'trophy' : 'info', art: a.icon || undefined, label: a.title,
+          sub: [a.earned ? `Unlocked ${a.when}` : 'Locked', a.desc].filter(Boolean).join(' · '),
+          ok: () => message(`${a.title}\n\n${a.desc || ''}\n\n${a.earned ? `Unlocked ${a.when}` : 'Not unlocked yet'}`, t.game) });
+      }
+    } else rows.push({ key: 'none', icon: 'info', label: t.game ? `${t.game}` : 'No game running', sub: t.note || 'No trophies to show' });
+    rows.push(this.rowAllTrophies());
     return rows;
   },
 
@@ -150,33 +225,49 @@ const QuickMenu = {
         ok: () => set(p.fps === 'off' ? (p.last || 'fps') : 'off'),
         adjust: (dir) => set(MODES[(MODES.indexOf(p.fps) + dir + MODES.length) % MODES.length]) });
     }
+    const CORNERS = ['top-right', 'top-left', 'bottom-left', 'bottom-right'], SIZES = ['auto', 'small', 'medium', 'large', 'huge'];
+    const SIZE_NAMES = { auto: 'Automatic (fits the screen)', small: 'Small', medium: 'Medium', large: 'Large', huge: 'Huge' };
+    const cyc = (list, cur, dir) => list[(Math.max(0, list.indexOf(cur)) + dir + list.length) % list.length];
+    const where = (c) => c.replace('-', ' ').replace(/^./, (x) => x.toUpperCase());
+    if (p.available) {
+      rows.push({ key: 'corner', icon: 'display', label: 'Frame Rate Position', sub: where(p.corner), hint: '◀ ▶ move',
+        adjust: async (dir) => { await call(() => api.post('/api/perf/corner', { corner: cyc(CORNERS, p.corner, dir) })); after(); } });
+      rows.push({ key: 'size', icon: 'display', label: 'Frame Rate Size', sub: `${SIZE_NAMES[p.size] || p.size}${p.font_size ? ` · ${p.font_size} px` : ''}`, hint: '◀ ▶ size',
+        adjust: async (dir) => { await call(() => api.post('/api/perf/size', { size: cyc(SIZES, p.size, dir) })); after(); } });
+    }
     if (d.ps5?.available) {
+      const hc = d.ps5.hud_corner || 'top-left', hs = d.ps5.hud_size || 'auto';
       rows.push({ key: 'hud', icon: 'display', label: 'Temperature Overlay', sub: d.ps5.hud ? 'On' : 'Off', hint: '{ok} on/off',
         ok: async () => { await call(() => api.post('/api/ps5/hud', { on: !d.ps5.hud })); after(); } });
+      rows.push({ key: 'hud-corner', icon: 'display', label: 'Temperature Position', sub: where(hc), hint: '◀ ▶ move',
+        adjust: async (dir) => { await call(() => api.post('/api/ps5/hud', { corner: cyc(CORNERS, hc, dir) })); after(); } });
+      rows.push({ key: 'hud-size', icon: 'display', label: 'Temperature Size', sub: SIZE_NAMES[hs] || hs, hint: '◀ ▶ size',
+        adjust: async (dir) => { await call(() => api.post('/api/ps5/hud', { size: cyc(SIZES, hs, dir) })); after(); } });
     }
     return rows;
   },
 
   goSettings(id) { this.close(false); openSettingsFolder(id); },
 
-  // The pages as tabs (the Xbox 360 Guide): LB / RB walk them
+  // The Guide's tabs (a look with quickTabs): LB / RB walk them; Home is where it opens
   tabs() {
-    const d = this.data || {};
-    return [['main', 'home', 'Home'], ['sound', 'sound', 'Sound'],
-      ...((d.perf?.available || d.ps5?.available) ? [['perf', 'display', 'Performance']] : [])];
+    return [['games', 'game', 'Games & Apps'], ['media', 'music', 'Media'], ['main', 'users', 'Home'],
+      ['social', 'party', 'Social'], ['settings', 'settings', 'Settings']];
   },
   bumper(dir) {
     if (!Shell.active?.quickTabs || Options.open) return false;
-    const t = this.tabs(), i = t.findIndex(([p]) => p === this.page);
-    const n = t[(Math.max(0, i) + dir + t.length) % t.length][0];
-    if (n !== this.page) { this.backTo = null; this.go(n); }
+    const t = this.tabs();
+    const cur = this.isTab(this.page) ? this.page : (this.parent || 'main');
+    const i = Math.max(0, t.findIndex(([p]) => p === cur));
+    this.backTo = null;
+    this.go(t[(i + dir + t.length) % t.length][0]);
     return true;
   },
 
   render() {
     if (Shell.active?.renderQuick?.(this)) return;     // a look that draws its own (the 360 Guide)
     const d = this.data || {};
-    $('#quick .q-title').textContent = ({ sound: 'Sound', perf: 'Performance' })[this.page] || (d.app ? d.app.title : 'Crossbar');
+    $('#quick .q-title').textContent = ({ sound: 'Sound', perf: 'Performance', trophies: 'Trophies' })[this.page] || (d.app ? d.app.title : 'Crossbar');
     $('#quick .q-rows').innerHTML = this.rows.map((r, i) => `
       <div class="q-row ${i === this.sel ? 'on' : ''}">
         <div class="q-ico">${r.art ? `<div class="q-art" style="background-image:url('${esc(r.art)}')"></div>` : icon(r.icon)}</div>
@@ -206,8 +297,8 @@ const QuickMenu = {
       Sfx.move(); r.adjust(a === 'right' ? 1 : -1);
     } else if (a === 'ok' && r?.ok) {
       Sfx.ok(); r.ok();
-    } else if (a === 'back' && this.page !== 'main') {
-      Sfx.back(); this.go('main');
+    } else if (a === 'back' && !this.isTab(this.page)) {
+      this.back();
     } else if (a === 'back' || a === 'opt') {
       this.close(true);
     }

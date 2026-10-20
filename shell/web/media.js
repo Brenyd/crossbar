@@ -107,7 +107,7 @@ function musicNowItem(m) {
     refresh('music');
   };
   return {
-    key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING',
+    key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING', recent: Date.now() / 1000,
     sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(m.position)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
     progress: m.duration ? m.position / m.duration : null,
     action: ctl('toggle'),
@@ -246,6 +246,13 @@ CATS.push(
       for (const w of (S.state.windows || []).filter((w) => w.app === 'crossbar-player')) {
         items.push({ key: `vw:${w.con_id}`, label: `Return to ${w.title}`, icon: 'play', sub: 'Now playing',
           action: () => api.post('/api/window/focus', { con_id: w.con_id }) });
+      }
+      // the last video you played, to carry on with (the Dashboard's big tile)
+      const rv = S.state.recent_video;
+      if (rv) {
+        const play = async () => { if (await call(() => api.post('/api/video/play', { paths: [rv.path], index: 0 }))) toast(`Playing ${rv.title}`, 'play'); };
+        items.push({ key: 'recent-video', label: rv.title, art: thumb(rv.path), artTitle: rv.title, recent: rv.at, badge: 'CONTINUE',
+          sub: 'Continue watching', action: play, options: [{ label: 'Play', action: play }, { label: 'Information', action: () => message(`${rv.title}\n${rv.path}`, 'Information') }] });
       }
       if (S.state.iptv?.linked) items.push(iptvTopFolder('vod'), iptvTopFolder('series'));
       items.push(allItem('video', 'All Videos'));

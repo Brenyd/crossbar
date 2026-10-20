@@ -1,0 +1,12 @@
+/* Scope every rule to your look, so the others are untouched. */
+body[data-shell="starter"] { background: #0f172a; }
+body[data-shell="starter"] #cats, body[data-shell="starter"] #crumb { display: none; }
+body[data-shell="starter"] #waves { visibility: hidden; }
+#st-root .st-cats { position: absolute; left: 150px; top: 200px; font-size: 30px; color: #94a3b8; line-height: 64px; }
+#st-root .st-cats .on { color: #fff; border-left: 4px solid var(--st-accent); padding-left: 16px; }
+#st-root .st-title { position: absolute; left: 560px; top: 110px; font-size: 44px; color: #fff; }
+body[data-shell="starter"] #column .item { height: 64px; gap: 20px; }
+body[data-shell="starter"] #column .item .ico { width: 40px; height: 40px; }
+body[data-shell="starter"] #column .item .label { font-size: 28px; }
+body[data-shell="starter"] #column .item .sub { display: none; }
+body[data-shell="starter"] #column .item.on { color: var(--st-accent); }

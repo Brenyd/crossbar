@@ -18,11 +18,29 @@ def kind_of(app):
     return "App" if "chrom" in (app.get("app") or "").lower() else "Game"
 
 
-PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", "browser": "Browser", "tabs": "Tabs"}
+PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", "browser": "Browser", "tabs": "Tabs", "trophies": "Trophies"}
+# The Guide (looks whose look.json says "overlay": {"style": "guide"}, like the Dashboard): the
+# same rows, grouped into tabs walked with LB / RB; Home is where it opens. Which rows each
+# tab shows, by row key:
+GUIDE_TABS = [("games", "Games & Apps", "applications-games-symbolic"), ("media", "Media", "audio-x-generic-symbolic"),
+              ("main", "Home", "go-home-symbolic"), ("social", "Social", "system-users-symbolic"),
+              ("guide-settings", "Settings", "emblem-system-symbolic")]
+GUIDE_ROWS = {"main": ["resume", "close", "browser", "home", "media", "look", "power"],
+              "games": ["resume", "close", "trophies", "all-trophies", "apps", "osk"],
+              "media": ["media", "vol", "sound"],
+              "social": ["voice", "share", "go-social"],
+              "guide-settings": ["look", "perf", "settings", "power"]}
 BROWSER_SIZES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0]
 FPS_MODES = ["off", "fps", "graph", "full"]
 FPS_NAMES = {"off": "Off", "fps": "FPS", "graph": "FPS + frame time", "full": "FPS, frame time, CPU/GPU"}
 CORNERS = ["top-right", "top-left", "bottom-left", "bottom-right"]
+SIZES = ["auto", "small", "medium", "large", "huge"]
+SIZE_NAMES = {"auto": "Automatic (fits the screen)", "small": "Small", "medium": "Medium", "large": "Large", "huge": "Huge"}
+
+
+def cycle(seq, cur, d):
+    i = seq.index(cur) if cur in seq else 0
+    return seq[(i + (1 if d > 0 else -1)) % len(seq)]
 
 
 class Model:
@@ -52,6 +70,27 @@ class Model:
         keys = [r["key"] for r in self.rows]
         self.sel = keys.index(key) if key in keys else min(self.sel, len(self.rows) - 1)
 
+    # ---- the Guide ----------------------------------------------------------------
+    def style(self):
+        return ((self.data.get("look") or {}).get("style")) or "panel"
+
+    def guide(self):
+        return self.style() == "guide"
+
+    def is_tab(self, page=None):
+        page = page or self.page
+        return page == "main" or (self.guide() and page in GUIDE_ROWS)
+
+    def tab(self):
+        """The tab to light up: the page, or the tab a sub-page was opened from."""
+        return self.page if self.is_tab() else (getattr(self, "parent", None) or "main")
+
+    def switch_tab(self, d):
+        tabs = [t[0] for t in GUIDE_TABS]
+        i = tabs.index(self.tab()) if self.tab() in tabs else tabs.index("main")
+        self.parent = None
+        self.go(tabs[(i + (1 if d > 0 else -1)) % len(tabs)])
+
     def title(self):
         if self.page == "apps":
             return "Switch App"
@@ -71,10 +110,22 @@ class Model:
         return k.lower() if k else "menu"
 
     def go(self, page, app=None):
-        if page != "main" and self.page == "main" and self.rows and self.sel < len(self.rows):
+        if not self.is_tab(page) and self.is_tab() and self.rows and self.sel < len(self.rows):
             self._from = self.rows[self.sel]["key"]       # so Back returns to that row
+            self.parent = self.page                       # …on the tab it came from
         self.page, self.app, self.sel, self.armed = page, app, 0, None
+        if page == "trophies":
+            self.trophies = None
+            __import__("threading").Thread(target=self._load_trophies, daemon=True).start()
         self.rebuild()
+
+    def _load_trophies(self):
+        try:
+            self.trophies = self.api.get("/api/quick/trophies") or {}
+        except Exception as e:
+            self.trophies = {"note": f"Couldn't get the trophies: {e}"}
+        if self.page == "trophies":
+            self.rebuild()
 
     def build(self, d):
         if self.page == "apps":
@@ -93,7 +144,39 @@ class Model:
             return self.build_browser(d)
         if self.page == "tabs":
             return self.build_tabs(d)
-        return self.build_main(d)
+        if self.page == "trophies":
+            return self.build_trophies()
+        rows = self.build_main(d)
+        if self.guide():
+            keys = GUIDE_ROWS.get(self.page, GUIDE_ROWS["main"])
+            by = {r["key"]: r for r in rows}
+            rows = [by[k] for k in keys if k in by]
+            if self.page == "social" and not any(r["key"] in ("voice", "share") for r in rows):
+                rows.insert(0, {"key": "no-voice", "icon": "call-start-symbolic", "label": "Not in a voice chat",
+                                "sub": "Join one from Social in the menu"})
+        else:
+            rows = [r for r in rows if r["key"] not in ("all-trophies", "go-social")]
+        return rows
+
+    def build_trophies(self):
+        t = getattr(self, "trophies", None)
+        if t is None:
+            return [{"key": "loading", "icon": "content-loading-symbolic", "label": "Loading…", "sub": ""}]
+        rows = []
+        if t.get("total"):
+            rows.append({"key": "sum", "icon": "starred-symbolic", "label": f"{t['earned']} of {t['total']} unlocked",
+                         "sub": t.get("game") or "", "bar": t["earned"] / t["total"]})
+            for i, a in enumerate(t.get("achievements") or []):
+                rows.append({"key": f"a{i}", "icon": "starred-symbolic" if a.get("earned") else "non-starred-symbolic",
+                             "label": a.get("title") or "?",
+                             "sub": " · ".join(x for x in ((f"Unlocked {a['when']}" if a.get("when") else "Unlocked") if a.get("earned") else "Locked",
+                                                           a.get("desc") or "") if x)})
+        else:
+            rows.append({"key": "none", "icon": "dialog-information-symbolic", "label": t.get("game") or "No game running",
+                         "sub": t.get("note") or "No trophies to show"})
+        rows.append({"key": "all-trophies", "icon": "starred-symbolic", "label": "All Trophies", "sub": "Every game, in the menu",
+                     "ok": lambda: self.api.post("/api/overlay/open", {"cat": "game", "folder": "trophies"})})
+        return rows
 
     # ---- the browser (Y in the browser opens this page directly) ---------------------------------
     def build_browser(self, d):
@@ -251,6 +334,11 @@ class Model:
         rows.append({"key": "home", "icon": "go-home-symbolic", "label": "Go to Home",
                      "sub": f"{app['title']} stays open" if app else "The Crossbar menu",
                      "ok": lambda: api.post("/api/overlay/home", {})})
+        if app and not app.get("video"):
+            rows.append({"key": "trophies", "icon": "starred-symbolic", "label": "Trophies",
+                         "sub": f"{app['title']}: what you've unlocked", "ok": lambda: self.go("trophies")})
+        rows.append({"key": "all-trophies", "icon": "starred-symbolic", "label": "All Trophies", "sub": "Every game, in the menu",
+                     "ok": lambda: api.post("/api/overlay/open", {"cat": "game", "folder": "trophies"})})
 
         m, sp = d.get("music"), d.get("spotify")
         if m:
@@ -315,6 +403,19 @@ class Model:
                      "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
         rows.append({"key": "osk", "icon": "input-keyboard-symbolic", "label": "Keyboard",
                      "sub": "Type into the app with the controller", "ok": self._keyboard})
+        looks = d.get("looks") or []
+        if len(looks) > 1:
+            cur = (d.get("look") or {}).get("id")
+            ids = [x["id"] for x in looks]
+            i = ids.index(cur) if cur in ids else 0
+
+            def swap(dd):
+                api.post("/api/settings", {"interface": ids[(i + (1 if dd > 0 else -1)) % len(ids)]})
+                self.refresh()
+            rows.append({"key": "look", "icon": "preferences-desktop-theme-symbolic", "label": "Interface",
+                         "sub": looks[i]["name"], "hint": "◀ ▶ or {ok} switch", "ok": lambda: swap(1), "adjust": swap})
+        rows.append({"key": "go-social", "icon": "system-users-symbolic", "label": "Social", "sub": "Friends, chat, voice — in the menu",
+                     "ok": lambda: api.post("/api/overlay/open", {"cat": "party"})})
         rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings",
                      "sub": "Controller, all settings", "ok": lambda: self.go("settings")})
         rows.append({"key": "power", "icon": "system-shutdown-symbolic", "label": "Power",
@@ -360,6 +461,14 @@ class Model:
                          "label": "Temperature Overlay", "sub": (" · ".join(parts) or "No sensors") + (" · on screen" if ps5.get("hud") else ""),
                          "hint": "{ok} " + ("hide" if ps5.get("hud") else "show"),
                          "ok": lambda: (api.post("/api/ps5/hud", {"on": not ps5.get("hud")}), self.refresh())})
+            hc, hs = ps5.get("hud_corner") or "top-left", ps5.get("hud_size") or "auto"
+            rows.append({"key": "hud-corner", "icon": "view-restore-symbolic", "label": "Temperature Position",
+                         "sub": hc.replace("-", " ").capitalize() + (" — same corner as the frame rate" if hc == perf.get("corner") and perf.get("fps", "off") != "off" else ""),
+                         "hint": "◀ ▶ move",
+                         "adjust": lambda d_: (api.post("/api/ps5/hud", {"corner": cycle(CORNERS, hc, d_)}), self.refresh())})
+            rows.append({"key": "hud-size", "icon": "zoom-in-symbolic", "label": "Temperature Size", "sub": SIZE_NAMES.get(hs, hs),
+                         "hint": "◀ ▶ size",
+                         "adjust": lambda d_: (api.post("/api/ps5/hud", {"size": cycle(SIZES, hs, d_)}), self.refresh())})
             if ps5.get("fan_target") is not None:
                 lo, hi = ps5.get("target_range") or (40, 95)
                 ft = ps5["fan_target"]
@@ -368,11 +477,17 @@ class Model:
                                     else f"Fixed pattern: {ps5['fan_mode']}",
                              "bar": (ft - lo) / (hi - lo), "hint": "◀ ▶ adjust",
                              "adjust": lambda d_: (api.post("/api/ps5/fan-target", {"delta": 5 if d_ > 0 else -5}), self.refresh())})
-        corner = perf.get("corner", "top-right")
-        ci = CORNERS.index(corner) if corner in CORNERS else 0
-        rows.append({"key": "corner", "icon": "view-restore-symbolic", "label": "Overlay Position",
-                     "sub": corner.replace("-", " ").capitalize(), "hint": "◀ ▶ move",
-                     "adjust": lambda d_: (api.post("/api/perf/corner", {"corner": CORNERS[(ci + (1 if d_ > 0 else -1)) % 4]}), self.refresh())})
+        if perf.get("available"):
+            corner, size = perf.get("corner", "top-right"), perf.get("size", "auto")
+            # straight after the frame-rate row, so its own settings sit together
+            at = next((i for i, r in enumerate(rows) if r["key"] == "fps"), 0) + 1
+            rows[at:at] = [
+                {"key": "corner", "icon": "view-restore-symbolic", "label": "Frame Rate Position",
+                 "sub": corner.replace("-", " ").capitalize(), "hint": "◀ ▶ move",
+                 "adjust": lambda d_: (api.post("/api/perf/corner", {"corner": cycle(CORNERS, corner, d_)}), self.refresh())},
+                {"key": "size", "icon": "zoom-in-symbolic", "label": "Frame Rate Size",
+                 "sub": SIZE_NAMES.get(size, size) + (f" · {perf['font_size']} px" if perf.get("font_size") else ""), "hint": "◀ ▶ size",
+                 "adjust": lambda d_: (api.post("/api/perf/size", {"size": cycle(SIZES, size, d_)}), self.refresh())}]
         return rows
 
     def build_settings(self):
@@ -414,6 +529,7 @@ class Model:
 
     def reset(self):
         self.sel, self.armed, self.notice, self.page, self.app = 0, None, "", "main", None
+        self.parent = None
         self.direct = None
 
     def open_on(self, page):
@@ -445,14 +561,16 @@ class Model:
                 self.rebuild()
             elif a == "back" and self.page == getattr(self, "direct", None):
                 self.close(True)
-            elif self.page != "main" and a == "back":
-                back = "apps" if self.page == "app" else "browser" if self.page == "tabs" else "main"
+            elif not self.is_tab() and a == "back":
+                back = "apps" if self.page == "app" else "browser" if self.page == "tabs" else (getattr(self, "parent", None) or "main")
                 self.go(back)
-                if back == "main":            # land on the row we came from
+                if self.is_tab(back):         # land on the row we came from
                     keys = [r["key"] for r in self.rows]
                     self.sel = next((i for i, k in enumerate(keys) if k == self._from), self.sel) if getattr(self, "_from", None) else self.sel
             else:
                 self.close(True)
+        elif a in ("prev", "next") and self.guide():
+            self.switch_tab(1 if a == "next" else -1)
         elif a in ("toggle", "prev", "next"):
             media = next((x for x in self.rows if x["key"] == "media"), None)
             if media:

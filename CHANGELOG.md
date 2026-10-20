@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.2.1 Alpha (testing branch)
+- **Looks are modular now (console skins)**: each look is a folder — look.json (name, settings,
+  colours, Quick Menu style), look.js (its drawing code) and look.css — in shell/web/looks/ or
+  ~/.local/share/crossbar/looks/, picked up automatically. Settings › Theme builds each look's
+  settings from its look.json; a starter look to copy is in looks/_template, and docs/LOOKS.md
+  explains the whole contract. The XMB and the Dashboard are both looks now
+- **Dashboard**: the big tile in each section is what you used last there — the game you
+  played, the video you watched (with its picture), the setting you opened — and it's where
+  you start. Tiles no longer overlap it when selected. What's playing (music or Spotify) shows
+  centred along the top with its progress
+- **Video › Continue watching**: the last video you played, first in Video (both looks)
+- **The in-game Quick Menu matches the look**: with the Dashboard it's a Guide — your profile
+  and the time, five tabs (Games & Apps, Media, Home, Social, Settings) walked with LB / RB,
+  rows lit in your accent colour. The Dashboard's own Guide uses the same five tabs
+- **Trophies in the Quick Menu** (both looks): the running game's trophies (Steam
+  achievements: unlocked count and the list), and All Trophies, which opens Game › Trophies
+- **Interface** switch in the in-game Quick Menu too
+- **Performance overlays**: the frame-rate and temperature overlays have their own positions
+  (they no longer move together and cover each other — temperatures default to top left), and
+  each has a **size**: Automatic follows the screen (so it's readable on a 4K TV), or Small /
+  Medium / Large / Huge
+
 ## 1.2 Alpha (testing branch)
 - **Dashboard (Xbox 360 style), rebuilt from the ground up** as its own front end rather than the
   XMB re-arranged: lowercase pivots across the top (LB / RB, or ◀ ▶ past the last tile), a
