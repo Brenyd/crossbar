@@ -242,6 +242,8 @@ const Options = {
     const el = $('.opt-list');
     el.innerHTML = (this.parent ? `<div class="opt-head">${esc(this.parent.list[this.parent.sel].label.replace(/…$/, ''))}</div>` : '') +
       this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}${o.group ? ' grp' : ''}">${esc(gl(o.label))}</div>`).join('');
+    clearTimeout(this.mq);
+    this.mq = setTimeout(() => Marquee.set(el.querySelector('.opt.on')), 400);
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
     const { TOP, MIN, MAX } = Shell.active?.optionsGeom || { TOP: 380, MIN: 140, MAX: 960 };
@@ -588,12 +590,39 @@ const Shell = {
 
 
 
+// Long text on the highlighted line (an Options entry, an item's name or description) that doesn't
+// fit scrolls slowly across, pauses at the end and comes back, so all of it can be read.
+const Marquee = {
+  set(el) {
+    if (!el) return;
+    el.classList.remove('mq');
+    const over = el.scrollWidth - el.clientWidth;
+    if (over <= 4) return;
+    const dist = over + 30;
+    el.style.setProperty('--mq-dist', `-${dist}px`);
+    el.style.setProperty('--mq-dur', `${Math.max(5, dist / 40 / 0.6).toFixed(1)}s`);    // ~40 px a second
+    void el.offsetWidth;                                                              // restart from the start
+    el.classList.add('mq');
+  },
+  clear(root) { (root || document).querySelectorAll('.mq').forEach((e) => e.classList.remove('mq')); },
+  // the highlighted item in the menu (after it has settled into place)
+  items() {
+    clearTimeout(this.t);
+    this.t = setTimeout(() => {
+      this.clear($('#stage'));
+      const on = document.querySelector('#column .item.on');
+      if (on) on.querySelectorAll('.label, .sub').forEach((e) => this.set(e));
+      if (Options.open) this.set(document.querySelector('#options .opt.on'));
+    }, 450);
+  },
+};
+
 // The rest of the shell (and every module) calls these by name; they follow whichever
 // look is active. Declarations, not arrow consts, so they hoist like the functions they replace.
 function itemEl(it)              { return Shell.active.itemEl(it); }
 function renderCats()            { Shell.active?.renderCats(); }
 function renderColumn(r = true)  { Shell.active?.renderColumn(r); }
-function position()              { Shell.active?.position(); }
+function position()              { Shell.active?.position(); Marquee.items(); }
 function render()                { Shell.active?.render(); }
 function hint()                  { Shell.active?.hint(); }
 function moveV(d)                { Shell.active?.moveV(d); }

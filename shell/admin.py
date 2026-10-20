@@ -469,6 +469,19 @@ def vpn_split(req):
         _run("ip", "-4", "rule", "add", "to", n, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
     for a in frm:
         _run("ip", "-4", "rule", "add", "from", a, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
+    # Traffic sent into the VPN by these rules was sized for your normal connection (its route was
+    # chosen first): TCP would announce a segment size that doesn't fit the tunnel, and the big replies
+    # vanish (connections open, then hang). Clamp it to the tunnel's MTU. And anything leaving
+    # through the VPN that doesn't already have the VPN's address gets it.
+    common = f"""  chain mss {{
+    type filter hook postrouting priority mangle; policy accept;
+    oifname "{dev}" tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu
+  }}
+  chain post {{
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
+  }}
+"""
     if gid is not None:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
         # DNS from VPN apps: to a local resolver (127.x, the usual stub) → Crossbar's relay, which asks
@@ -491,11 +504,7 @@ def vpn_split(req):
     type filter hook output priority filter; policy accept;
     meta skgid {gid} meta nfproto ipv6 ip6 daddr != ::1 reject
   }}
-{dnat}  chain post {{
-    type nat hook postrouting priority srcnat; policy accept;
-    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
-  }}
-}}
+{dnat}{common}}}
 """
         r = _run("nft", "-f", "-", inp=rules)
         if r.returncode:
@@ -504,11 +513,7 @@ def vpn_split(req):
     else:
         # no app group: still give anything leaving through the VPN the VPN's address
         r = _run("nft", "-f", "-", inp=f"""table inet crossbar_split {{
-  chain post {{
-    type nat hook postrouting priority srcnat; policy accept;
-    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
-  }}
-}}
+{common}}}
 """)
         if r.returncode:
             fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")

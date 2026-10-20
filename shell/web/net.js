@@ -220,7 +220,13 @@ async function checkPortForward() {
   if (r.region_ok === false) lines.push('This location doesn\'t offer port forwarding (PIA\'s US ones don\'t): VPN › Location, pick one marked PORT FWD.');
   if (r.state) lines.push(`Now: ${r.state}`);
   if (r.error) lines.push(`Last problem: ${r.error}`);
-  if (r.gateway) lines.push(`Asks ${r.gateway}${r.source ? ` from ${r.source}` : ''}${r.reach ? ` · ${r.reach === 'ok' ? 'reachable ✓' : `not reachable: ${r.reach}`}` : ''}`);
+  if (r.region) lines.push(`Location: ${r.region}${r.region_ok === true ? ' · offers port forwarding ✓' : r.region_ok === false ? ' · no port forwarding here ⚠' : ''}`);
+  if (r.tries?.length) {
+    lines.push(`PIA's port forwarding asked from ${r.source || 'the VPN'}:`);
+    for (const t of r.tries) lines.push(`   ${t.address}:19999 · ${t.result === 'ok' ? 'answers ✓' : t.result}`);
+    if (r.tries.every((t) => t.result !== 'ok') && r.tries.some((t) => /refused/i.test(t.result)))
+      lines.push('Refused means the server isn\'t offering port forwarding: try another location marked PORT FWD.');
+  } else if (r.gateway) lines.push(`Asks ${r.gateway}${r.source ? ` from ${r.source}` : ''}`);
   if (r.torrent_port != null) lines.push(`Torrents listens on port ${r.torrent_port}${r.port && r.torrent_port === r.port ? ' ✓' : r.port ? ' (will switch to the forwarded port)' : ''}`);
   message(lines.join('\n'), 'Port Forwarding');
 }

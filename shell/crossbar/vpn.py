@@ -236,12 +236,33 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
         self._ip, self._name = ip, name
 
     def connect(self):
-        raw = socket.create_connection((self._ip, self.port), self.timeout, source_address=_tunnel_source())
+        raw = _tunnel_socket((self._ip, self.port), self.timeout)
         self.sock = self._context.wrap_socket(raw, server_hostname=self._name)
         cn = dict(x[0] for x in self.sock.getpeercert().get("subject", ()))
         if cn.get("commonName") != self._name:
             self.sock.close()
             raise ssl.SSLError(f"PIA server is {cn.get('commonName')}, expected {self._name}")
+
+
+def _tunnel_socket(addr, timeout):
+    """A TCP connection made through the tunnel the way `curl --interface <vpn>` does (PIA's own
+    scripts): bound to the VPN's device as well as its address, when split tunneling is on."""
+    src = _tunnel_source()
+    if not src:
+        return socket.create_connection(addr, timeout)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_BINDTODEVICE", 25), _iface().encode() + b"\0")
+    except OSError:
+        pass                                              # older kernels: the address alone routes it
+    try:
+        s.bind(src)
+        s.connect(addr)
+    except OSError:
+        s.close()
+        raise
+    return s
 
 
 def _pia_get(ip, port, name, path, params):
@@ -368,8 +389,8 @@ def _pia_build(job, protocol, rid):
                 f"Endpoint = {srv['ip']}:{j['server_port']}\nPersistentKeepalive = 25\n")
         # port forwarding talks to the server's address inside the tunnel (server_vip), as PIA's
         # manual-connections scripts do; its public address refuses port 19999
-        pf = {"kind": "pia", "gateway": j.get("server_vip") or srv["ip"], "hostname": srv["cn"], "region": rid,
-              "region_pf": bool(region.get("port_forward"))}
+        pf = {"kind": "pia", "gateway": j.get("server_vip") or srv["ip"], "server_ip": j.get("server_ip") or srv["ip"],
+              "hostname": srv["cn"], "region": rid, "region_name": region.get("name"), "region_pf": bool(region.get("port_forward"))}
         _state["pia_token"] = (time.time(), token)
         return conf, None, pf
     srv = (servers.get("ovpnudp") or [None])[0]
@@ -378,8 +399,8 @@ def _pia_build(job, protocol, rid):
     with open(PIA_CA) as f:
         ca = f.read()
     conf = PIA_OVPN.format(tun=TUN, proto="udp", ip=srv["ip"], port=8080, ca=ca if ca.endswith("\n") else ca + "\n")
-    pf = {"kind": "pia", "gateway": None, "hostname": srv["cn"], "region": rid,       # gateway: the tunnel's, once up
-          "region_pf": bool(region.get("port_forward"))}
+    pf = {"kind": "pia", "gateway": None, "server_ip": srv["ip"], "hostname": srv["cn"], "region": rid,   # gateway: the tunnel's, once up
+          "region_name": region.get("name"), "region_pf": bool(region.get("port_forward"))}
     _state["pia_token"] = (time.time(), token)
     return conf, (token[:62], token[62:]), pf
 
@@ -877,10 +898,16 @@ def _pia_signature(pf, stop):
         return saved
     _state["pf_msg"] = "Asking PIA for a port…"
     _publish()
-    try:
-        sig = _pia_get(pf["gateway"], 19999, pf["hostname"], "/getSignature", {"token": _pia_fresh_token()})
-    except (ssl.SSLError, OSError) as e:
-        raise RuntimeError(f"couldn't reach PIA's port forwarding through the VPN ({e.__class__.__name__}: {e})") from None
+    sig, errs = None, []
+    for gw in _pf_addresses(pf):
+        try:
+            sig = _pia_get(gw, 19999, pf["hostname"], "/getSignature", {"token": _pia_fresh_token()})
+            pf["api"] = gw                                  # bindPort goes to the same place
+            break
+        except (ssl.SSLError, OSError) as e:
+            errs.append(f"{gw}: {e.__class__.__name__.replace('Error', '')} {getattr(e, 'strerror', '') or e}".strip())
+    if sig is None:
+        raise RuntimeError("couldn't reach PIA's port forwarding through the VPN (" + "; ".join(errs) + ")")
     if sig.get("status") != "OK":
         _state.pop("pia_token", None)                    # an old token is the usual reason: get a new one next time
         raise RuntimeError(sig.get("message") or "PIA refused (is this a location with port forwarding?)")
@@ -892,23 +919,44 @@ def _pia_signature(pf, stop):
     except ValueError:
         expires = time.time() + 86400 * 30
     saved = {"hostname": pf["hostname"], "payload": sig["payload"], "signature": sig["signature"], "port": int(payload["port"]),
-             "expires": expires}
+             "expires": expires, "api": pf.get("api")}
     s = _secrets()
     s["pia_pf"] = saved
     _save_secrets(s)
     return saved
 
 
+def _pf_addresses(pf):
+    """Where PIA's port forwarding API may answer, through the tunnel: the server's address inside the
+    tunnel (server_vip, as pia-foss/manual-connections uses), then its public address (which some
+    servers answer on instead), then OpenVPN's gateway."""
+    out = []
+    if not pf.get("server_ip") and pf.get("hostname"):      # saved by an older version: find it by the server's name
+        try:
+            for r in pia_servers().get("regions", []):
+                for kind in ("wg", "ovpnudp", "ovpntcp"):
+                    for srv in (r.get("servers") or {}).get(kind) or []:
+                        if srv.get("cn") == pf["hostname"]:
+                            pf["server_ip"] = pf.get("server_ip") or srv.get("ip")
+        except Exception:
+            pass
+    for a in (pf.get("api"), pf.get("gateway"), pf.get("server_ip"), _tunnel_gateway() if cfg().get("protocol") == "openvpn" else None):
+        if a and a not in out:
+            out.append(a)
+    return out
+
+
 def _pia_pf_loop(pf, stop):
     fails = 0
     while not stop.is_set():
         try:
-            if not pf.get("gateway"):
+            if not pf.get("gateway") and not pf.get("server_ip"):
                 pf = {**pf, "gateway": _tunnel_gateway()}
                 if not pf["gateway"]:
                     raise RuntimeError("couldn't find the VPN's gateway yet")
             sig = _pia_signature(pf, stop)
-            r = _pia_get(pf["gateway"], 19999, pf["hostname"], "/bindPort", {"payload": sig["payload"], "signature": sig["signature"]})
+            api_at = pf.get("api") or sig.get("api") or pf["gateway"]
+            r = _pia_get(api_at, 19999, pf["hostname"], "/bindPort", {"payload": sig["payload"], "signature": sig["signature"]})
             if r.get("status") != "OK":
                 msg = r.get("message") or "bindPort failed"
                 if re.search(r"expired|invalid|signature", msg, re.I):    # start over with a new signature
@@ -1006,12 +1054,21 @@ def pf_check():
     out["gateway"] = pf.get("gateway") or (_tunnel_gateway() if out["connected"] and c.get("protocol") == "openvpn" else None)
     out["source"] = (_tunnel_source() or [None])[0]
     out["port"], out["error"], out["state"] = _state["pf_port"], _state["pf_error"], _state.get("pf_msg")
-    if out["connected"] and out["gateway"] and c.get("provider") == "pia":
+    out["region"] = pf.get("region_name") or c.get("region_name") or c.get("region")
+    if c.get("provider") == "pia" and c.get("region"):
         try:
-            with socket.create_connection((out["gateway"], 19999), timeout=6, source_address=_tunnel_source()):
-                out["reach"] = "ok"
-        except OSError as e:
-            out["reach"] = str(e)
+            out["region_ok"] = bool(_pia_region(c["region"]).get("port_forward"))      # fresh from PIA's list
+        except Exception:
+            pass
+    if out["connected"] and c.get("provider") == "pia":
+        out["tries"] = []
+        for gw in _pf_addresses(pf):
+            try:
+                _tunnel_socket((gw, 19999), 6).close()
+                out["tries"].append({"address": gw, "result": "ok"})
+            except OSError as e:
+                out["tries"].append({"address": gw, "result": getattr(e, "strerror", None) or str(e)})
+        out["reach"] = "ok" if any(t["result"] == "ok" for t in out["tries"]) else (out["tries"][0]["result"] if out["tries"] else None)
     try:
         from . import torrent
         if torrent.running():

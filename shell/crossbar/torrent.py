@@ -504,47 +504,110 @@ def search_start(pattern, category="all", plugin_names=None):
     nova = _nova_dir()
     if not nova:
         raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
-    import sys
     from . import vpn
-    argv = vpn.wrap([sys.executable or "python3", "nova2.py", ",".join(names), category, *pattern.split()], "torrents")
-    env = {**os.environ, "PYTHONWARNINGS": "ignore"}      # Python's own shutdown warnings aren't the plugin's problem
-    p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
     _sid[0] += 1
     sid = _sid[0]
-    st = {"proc": p, "results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern}
+    probe = vpn.wrap(["x"], "torrents")
+    st = {"results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern,
+          "per": {n: {"count": 0, "running": True, "error": ""} for n in names}, "procs": [],
+          "via_vpn": probe[1:2] == [vpn.VPNRUN]}
     _searches[sid] = st
     for old in [k for k, v in _searches.items() if k < sid - 8]:      # keep the last few
         _searches.pop(old, None)
+    # Each plugin runs on its own (a few at a time): one slow or broken site can't hold up or hide the
+    # others, every result is credited to the plugin that found it, and each plugin's own error is
+    # kept. The small runner below does what qBittorrent's nova2.py does for one engine — without
+    # nova2's lower-casing of names, which left plugins whose file names have capitals unmatched.
+    words = pattern.split()
 
-    st["via_vpn"] = argv[1:2] == [vpn.VPNRUN]
+    def run_one(name):
+        import sys
+        per = st["per"][name]
+        argv = vpn.wrap([sys.executable or "python3", "-c", RUNNER, name, category, *words], "torrents")
+        env = {**os.environ, "PYTHONWARNINGS": "ignore", "PYTHONDONTWRITEBYTECODE": "1"}
+        try:
+            p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
+        except OSError as e:
+            per.update(running=False, error=str(e)[:160])
+            return
+        st["procs"].append(p)
+        errs = []
 
-    def read_out():
+        def read_err():
+            for line in p.stderr:
+                line = line.strip()
+                if line and not re.search(r"Warning:|warnings\.warn|resource_tracker", line):
+                    errs.append(line)
+        t = threading.Thread(target=read_err, daemon=True)
+        t.start()
+        deadline = threading.Timer(PLUGIN_TIMEOUT, lambda: _kill(p))     # a plugin that hangs doesn't keep it "searching"
+        deadline.start()
         for line in p.stdout:
-            r = parse_result(line, names)
+            r = parse_result(line, [name])
             if r:
                 st["results"].append(r)
+                per["count"] += 1
         p.wait()
+        deadline.cancel()
+        t.join(2)
+        mine = [e[6:] for e in errs if e.startswith("CBERR ")]
+        last = mine[-1] if mine else next((e for e in reversed(errs) if not e.startswith(("Traceback", "File ", "^", "~"))), "")
+        if p.returncode in (-15, -9) and not per["count"]:
+            last = f"took too long ({PLUGIN_TIMEOUT} s)"
+        per.update(running=False, error="" if per["count"] else last[:200])
+        if last and not per["count"]:
+            st["errors"] = (st["errors"] + [f"{name}: {last[:200]}"])[-8:]
+
+    def run_all():
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(names))) as ex:
+            list(ex.map(run_one, names))
         if not st["results"]:
             st["net"] = net_check(pl, names, st["via_vpn"])      # no results: is it the plugins or the network?
         st["running"] = False
-
-    def read_err():
-        for line in p.stderr:
-            line = line.strip()
-            if line and not re.search(r"Warning:|warnings\.warn|resource_tracker", line):
-                st["errors"] = (st["errors"] + [line])[-6:]
-
-    def watchdog():
-        time.sleep(90)                                   # plugins that hang don't keep it "searching" forever
-        if p.poll() is None:
-            try:
-                os.killpg(p.pid, 15)
-            except OSError:
-                pass
-    for fn in (read_out, read_err, watchdog):
-        threading.Thread(target=fn, daemon=True).start()
+    threading.Thread(target=run_all, daemon=True).start()
     return {"id": sid, "engines": names}
+
+
+PLUGIN_TIMEOUT = 60
+
+
+def _kill(p):
+    try:
+        os.killpg(p.pid, 15)
+    except OSError:
+        pass
+
+
+RUNNER = r"""
+import importlib, sys, traceback, urllib.parse
+sys.path.insert(0, ".")
+name, cat = sys.argv[1], sys.argv[2]
+what = urllib.parse.quote(" ".join(sys.argv[3:]))
+try:
+    mod = importlib.import_module("engines." + name)
+    cls = getattr(mod, name, None) or next((v for k, v in vars(mod).items()          # class named differently
+                                             if isinstance(v, type) and hasattr(v, "search") and hasattr(v, "url")), None)
+    if cls is None:
+        raise ImportError("no search class in it")
+    eng = cls()
+except Exception as e:
+    print("CBERR couldn't load the plugin: %s: %s" % (type(e).__name__, str(e)[:160]), file=sys.stderr)
+    sys.exit(3)
+cats = getattr(eng, "supported_categories", {"all": ""}) or {"all": ""}
+if cat != "all" and cat not in cats:
+    print("CBERR no %s category" % cat, file=sys.stderr)
+    sys.exit(4)
+try:
+    eng.search(what, cat)
+except Exception as e:
+    msg = str(e)[:160]
+    if "403" in msg or "Forbidden" in msg:
+        msg += " (the site blocks it: often Cloudflare)"
+    print("CBERR %s: %s" % (type(e).__name__, msg), file=sys.stderr)
+    sys.exit(5)
+"""
 
 
 def parse_result(line, engines=None):
@@ -608,7 +671,8 @@ def search_results(sid, offset=0, limit=200, sort="seeds", desc=None):
     return {"running": st["running"], "total": len(res), "results": res[int(offset):int(offset) + limit], "errors": errs,
             "engines": st["engines"], "sort": sort if sort in SORTS else "seeds", "sort_label": label,
             "desc": big_first if desc is None else bool(desc), "has_dates": any(x.get("date", -1) > 0 for x in res),
-            "net": st.get("net"), "via_vpn": st.get("via_vpn"), "elapsed": round(time.time() - st["started"])}
+            "net": st.get("net"), "via_vpn": st.get("via_vpn"), "elapsed": round(time.time() - st["started"]),
+            "per": st.get("per") or {}}
 
 
 NET_PROBE = r'''
@@ -664,11 +728,9 @@ def net_check(pl, names, via_vpn):
 
 def search_stop(sid):
     st = _searches.get(int(sid))
-    if st and st["proc"].poll() is None:
-        try:
-            os.killpg(st["proc"].pid, 15)
-        except OSError:
-            pass
+    for p in (st or {}).get("procs", []):
+        if p.poll() is None:
+            _kill(p)
     return {"ok": True}
 
 

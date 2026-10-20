@@ -342,6 +342,8 @@ const QuickMenu = {
         ${r.hint && i === this.sel ? `<div class="q-hint">${esc(gl(r.hint))}</div>` : ''}
       </div>`).join('');
     $('#quick .q-row.on')?.scrollIntoView({ block: 'nearest' });
+    clearTimeout(this.mq);
+    this.mq = setTimeout(() => $('#quick .q-row.on')?.querySelectorAll('.q-label, .q-sub').forEach((e) => Marquee.set(e)), 450);
   },
 
   handle(a) {

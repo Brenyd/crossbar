@@ -36,6 +36,12 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 ### 1.2 series: two interfaces, and staying out of the game's way
 
+**1.2.5 Alpha**
+- 🧪 Split tunneling: MSS clamping for traffic sent into the VPN (connections hung)
+- 🧪 PIA port forwarding tries the server's public address through the tunnel too; clearer check
+- 🧪 Search plugins run one by one (community plugins with capitals in their names ran never), with each plugin's status
+- ✅ Long highlighted text scrolls so it can be read
+
 **1.2.4 Alpha**
 - ✅ Cold boot starts straight in the chosen interface; only that interface is loaded
 - ✅ Interface changes in Settings with a menu reload (no live switch, not in the Quick Menu)

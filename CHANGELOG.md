@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.2.5 Alpha (testing branch)
+- **VPN apps' connections no longer hang** (split tunneling): traffic sent into the VPN by the split
+  rules had already been sized for your normal connection, and the VPN's packets are smaller, so
+  connections opened and then stalled (the test app "timed out", torrents waited for peers). TCP is
+  now clamped to the tunnel's size on the way in (MSS clamping)
+- **PIA port forwarding**: asked PIA only at the server's address inside the tunnel, which some
+  servers refuse. It now also tries the server's public address through the tunnel (what other PIA
+  scripts use) and remembers whichever answers, with its requests tied to the VPN interface like
+  `curl --interface`. Check Port Forwarding shows the location (fresh from PIA: does it forward?)
+  and each address tried
+- **Torrent search plugins run one by one**: each enabled plugin runs on its own (a few at a time)
+  instead of all in one qBittorrent search process — which lower-cased plugin names, so community
+  plugins whose file names have capitals never ran. A plugin whose class is named differently from
+  its file runs too; one that hangs is stopped after a minute without holding up the rest; and
+  every plugin's result shows on the first row (how many it found, or ✕), with each one's error
+  (a site blocking it is called out) on A
+- **Long text scrolls**: the highlighted line in Options panels, lists and the Quick Menu scrolls
+  slowly across when it doesn't fit, so the whole thing can be read
+
 ## 1.2.4 Alpha (testing branch)
 - **Starts in your interface from a cold boot**: the menu page now comes from the backend with the
   chosen look built in, so the very first frame is the Dashboard (or the cross-media bar) — it no

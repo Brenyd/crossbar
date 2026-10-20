@@ -343,6 +343,9 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
 - **Sort** (the row under the result count, or Y on any result): Seeds, Leechers, File Size, Upload
   Date (newest or oldest first — for sites that give dates), Name or Site. Your choice is kept for
   the next search. Each result shows its size, seeds, leechers and age.
+- **Each plugin runs on its own**: the first row shows how many each found (✕ for one that failed);
+  A on it lists every plugin's result or error (a site that blocks plugins, usually with Cloudflare,
+  is called out). A plugin that hangs is stopped after a minute.
 - **Nothing found?** The first row says why: Crossbar tests the plugins' sites from where the search
   runs (through the VPN, when Torrents uses it) and tells you whether DNS, the connection, or the
   plugins themselves are the problem (A on that row shows the details).

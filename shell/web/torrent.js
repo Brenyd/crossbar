@@ -121,16 +121,23 @@ async function torrentSearch() {
         options: [{ label: 'Download', action: () => tPost('search/download', { url: x.url, engine: x.engine }, `Downloading ${x.name}`) },
           { label: 'Sort Results…', action: () => pickSort(res) },
           ...(x.page ? [{ label: 'Open Its Page', action: () => (typeof openBrowser === 'function' ? openBrowser(x.page) : message(x.page, 'Page')) }] : [])] }));
-      const errs = (res.errors || []).join(' · ').slice(0, 160);
       const net = res.net;
       const empty = !res.running && !res.total;
-      const why = empty && net && !net.ok ? net.summary : empty && errs ? `A plugin had a problem: ${errs}` : empty && net ? net.summary : '';
-      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far` : (res.expired ? 'This search has ended' : res.total ? `${res.total} found` : 'Nothing found'),
+      const per = Object.entries(res.per || {});
+      const done = per.filter(([, v]) => !v.running).length;
+      // each plugin: how many it found, or what went wrong
+      const perLine = per.map(([n, v]) => (v.running ? `${n} …` : v.count ? `${n} ${v.count}` : v.error ? `${n} ✕` : `${n} 0`)).join(' · ');
+      const perDetail = per.map(([n, v]) => `${n}: ${v.running ? 'still searching' : v.count ? `${v.count} found` : v.error || 'nothing found'}`);
+      const why = empty && net && !net.ok ? net.summary : empty && net ? net.summary : '';
+      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far${per.length ? ` (${done} of ${per.length} plugins done)` : ''}`
+          : (res.expired ? 'This search has ended' : res.total ? `${res.total} found` : 'Nothing found'),
         icon: res.running ? 'refresh' : (empty ? 'info' : 'search'),
-        sub: why || `With ${(res.engines || s.engines || []).join(', ')}${res.via_vpn ? ' · through the VPN' : ''}`,
+        sub: `${why ? `${why} · ` : ''}${perLine || `With ${(res.engines || s.engines || []).join(', ')}`}${res.via_vpn ? ' · through the VPN' : ''} · {ok} details`,
         action: () => (res.running ? tPost('search/stop', { id: s.id }, 'Search stopped')
-          : empty ? message([why, '', ...(res.errors || []).map((e) => `Plugin: ${e}`), ...(net ? Object.entries(net.hosts || {}).map(([h, v]) => `${h}: DNS ${v.dns}${v.connect ? ` · connect ${v.connect}` : ''}`) : []),
-            '', 'Sites change: try Search Plugins › Update All, or turn a plugin off.'].filter((x, i, a) => x !== '' || a[i - 1] !== '').join('\n'), 'Search') : null) });
+          : message([why, why ? '' : null, 'Each plugin:', ...perDetail.map((x) => `   ${x}`),
+            ...(net && !net.ok ? ['', ...Object.entries(net.hosts || {}).map(([h, v]) => `${h}: DNS ${v.dns}${v.connect ? ` · connect ${v.connect}` : ''}`)] : []),
+            '', 'A plugin that fails every time: Search Plugins › Update All, or turn it off (Y on Search).',
+            'Sites behind Cloudflare often block plugins: that\'s the site, not Crossbar.'].filter((x) => x !== null).join('\n'), 'Search')) });
       if (res.total > 1) {
         const label = (T_SORTS.find(([k]) => k === tSort.cur) || T_SORTS[0])[1];
         rows.splice(1, 0, { key: 'sort', label: `Sort: ${label}`, icon: 'shuffle',
