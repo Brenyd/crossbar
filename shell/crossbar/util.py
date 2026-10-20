@@ -20,7 +20,8 @@ DEFAULT_CONFIG = {
     "theme": "auto",           # "auto" = colour follows the month, like the original
     "sounds": True,
     "interface": "xmb",        # "xmb" (PS3 cross-media bar) or "x360" (Xbox 360 dashboard)
-    "era": "nxe",              # which 360 dashboard: "blades" | "nxe" | "metro"
+    "x360_bg": "light",        # Xbox 360 look: background "light" | "dark" | "green" | "picture" (the theme pack's)
+    "x360_accent": "green",    # Xbox 360 look: highlight colour
     "steam": {"api_key": "", "steamid": ""},
     "party": {"service": "discord", "channels": []},
     "last_played": {},

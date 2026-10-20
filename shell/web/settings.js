@@ -4,10 +4,10 @@
 
 const check = (on) => (on ? '✓ ' : '');
 
-// Settings › Theme › Interface. An interface id with no shell registered in xmb.js's
-// Shell seam is hidden here and falls back to the XMB, so a half-installed build still boots.
-const IFACES = [['xmb', 'Crossbar — the cross-media bar'], ['x360', 'Xbox 360 Dashboard']];
-const ERAS_UI = [['blades', 'Blades (2005)'], ['nxe', 'New Xbox Experience (2008)'], ['metro', 'Metro (2011)']];
+// Settings › Theme › Interface (and the Quick Menu's Interface row). A look with no shell
+// registered in xmb.js's Shell seam is hidden, and falls back to the XMB, so a half-installed
+// build still boots.
+const LOOKS = [['xmb', 'Cross-media bar (PS3 style)'], ['x360', 'Dashboard (Xbox 360 style)']];
 
 // Open a Settings sub-folder directly (used by "Wi-Fi" in Network, missing-folder hints…).
 function openSettingsFolder(id) {
@@ -425,6 +425,27 @@ const BROWSER_SETTINGS = {
   },
 };
 
+// Settings › Theme › Theme Packs: colours, waves, background picture, font, icons, sounds.
+// The XMB uses all of it; the Dashboard uses a pack's picture (Background › Theme picture).
+function themePacksFolder(cur, look) {
+  return {
+    key: 'packs', label: 'Theme Packs', icon: 'palette',
+    sub: `${cur.name}${look === 'x360' ? ' · its picture can be the background' : ''}`,
+    children: async () => {
+      const [packs, now] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
+      const use = async (t) => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } };
+      return packs.map((t) => ({
+        key: `t:${t.id}`, label: t.name, badge: t.id === now.id ? 'IN USE' : t.user ? 'YOURS' : '',
+        sub: `${t.description}${t.author ? ' · by ' + t.author : ''}`,
+        ...(t.preview ? { art: t.preview, artTitle: t.name } : { icon: t.id === now.id ? 'check' : 'palette' }),
+        action: () => use(t),
+        options: [{ label: 'Use This Theme', action: () => use(t) },
+          ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
+      }));
+    },
+  };
+}
+
 // Settings › Theme › Install a Theme…: browse to a theme folder (has theme.json) or a .zip
 async function themeBrowse(path) {
   const r = await api.get(`/api/fs?ext=.zip${path ? `&path=${encodeURIComponent(path)}` : ''}`);
@@ -499,36 +520,33 @@ const SETTINGS_FOLDERS = [
   CONTROLS_FOLDER,
   GAMES_FOLDER,
   {
-    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Interface, theme packs, colour, adding your own',
+    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Interface, background, colours, theme packs',
     children: async () => {
       const st = S.state;
-      const [list, cur] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
-      const items = list.map((t) => ({
-        key: `t:${t.id}`, label: t.name, badge: t.id === cur.id ? 'ON' : t.user ? 'YOURS' : '',
-        sub: `${t.description}${t.author ? ' · by ' + t.author : ''}`,
-        ...(t.preview ? { art: t.preview, artTitle: t.name } : { icon: t.id === cur.id ? 'check' : 'palette' }),
-        action: async () => { if (await call(() => api.post('/api/theme/set', { id: t.id }), `Theme: ${t.name}`)) { await Theme.load(); reloadFolder(); } },
-        options: [{ label: 'Use This Theme', action: async () => { await call(() => api.post('/api/theme/set', { id: t.id })); await Theme.load(); reloadFolder(); } },
-          ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
-      }));
-      // which look draws the menu (xmb.js's Shell seam), and for the 360 which dashboard era
-      const ifc = Shell.impls[st.interface] ? st.interface : 'xmb', era = st.era || 'nxe';
+      const cur = await api.get('/api/theme');
+      const look = Shell.impls[st.interface] ? st.interface : 'xmb';
+      const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
+      // a one-of-several choice: ✓ on the current one, applied the moment it's picked
       const pick = (rows, k, set) => Options.show(
         rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
         Math.max(0, rows.findIndex(([v]) => v === k)));
-      const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
-      const looks = IFACES.filter(([v]) => Shell.impls[v]);          // only what's actually installed
+      const items = [];
+      const looks = LOOKS.filter(([v]) => Shell.impls[v]);
       if (looks.length > 1) {
-        items.unshift({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, ifc),
-          action: () => pick(looks, ifc, (v) => ({ interface: v })) });
+        items.push({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, look),
+          action: () => pick(looks, look, (v) => ({ interface: v })) });
       }
-      const eras = (Shell.eraList(ifc) || []).map((e) => ERAS_UI.find(([v]) => v === e)).filter(Boolean);
-      if (eras.length > 1) {
-        items.splice(looks.length > 1 ? 1 : 0, 0,
-          { key: 'era', label: 'Dashboard Era', icon: 'palette', sub: named(eras, era),
-            action: () => pick(eras, era, (v) => ({ era: v })) });
+      if (look === 'x360') {
+        const bgs = Object.entries(X360_BG_NAMES).filter(([v]) => v !== 'picture' || cur.background?.image);
+        const bg = bgs.some(([v]) => v === st.x360_bg) ? st.x360_bg : 'light';
+        items.push({ key: 'xbg', label: 'Background', icon: 'photo', sub: named(bgs, bg),
+          action: () => pick(bgs, bg, (v) => ({ x360_bg: v })) });
+        const acc = Object.entries(X360_ACCENT_NAMES);
+        items.push({ key: 'xacc', label: 'Accent Colour', icon: 'palette', sub: named(acc, st.x360_accent || 'green'),
+          action: () => pick(acc, st.x360_accent || 'green', (v) => ({ x360_accent: v })) });
       }
-      if (cur.waves.mode === 'month') {
+      items.push(themePacksFolder(cur, look));
+      if (look === 'xmb' && cur.waves.mode === 'month') {
         const c = st.theme === 'auto' ? 0 : st.theme + 1;
         const opts = [{ label: `${check(c === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]
           .concat(MONTHS.map((m, i) => ({ label: `${check(c === i + 1)}${m} colour`, action: () => setSetting({ theme: i }).then(reloadFolder) })));
@@ -694,8 +712,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.1.5 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.1.5 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

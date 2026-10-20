@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.2 Alpha (testing branch)
+- **Dashboard (Xbox 360 style), rebuilt from the ground up** as its own front end rather than the
+  XMB re-arranged: lowercase pivots across the top (LB / RB, or ◀ ▶ past the last tile), a
+  sideways wall of tiles led by a big hero tile, flat colour and a lifted, outlined selection;
+  folders of pictures open as tile walls and every other folder as a list with a solid highlight
+  bar and a details pane (long descriptions wrap there instead of running off the screen); your
+  profile and the time in the corner; coloured A / B / Y hints; Options (Y) as a flyout from the
+  right; dialogs as panels with stacked buttons; toasts rising from the bottom; a matching
+  on-screen keyboard. Replaces the earlier Blades / NXE / Metro versions
+- **The Quick Menu has a matching Guide** in the Dashboard: your profile, tabs (Home, Sound,
+  Performance — LB / RB) and the same rows and commands. A new **Interface** row swaps between
+  the two looks from anywhere (◀ ▶ or A), in either look
+- **Settings › Theme makes sense now**: Interface first, then that look's own settings —
+  Dashboard: **Background** (Light, Dark, Green, or your theme pack's picture) and **Accent
+  Colour** (green, blue, orange, pink, purple, red, silver); cross-media bar: Wave Colour — then
+  **Theme Packs** (in their own folder), Install a Theme…, Make Your Own
+- Underneath, both looks are one menu: the same items, actions, folders, Options, dialogs and
+  controller mapping. The shell seam in xmb.js now lets a look draw the Quick Menu, stack dialog
+  buttons, use LB / RB and refresh a details pane (documented above `Shell`)
+- Fixed: a dialog after one with text fields could show its buttons dimmed
+
 ## 1.1.5 Alpha
 - **Update Branch** (Settings › System): pick which GitHub branch Update Crossbar installs — main
   (stable) or a test branch such as testing/xbox-360-interface — and switch back the same way.

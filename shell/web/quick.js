@@ -101,6 +101,14 @@ const QuickMenu = {
     if (d.perf?.available || d.ps5?.available) {
       rows.push({ key: 'perf', icon: 'display', label: 'Performance ▸', sub: 'Frame rate and temperature overlays', ok: () => this.go('perf') });
     }
+    // swap the whole look from here: same menu, same everything, different console
+    const looks = (typeof LOOKS !== 'undefined' ? LOOKS : []).filter(([v]) => Shell.impls[v]);
+    if (looks.length > 1) {
+      const cur = Math.max(0, looks.findIndex(([v]) => v === Shell.id));
+      const swap = (dir) => setSetting({ interface: looks[(cur + dir + looks.length) % looks.length][0] });
+      rows.push({ key: 'look', icon: 'palette', label: 'Interface', sub: looks[cur][1], hint: '◀ ▶ or {ok} switch',
+        ok: () => swap(1), adjust: (dir) => swap(dir) });
+    }
     rows.push({ key: 'settings', icon: 'settings', label: 'Settings', sub: 'Controller, network, everything else', ok: () => { this.close(false); goCat('settings'); } });
     rows.push({ key: 'power', icon: 'power', label: 'Power', sub: 'Turn off or restart', ok: () => Options.show([
       { label: 'Turn Off System', action: async () => { if (await confirmSafe('Turn off the system?')) api.post('/api/power/poweroff'); } },
@@ -151,7 +159,22 @@ const QuickMenu = {
 
   goSettings(id) { this.close(false); openSettingsFolder(id); },
 
+  // The pages as tabs (the Xbox 360 Guide): LB / RB walk them
+  tabs() {
+    const d = this.data || {};
+    return [['main', 'home', 'Home'], ['sound', 'sound', 'Sound'],
+      ...((d.perf?.available || d.ps5?.available) ? [['perf', 'display', 'Performance']] : [])];
+  },
+  bumper(dir) {
+    if (!Shell.active?.quickTabs || Options.open) return false;
+    const t = this.tabs(), i = t.findIndex(([p]) => p === this.page);
+    const n = t[(Math.max(0, i) + dir + t.length) % t.length][0];
+    if (n !== this.page) { this.backTo = null; this.go(n); }
+    return true;
+  },
+
   render() {
+    if (Shell.active?.renderQuick?.(this)) return;     // a look that draws its own (the 360 Guide)
     const d = this.data || {};
     $('#quick .q-title').textContent = ({ sound: 'Sound', perf: 'Performance' })[this.page] || (d.app ? d.app.title : 'Crossbar');
     $('#quick .q-rows').innerHTML = this.rows.map((r, i) => `

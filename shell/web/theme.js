@@ -67,7 +67,7 @@ const Theme = {
 
     document.body.dataset.theme = t.id;
     // the category row is built once: let the active look rebuild it with the new icons
-    if (typeof Shell !== 'undefined') Shell.resetCats();
+    if (typeof Shell !== 'undefined') { Shell.resetCats(); if (S.state) Shell.active?.configure?.(S.state); }
     if (typeof render === 'function' && S.state) render();
   },
 

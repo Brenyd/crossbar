@@ -129,7 +129,8 @@ def state():
         "theme_pack": themes.current_id(),
         "sounds": cfg["sounds"],
         "interface": cfg.get("interface", "xmb"),
-        "era": cfg.get("era", "nxe"),
+        "x360_bg": cfg.get("x360_bg", "light"),
+        "x360_accent": cfg.get("x360_accent", "green"),
         "providers": [{"id": p.id, "name": p.name, "login_fields": p.login_fields,
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
                       for p in providers().values()],
@@ -437,16 +438,22 @@ def r_login(pid, b):
     return JOBS.start("login", p.name, lambda job: p.login(job, b), p.id).as_dict()
 
 
+X360_BGS = ("light", "dark", "green", "picture")
+X360_ACCENTS = ("green", "blue", "orange", "pink", "purple", "red", "silver")
+
+
 def r_settings(b):
     allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
-               "glyphs", "interface", "era"}
+               "glyphs", "interface", "x360_bg", "x360_accent"}
 
     if "glyphs" in b and b["glyphs"] not in ("auto", *glyphs.STYLES):
         raise ValueError("glyphs must be auto, xbox, playstation or nintendo")
     if "interface" in b and b["interface"] not in ("xmb", "x360"):
         raise ValueError("interface must be xmb or x360")
-    if "era" in b and b["era"] not in ("blades", "nxe", "metro"):
-        raise ValueError("era must be blades, nxe or metro")
+    if "x360_bg" in b and b["x360_bg"] not in X360_BGS:
+        raise ValueError("x360_bg must be one of " + ", ".join(X360_BGS))
+    if "x360_accent" in b and b["x360_accent"] not in X360_ACCENTS:
+        raise ValueError("x360_accent must be one of " + ", ".join(X360_ACCENTS))
 
     def apply(c):
         for k, v in b.items():
@@ -457,7 +464,7 @@ def r_settings(b):
     util.update_config(apply)
     if "glyphs" in b:
         player.write_glyphs()          # a playing video picks the new style up within seconds
-    if "interface" in b or "era" in b:
+    if {"interface", "x360_bg", "x360_accent"} & set(b):
         HUB.publish({"type": "interface"})     # any other open page follows along
     return state()
 

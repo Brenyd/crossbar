@@ -1,234 +1,259 @@
-/* The Xbox 360 dashboards (web/x360.js). Loaded after style.css and inert until
-   Settings › Theme › Interface turns one on: every selector here is scoped to
-   body[data-shell="x360"], which xmb.js's Shell seam sets. Nothing in this file can
-   apply to the cross-media bar.
-
-   The 360 tiles and rows are the same .item nodes the XMB uses, so style.css already
-   styles them; these rules win on specificity rather than by neutralising it.
-
-   Theme packs recolour all of this from theme.css (loaded last, so it overrides this
-   file): --x360-bg for the backdrop, --x360-hue-0..9 for the blade colours. */
+/* The Dashboard look (x360.js) — modelled on the Xbox 360's 2011 dashboard.
+   Everything here is scoped to body[data-shell="x360"], so the XMB is untouched.
+   Colours come from a small set of variables per background (Settings › Theme ›
+   Background), and the highlight from --x-accent (Settings › Theme › Accent Colour). */
 
 body[data-shell="x360"] {
-  --x360-bg: #0a0d0e;
-  --x360-tile: color-mix(in srgb, var(--accent) 24%, #0d1113);
-  --x360-edge: color-mix(in srgb, var(--accent) 55%, #ffffff 12%);
+  --x-font: "Segoe UI", "Selawik", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --x-accent: #107c10; --x-accent-2: #5dc21e;
+  --x-fg: #262626; --x-fg2: #6e6e6e; --x-fg3: #a9a9a9;
+  --x-panel: #f2f2f2; --x-panel-fg: #1d1d1d; --x-panel-fg2: #6a6a6a; --x-panel-row: rgba(0,0,0,.05);
+  --x-pane: rgba(255,255,255,.55); --x-tile: rgba(255,255,255,.72); --x-shadow: rgba(0,0,0,.28);
+  --kb-bg: rgba(28,28,30,.97); --kb-key: rgba(255,255,255,.08); --kb-hl: var(--x-accent); --kb-hl-text: #fff; --kb-radius: 2px;
+  font-family: var(--x-font); font-weight: 400; color: var(--x-fg);
 }
-/* sits between #theme-bg and #waves by DOM order (see x360.js setup) — no z-index, or
-   body's opaque background would paint over it */
-body[data-shell="x360"] .x-bg { position: fixed; inset: 0; background: var(--x360-bg); }
-
-/* the breadcrumb is drawn into the dashboard's own chrome instead */
-body[data-shell="x360"] #crumb { display: none !important; }
-/* the blade stack / channel rail is the dashboard's frame: it stays put inside folders,
-   unlike the XMB's category bar (style.css: body.infolder #cats { opacity: 0 }) */
-body[data-shell="x360"].infolder #cats { opacity: 1; }
-
-body[data-shell="x360"] #hint { bottom: 42px; letter-spacing: .3px; }
-
-/* the Y menu: squared off and tinted to the dashboard, but the same panel and the same
-   keys — xmb.js's Options drives it unchanged */
-body[data-shell="x360"] #options {
-  background: linear-gradient(90deg, rgb(0 0 0 / 0), rgb(4 6 7 / .9) 22%);
+body[data-shell="x360"][data-xbg="dark"], body[data-shell="x360"][data-xbg="picture"] {
+  --x-fg: #f4f4f4; --x-fg2: #a6a6a6; --x-fg3: #6c6c6c;
+  --x-panel: #2a2b2e; --x-panel-fg: #f2f2f2; --x-panel-fg2: #a0a0a0; --x-panel-row: rgba(255,255,255,.05);
+  --x-pane: rgba(0,0,0,.38); --x-tile: rgba(255,255,255,.1); --x-shadow: rgba(0,0,0,.55);
 }
-body[data-shell="x360"] .opt { padding: 13px 26px; }
-body[data-shell="x360"] .opt.on {
-  color: var(--text);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 46%, transparent), transparent 92%);
-}
-/* recolour style.css's existing left bar rather than adding a second one */
-body[data-shell="x360"] .opt.on::before {
-  background: var(--x360-edge); box-shadow: 0 0 12px var(--x360-edge);
-}
-body[data-shell="x360"] .opt-head { color: color-mix(in srgb, var(--accent) 60%, #ffffff); }
-
-/* ================================================================ blades (2005) */
-body[data-shell="x360"][data-era="blades"] {
-  --x360-bg: radial-gradient(130% 90% at 18% 55%,
-    color-mix(in srgb, var(--accent) 42%, #0b1a0b) 0%, rgb(4 8 5 / 88%) 100%);
-  /* one hue per category, in ORDER (xmb.js): users settings photo music video tv game apps store party.
-     Green sits on Game, orange on Store — the Games and Marketplace blades of the original. */
-  --x360-hue-0: 205; --x360-hue-1: 210; --x360-hue-2: 175; --x360-hue-3: 280; --x360-hue-4: 315;
-  --x360-hue-5: 255; --x360-hue-6: 105; --x360-hue-7: 45;  --x360-hue-8: 28;  --x360-hue-9: 190;
-}
-/* the waves keep a hint of motion behind the blades — the only era that ever had any */
-body[data-shell="x360"][data-era="blades"] #waves { opacity: .3; }
-
-body[data-shell="x360"][data-era="blades"] #cats { position: absolute; inset: 0; transform: none; }
-body[data-shell="x360"][data-era="blades"] .x-blade {
-  position: absolute; top: 0; height: 100%; overflow: hidden;
-  --h: 150;
-  transition: left .34s var(--ease), width .34s var(--ease);
-}
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(1) { --h: var(--x360-hue-0); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(2) { --h: var(--x360-hue-1); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(3) { --h: var(--x360-hue-2); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(4) { --h: var(--x360-hue-3); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(5) { --h: var(--x360-hue-4); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(6) { --h: var(--x360-hue-5); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(7) { --h: var(--x360-hue-6); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(8) { --h: var(--x360-hue-7); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(9) { --h: var(--x360-hue-8); }
-body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(10) { --h: var(--x360-hue-9); }
-
-/* the slant lives on the face, so icons and text stay upright like the original */
-body[data-shell="x360"][data-era="blades"] .x-face {
-  position: absolute; top: -80px; bottom: -80px; left: -60px; right: -60px;
-  transform: skewX(-6deg);
-  background: linear-gradient(175deg, hsl(var(--h) 42% 30%) 0%, hsl(var(--h) 48% 15%) 55%, hsl(var(--h) 52% 9%) 100%);
-  border-left: 2px solid hsl(var(--h) 60% 52% / .55);
-  box-shadow: inset 0 0 90px rgb(0 0 0 / .45), 6px 0 26px rgb(0 0 0 / .4);
-  opacity: .88; transition: opacity .34s, filter .34s;
-}
-body[data-shell="x360"][data-era="blades"] .x-blade.on .x-face {
-  opacity: 1; filter: brightness(1.22) saturate(1.1);
+body[data-shell="x360"][data-xbg="green"] {
+  --x-fg: #ffffff; --x-fg2: rgba(255,255,255,.8); --x-fg3: rgba(255,255,255,.5);
+  --x-pane: rgba(0,0,0,.22); --x-tile: rgba(255,255,255,.16); --x-shadow: rgba(0,0,0,.4);
 }
 
-/* closed blade: icon above a vertical label */
-body[data-shell="x360"][data-era="blades"] .x-spine {
-  position: absolute; left: 0; top: 0; width: 112px; height: 100%;
-  display: flex; flex-direction: column; align-items: center; padding-top: 110px; gap: 20px;
-  transition: opacity .25s;
-}
-body[data-shell="x360"][data-era="blades"] .x-spine .x-ico { width: 54px; height: 54px; flex: none; }
-body[data-shell="x360"][data-era="blades"] .x-spine .x-vlbl {
-  writing-mode: vertical-rl; font-size: 23px; letter-spacing: 2px; color: var(--dim);
-  white-space: nowrap; overflow: hidden; max-height: 620px;
-}
-body[data-shell="x360"][data-era="blades"] .x-blade.on .x-spine { opacity: 0; }
+/* ---- backdrop: soft light, the way the 360's default theme looked ---- */
+#x-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none;
+  background: linear-gradient(160deg, #fbfbfc 0%, #e9ecef 48%, #cdd3d8 100%); }
+#x-bg .x-bg-glow { position: absolute; inset: 0; background: radial-gradient(ellipse 60% 55% at 72% 18%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%); }
+#x-bg .x-bg-band { position: absolute; left: -20%; width: 140%; height: 46%; border-radius: 50%; filter: blur(30px);
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.75), rgba(255,255,255,0)); animation: x-drift 26s ease-in-out infinite alternate; }
+#x-bg .b1 { top: 38%; transform: rotate(-9deg); }
+#x-bg .b2 { top: 58%; height: 30%; transform: rotate(-4deg); opacity: .55; animation-duration: 34s; animation-direction: alternate-reverse; }
+@keyframes x-drift { to { translate: 6% -3%; } }
+body[data-xbg="dark"] #x-bg { background: radial-gradient(ellipse 80% 70% at 70% 10%, #34363b 0%, #1b1c1f 55%, #0e0e10 100%); }
+body[data-xbg="dark"] #x-bg .x-bg-glow { background: radial-gradient(ellipse 50% 40% at 15% 100%, color-mix(in srgb, var(--x-accent) 22%, transparent), transparent 70%); }
+body[data-xbg="dark"] #x-bg .x-bg-band { background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.05), rgba(255,255,255,0)); }
+body[data-xbg="green"] #x-bg { background: radial-gradient(ellipse 90% 80% at 30% 0%, #7ad83a 0%, #1f9a1f 35%, #0c5a0c 75%, #063806 100%); }
+body[data-xbg="green"] #x-bg .x-bg-glow { background: radial-gradient(ellipse 55% 45% at 80% 15%, rgba(255,255,255,.28), transparent 70%); }
+body[data-xbg="green"] #x-bg .x-bg-band { background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.18), rgba(255,255,255,0)); }
+body[data-xbg="picture"] #x-bg { background: linear-gradient(rgba(0,0,0,.35), rgba(0,0,0,.6)); }
+body[data-xbg="picture"] #x-bg > div { display: none; }
+body[data-shell="x360"]:not([data-xbg="picture"]) #theme-bg, body[data-shell="x360"] #waves { visibility: hidden; }
 
-/* open blade: horizontal header, then a rule the list sits under */
-body[data-shell="x360"][data-era="blades"] .x-head {
-  position: absolute; left: 70px; top: 104px; right: 60px; height: 96px;
-  display: flex; align-items: center; gap: 26px; opacity: 0;
-  transition: opacity .3s .08s;
-  border-bottom: 1px solid rgb(255 255 255 / .28);
-}
-body[data-shell="x360"][data-era="blades"] .x-blade.on .x-head { opacity: 1; }
-body[data-shell="x360"][data-era="blades"] .x-head .x-ico { width: 68px; height: 68px; flex: none; }
-body[data-shell="x360"][data-era="blades"] .x-head .x-title {
-  font-size: 40px; letter-spacing: .5px; white-space: nowrap; overflow: hidden;
-  text-shadow: 0 2px 10px rgb(0 0 0 / .6);
-}
+/* ---- what the XMB has that the dashboard doesn't ---- */
+body[data-shell="x360"] #cats, body[data-shell="x360"] #crumb { display: none; }
 
-/* rows: a left-aligned list, not the XMB's centred pivot */
-body[data-shell="x360"][data-era="blades"] .item { height: 64px; gap: 22px; }
-body[data-shell="x360"][data-era="blades"] .item .ico { width: 46px; height: 46px; }
-body[data-shell="x360"][data-era="blades"] .item.on .ico { width: 56px; height: 56px; }
-body[data-shell="x360"][data-era="blades"] .item .art { width: 128px; height: 72px; border-radius: 2px; }
-body[data-shell="x360"][data-era="blades"] .item.on .art { width: 160px; height: 90px; }
-body[data-shell="x360"][data-era="blades"] .item .art.poster { width: 54px; height: 76px; }
-body[data-shell="x360"][data-era="blades"] .item.on .art.poster { width: 64px; height: 90px; }
-body[data-shell="x360"][data-era="blades"] .item .art.square { width: 52px; height: 52px; }
-body[data-shell="x360"][data-era="blades"] .item.on .art.square { width: 64px; height: 64px; }
-body[data-shell="x360"][data-era="blades"] .item .label { font-size: 27px; }
-body[data-shell="x360"][data-era="blades"] .item.on .label { font-size: 31px; }
-body[data-shell="x360"][data-era="blades"] .item .sub { font-size: 18px; }
-body[data-shell="x360"][data-era="blades"] .item .bar { width: 300px; }
-body[data-shell="x360"][data-era="blades"] .item.dim { opacity: .62; }
-/* the selected row gets the era's lit chip rather than the XMB's pulsing glow */
-body[data-shell="x360"][data-era="blades"] .item.on .ico,
-body[data-shell="x360"][data-era="blades"] .item.on .art { animation: none; }
-body[data-shell="x360"][data-era="blades"] .item.on .label { text-shadow: 0 0 18px var(--x360-edge), 0 2px 6px rgb(0 0 0 / .7); }
+/* ---- top: where you are, who you are, the time ---- */
+#x-root { position: absolute; inset: 0; pointer-events: none; }
+#x-root .x-crumb { position: absolute; left: 150px; top: 86px; max-width: 1250px; font-size: 24px; color: var(--x-fg2); letter-spacing: .5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#x-root .x-me { position: absolute; right: 150px; top: 54px; display: flex; align-items: center; gap: 16px; }
+#x-root .x-pic { width: 64px; height: 64px; display: grid; place-items: center; font-size: 34px; color: #fff;
+  background: linear-gradient(135deg, var(--x-accent-2), var(--x-accent)); box-shadow: 0 3px 10px var(--x-shadow); }
+#x-root .x-tag { font-size: 28px; color: var(--x-fg); max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#x-root .x-status { font-size: 19px; color: var(--x-fg2); }
+body[data-shell="x360"] #clock { display: none; }
+body[data-shell="x360"] #demo-badge { left: 150px; top: 40px; font-size: 14px; padding: 3px 10px; color: var(--x-fg2); border-color: var(--x-fg3); }
 
-/* ================================================================ tiles: NXE + Metro */
-/* Both eras lay items out as tiles and show the selected one's text in a detail region.
-   The tile root stays a fixed box and is never scaled — the artwork inside overflows a
-   centred grid cell to "pop" instead. That keeps the root's position stable, which is what
-   lets the detail region be the selected tile's own .txt, lifted out by CSS alone: a
-   selection change is then just the .on class moving, with no rebuild (xmb.js calls
-   position() without one). --detail-dy, set per tile in position(), pins the region to the
-   stage no matter which row the tile sits on. */
-body[data-shell="x360"][data-era="nxe"],
-body[data-shell="x360"][data-era="metro"] { --x360-tile-edge: color-mix(in srgb, var(--accent) 70%, #ffffff 18%); }
+/* pivots: lowercase, the current one leading, the rest following */
+#x-root .x-pivots { position: absolute; left: 150px; top: 128px; width: 1260px; white-space: nowrap; overflow: hidden;
+  font-size: 56px; font-weight: 300; letter-spacing: -.5px;
+  -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); }
+#x-root .x-pivots span { margin-right: 46px; color: var(--x-fg3); }
+#x-root .x-pivots span.on { color: var(--x-fg); font-weight: 400; }
+#x-root .x-pivots.slide { animation: x-pivot .35s var(--ease); }
+@keyframes x-pivot { from { transform: translateX(60px); opacity: .2; } }
+#x-root .x-title { position: absolute; left: 150px; top: 118px; width: 1250px; font-size: 64px; font-weight: 300; color: var(--x-fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: x-pivot .3s var(--ease); }
+#x-root .x-empty { position: absolute; left: 150px; top: 300px; font-size: 30px; color: var(--x-fg2); }
 
-body[data-shell="x360"][data-era="nxe"] #waves,
-body[data-shell="x360"][data-era="metro"] #waves { opacity: 0; }
+/* ---- tiles ---- */
+body[data-shell="x360"] #column .item { display: block; gap: 0; height: auto; overflow: hidden; border-radius: 0;
+  transition: transform .32s var(--ease), opacity .25s, box-shadow .2s, scale .2s; background: var(--x-tile);
+  box-shadow: 0 2px 6px var(--x-shadow); }
+body[data-shell="x360"] #column .item .ico, body[data-shell="x360"] #column .item .art { animation: none; transition: none; }
+body[data-shell="x360"] #column .item.dim { opacity: 1; }
+body[data-shell="x360"] #column .item .txt { position: absolute; left: 0; right: 0; bottom: 0; padding: 30px 18px 12px; min-width: 0;
+  background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.62)); }
+body[data-shell="x360"] #column .item .label { font-size: 22px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: none; transition: none; }
+body[data-shell="x360"] #column .item.on .label { font-size: 22px; }
+body[data-shell="x360"] #column .item .sub { display: none; }
+body[data-shell="x360"] #column .item .bar { width: auto; height: 6px; margin: 8px 0 0; background: rgba(255,255,255,.3); border-radius: 0; }
+body[data-shell="x360"] #column .item .bar i { background: var(--x-accent-2); box-shadow: none; }
+body[data-shell="x360"] #column .item .x-badge { position: absolute; right: 10px; top: 10px; font-size: 13px; letter-spacing: 1.5px;
+  padding: 3px 8px; background: rgba(0,0,0,.55); color: #fff; }
+/* picture tiles: the picture is the tile */
+body[data-shell="x360"] #column .item .art { position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; box-shadow: none;
+  background-size: cover; background-position: center; display: grid; place-items: center; padding: 18px; font-size: 26px; font-weight: 600; color: rgba(255,255,255,.9); }
+body[data-shell="x360"] #column .item .art span { display: none !important; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; text-align: center; }
+body[data-shell="x360"] #column .item .art[style*="url("] span { display: none; }
+body[data-shell="x360"] #column .item.x-poster .art, body[data-shell="x360"] #column .item.x-square .art { background-size: contain; background-repeat: no-repeat; }
+body[data-shell="x360"] #column .item.x-poster { background: #111; }
+body[data-shell="x360"] #column .item.x-square .art { inset: 18px 18px 46px; background-color: transparent; }
+/* icon tiles: flat colour, the icon top-left, the name bottom-left */
+body[data-shell="x360"] #column .item.x-ic { background: var(--x-tile); }
+body[data-shell="x360"] #column .item.x-ic .label { color: var(--x-fg); }
+body[data-shell="x360"] #column .item.x-ic.hero { background: linear-gradient(135deg, var(--x-accent-2), var(--x-accent)); }
+body[data-shell="x360"] #column .item.x-ic.hero .label { color: #fff; }
+body[data-shell="x360"] #column .item.x-ic .ico { position: absolute; left: 22px; top: 18px; width: 58px; height: 58px; color: #fff; }
+body[data-shell="x360"] #column .item.x-ic .ico .i { color: var(--x-accent); filter: none; }
+body[data-shell="x360"][data-xbg="green"] #column .item.x-ic .ico .i { color: #fff; }
+body[data-shell="x360"] #column .item.x-ic.hero .ico .i { color: #fff; }
+body[data-shell="x360"] #column .item.x-ic .txt { background: none; padding: 0 18px 14px; }
+body[data-shell="x360"] #column .item.x-ic .label { text-shadow: none; }
+body[data-shell="x360"] #column .item.hero.x-ic .ico { width: 110px; height: 110px; left: 34px; top: 30px; }
+body[data-shell="x360"] #column .item.hero .label { font-size: 30px; }
+body[data-shell="x360"] #column .item.hero .txt { padding: 40px 26px 18px; }
+/* the selected tile: lifted, with a bright edge */
+body[data-shell="x360"] #column .item.item.hero.on { scale: 1.015; }
+body[data-shell="x360"] #column .item.on { z-index: 2; scale: 1.03;
+  box-shadow: 0 0 0 4px #fff, 0 0 0 7px var(--x-accent), 0 18px 36px var(--x-shadow); }
 
-body[data-shell="x360"][data-era="nxe"] #cats,
-body[data-shell="x360"][data-era="metro"] #cats { position: absolute; inset: 0; transform: none; }
+/* ---- list pages (settings and other folders without pictures) ---- */
+body[data-shell="x360"][data-xmode="list"] #column .item.item { display: flex; align-items: center; gap: 22px; padding: 0 26px; background: transparent; box-shadow: none; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .ico { position: static; width: 42px; height: 42px; flex: none; color: var(--x-fg); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .ico .i { color: var(--x-fg); filter: none; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .art { position: static; width: 84px; height: 40px; flex: none; padding: 0; font-size: 0; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.x-square .art { width: 42px; height: 42px; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .txt { position: static; flex: 1; padding: 0; background: none; min-width: 0; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .label { font-size: 30px; color: var(--x-fg); text-shadow: none; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on .label { font-size: 30px; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .bar { height: 4px; margin-top: 6px; background: var(--x-fg3); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item .x-badge { position: static; flex: none; background: none; color: var(--x-fg2); border: 1px solid var(--x-fg3); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.x-ic { background: transparent; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on { scale: none; background: linear-gradient(90deg, var(--x-accent), color-mix(in srgb, var(--x-accent) 82%, var(--x-accent-2)));
+  box-shadow: 0 6px 16px var(--x-shadow); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on .label, body[data-shell="x360"][data-xmode="list"] #column .item.item.on .ico .i { color: #fff; }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on .x-badge { color: #fff; border-color: rgba(255,255,255,.6); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on .bar { background: rgba(255,255,255,.35); }
+body[data-shell="x360"][data-xmode="list"] #column .item.item.on .bar i { background: #fff; }
 
-body[data-shell="x360"][data-era="nxe"] .item,
-body[data-shell="x360"][data-era="metro"] .item {
-  display: grid; place-items: center; gap: 0;
-  background: var(--x360-tile);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 6px 20px rgb(0 0 0 / .45);
-  transition: transform .26s var(--ease), opacity .26s, box-shadow .2s, background .2s;
-}
-body[data-shell="x360"][data-era="nxe"] .item.dim,
-body[data-shell="x360"][data-era="metro"] .item.dim { opacity: .74; }
-body[data-shell="x360"][data-era="nxe"] .item.on,
-body[data-shell="x360"][data-era="metro"] .item.on {
-  background: color-mix(in srgb, var(--accent) 42%, #0d1113);
-  box-shadow: inset 0 0 0 3px var(--x360-tile-edge), 0 10px 34px rgb(0 0 0 / .6);
-}
+/* ---- details: under the tiles, or a pane beside the list ---- */
+#x-root .x-detail { position: absolute; left: 150px; top: 820px; width: 1620px; color: var(--x-fg); }
+#x-root .x-d-label { display: inline; font-size: 36px; font-weight: 300; }
+#x-root .x-d-badge { display: inline-block; margin-left: 18px; vertical-align: 6px; font-size: 14px; letter-spacing: 1.5px; padding: 3px 9px;
+  border: 1px solid var(--x-fg3); color: var(--x-fg2); }
+#x-root .x-d-sub { font-size: 23px; color: var(--x-fg2); margin-top: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#x-root .x-d-bar { width: 520px; height: 6px; margin-top: 14px; background: var(--x-fg3); }
+#x-root .x-d-bar i { display: block; height: 100%; background: var(--x-accent-2); transition: width .5s; }
+#x-root .x-d-art { display: none; }
+body[data-xmode="list"] #x-root .x-detail { left: 1070px; top: 262px; width: 700px; height: 640px; padding: 40px 44px; background: var(--x-pane);
+  box-shadow: 0 4px 18px rgba(0,0,0,.08); overflow: hidden; }
+body[data-xmode="list"] #x-root .x-d-art { display: grid; place-items: center; margin-bottom: 28px; }
+body[data-xmode="list"] #x-root .x-d-art.ic { width: 150px; height: 150px; background: linear-gradient(135deg, var(--x-accent-2), var(--x-accent)); }
+body[data-xmode="list"] #x-root .x-d-art.ic .i { width: 84px; height: 84px; color: #fff; filter: none; }
+body[data-xmode="list"] #x-root .x-d-art.pic { width: 100%; height: 280px; background-size: cover; background-position: center; }
+body[data-xmode="list"] #x-root .x-d-art.pic.poster, body[data-xmode="list"] #x-root .x-d-art.pic.square { background-size: contain; background-repeat: no-repeat; }
+body[data-xmode="list"] #x-root .x-d-label { display: block; font-size: 38px; line-height: 1.2;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+body[data-xmode="list"] #x-root .x-d-badge { margin: 14px 0 0; }
+body[data-xmode="list"] #x-root .x-d-sub { white-space: normal; font-size: 24px; line-height: 1.45; margin-top: 16px;
+  display: -webkit-box; -webkit-line-clamp: 9; -webkit-box-orient: vertical; overflow: hidden; }
+body[data-xmode="list"] #x-root .x-d-bar { width: 100%; }
 
-/* artwork and icons fill the tile; the selected one overflows its centred cell to pop */
-body[data-shell="x360"][data-era="nxe"] .item :is(.art, .ico),
-body[data-shell="x360"][data-era="metro"] .item :is(.art, .ico) {
-  border-radius: 0; box-shadow: none; background-color: transparent;
-  transition: width .26s var(--ease), height .26s var(--ease);
-}
-body[data-shell="x360"][data-era="nxe"] .item.on :is(.art, .ico),
-body[data-shell="x360"][data-era="metro"] .item.on :is(.art, .ico) { animation: none; }
+/* ---- button hints: coloured face buttons, bottom left ---- */
+body[data-shell="x360"] #hint { left: 150px; right: auto; bottom: 64px; height: auto; padding: 0; background: none; text-align: left;
+  font-size: 23px; color: var(--x-fg2); display: flex; align-items: center; }
+body[data-shell="x360"] #hint span { margin: 0 34px 0 10px; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph { display: inline-grid !important; place-items: center; width: 36px; height: 36px; min-width: 0;
+  margin: 0 0 0 0; padding: 0 !important; border: 0; border-radius: 50% !important; font-size: 17px; font-weight: 700; color: #fff; background: #777; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph svg { width: 22px; height: 22px; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph[data-a="ok"] { background: #5dc21e; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph[data-a="back"] { background: #e3262c; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph[data-a="menu"] { background: #f5b800; color: #2a2100; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph[data-a="kb_west"] { background: #1a7ae0; }
+body[data-shell="x360"] :is(#hint, .xg-foot) b.glyph:is([data-a="prev"], [data-a="next"]) { width: 50px; height: 28px; border-radius: 14px !important;
+  font-size: 14px; background: var(--x-fg3); color: #fff; margin-right: 6px; }
+body[data-shell="x360"] .xg-foot b.glyph.xg-dpad { width: auto; padding: 0 10px !important; border-radius: 14px !important; height: 28px; font-size: 14px; background: #555; }
 
-/* the detail region: the selected tile's own .txt, lifted out of the tile */
-body[data-shell="x360"][data-era="nxe"] .item .txt,
-body[data-shell="x360"][data-era="metro"] .item .txt { display: none; }
-body[data-shell="x360"][data-era="nxe"] .item.on .txt,
-body[data-shell="x360"][data-era="metro"] .item.on .txt {
-  display: block; position: absolute; left: 0; top: var(--detail-dy); width: 880px;
-  text-align: left; pointer-events: none;
-}
-body[data-shell="x360"][data-era="nxe"] .item.on .sub,
-body[data-shell="x360"][data-era="metro"] .item.on .sub { height: auto; opacity: 1; white-space: normal; }
+/* ---- options flyout (Y) ---- */
+body[data-shell="x360"] #options { width: 640px; padding: 214px 0 0 0; background: var(--x-panel); color: var(--x-panel-fg);
+  box-shadow: -10px 0 40px rgba(0,0,0,.3); animation: x-fly .22s var(--ease); }
+@keyframes x-fly { from { transform: translateX(80px); opacity: 0; } }
+body[data-shell="x360"] #options::before { content: attr(data-title); position: absolute; left: 54px; right: 40px; top: 104px; z-index: 2;
+  font-size: 40px; font-weight: 300; text-transform: lowercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: none; height: auto; color: var(--x-panel-fg); }
+body[data-shell="x360"] #options.more-up::before { background: none; }
+body[data-shell="x360"] #options.more-down::after { left: 0; background: linear-gradient(transparent, var(--x-panel)); }
+body[data-shell="x360"] #options .opt-head { padding: 0 54px 10px; font-size: 18px; color: var(--x-panel-fg2); letter-spacing: 2px; }
+body[data-shell="x360"] .opt { font-size: 28px; padding: 16px 54px; color: var(--x-panel-fg); }
+body[data-shell="x360"] .opt.on { color: #fff; background: var(--x-accent); }
+body[data-shell="x360"] .opt.on::before { display: none; }
 
-/* ---------------- NXE (2008) */
-body[data-shell="x360"][data-era="nxe"] {
-  --x360-bg: linear-gradient(160deg,
-    color-mix(in srgb, var(--accent) 20%, #1b2124) 0%, rgb(9 12 13 / 92%) 62%, rgb(5 7 8 / 96%) 100%);
-}
-body[data-shell="x360"][data-era="nxe"] .x-chan {
-  position: absolute; left: 0; top: 0; width: 330px; height: 80px;
-  display: flex; align-items: center; gap: 20px;
-  transition: transform .3s var(--ease), opacity .3s;
-}
-body[data-shell="x360"][data-era="nxe"] .x-chan .x-ico { width: 40px; height: 40px; flex: none; opacity: .7; }
-body[data-shell="x360"][data-era="nxe"] .x-chan .x-clbl {
-  font-size: 25px; color: var(--dim); white-space: nowrap; overflow: hidden;
-}
-body[data-shell="x360"][data-era="nxe"] .x-chan.on .x-ico { width: 52px; height: 52px; opacity: 1; }
-body[data-shell="x360"][data-era="nxe"] .x-chan.on .x-clbl {
-  font-size: 35px; color: var(--text); text-shadow: 0 0 20px var(--x360-tile-edge);
-}
+/* ---- dialogs: a panel, buttons stacked ---- */
+body[data-shell="x360"] #dialog, body[data-shell="x360"] #dialog:has(.dlg-body.long) { background: rgba(0,0,0,.55); }
+body[data-shell="x360"] .dlg-box { width: 1040px; max-width: 1040px; padding: 54px 64px 48px; text-align: left; background: var(--x-panel);
+  color: var(--x-panel-fg); border: 0; box-shadow: 0 30px 80px rgba(0,0,0,.5); animation: x-pop .22s var(--ease); }
+@keyframes x-pop { from { transform: scale(.96); opacity: 0; } }
+body[data-shell="x360"] .dlg-title { font-size: 40px; font-weight: 300; color: var(--x-panel-fg); margin-bottom: 18px; }
+body[data-shell="x360"] .dlg-title:empty { display: none; }
+body[data-shell="x360"] .dlg-body, body[data-shell="x360"] .dlg-body.long { font-size: 26px; line-height: 1.5; max-width: none; margin: 0;
+  text-align: left !important; color: var(--x-panel-fg); max-height: 560px; }
+body[data-shell="x360"] .dlg-body.long { font-size: 23px; }
+body[data-shell="x360"] .dlg-fields { max-width: none; }
+body[data-shell="x360"] .dlg-fields label { color: var(--x-panel-fg2); }
+body[data-shell="x360"] .dlg-fields input { background: var(--x-panel-row); border: 2px solid var(--x-panel-fg2); color: var(--x-panel-fg); border-radius: 0; }
+body[data-shell="x360"] .dlg-fields input:focus, body[data-shell="x360"] .dlg-fields input.padfocus { border-color: var(--x-accent); box-shadow: none; background: var(--x-panel); }
+body[data-shell="x360"] .dlg-buttons { flex-direction: column; gap: 4px; margin-top: 36px; }
+body[data-shell="x360"] .dlg-btn { border: 0; border-radius: 0; padding: 14px 26px; font-size: 28px; color: var(--x-panel-fg); background: var(--x-panel-row); }
+body[data-shell="x360"] .dlg-btn.on { color: #fff; background: var(--x-accent); box-shadow: none; }
 
-body[data-shell="x360"][data-era="nxe"] .item { width: 260px; height: 260px; }
-body[data-shell="x360"][data-era="nxe"] .item :is(.art, .ico) { width: 200px; height: 200px; }
-body[data-shell="x360"][data-era="nxe"] .item.on :is(.art, .ico) { width: 248px; height: 248px; }
-body[data-shell="x360"][data-era="nxe"] .item .art:not(.square) { background-size: cover; }
-body[data-shell="x360"][data-era="nxe"] .item .art.poster { background-size: contain; }
-body[data-shell="x360"][data-era="nxe"] .item.on .label { font-size: 46px; white-space: normal; }
-body[data-shell="x360"][data-era="nxe"] .item.on .sub { font-size: 25px; margin-top: 10px; }
-body[data-shell="x360"][data-era="nxe"] .item.on .bar { width: 420px; }
+/* ---- toasts: a bubble rising from the bottom ---- */
+body[data-shell="x360"] #toasts { left: 50%; right: auto; top: auto; bottom: 120px; width: 960px; transform: translateX(-50%);
+  flex-direction: column-reverse; align-items: center; }
+body[data-shell="x360"] .toast { border: 0; border-radius: 46px; padding: 12px 40px 12px 12px; gap: 20px; font-size: 24px; color: #fff;
+  background: linear-gradient(#4b4c50, #222326); box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.18);
+  max-width: 960px; animation: x-toast .35s var(--ease); }
+body[data-shell="x360"] .toast .ico { width: 58px; height: 58px; padding: 13px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, var(--x-accent-2), var(--x-accent)); }
+body[data-shell="x360"] .toast .ico .i { color: #fff; filter: none; }
+@keyframes x-toast { from { transform: translateY(40px); opacity: 0; } }
 
-/* ---------------- Metro (2011) */
-body[data-shell="x360"][data-era="metro"] {
-  --x360-bg: color-mix(in srgb, var(--accent) 22%, #101014);
-}
-body[data-shell="x360"][data-era="metro"] .x-pane {
-  position: absolute; left: 120px; right: 80px; display: flex; align-items: baseline; gap: 34px;
-  white-space: nowrap; overflow: hidden;
-}
-body[data-shell="x360"][data-era="metro"] .x-pane-cur { font-size: 56px; letter-spacing: -.5px; }
-body[data-shell="x360"][data-era="metro"] :is(.x-pane-prev, .x-pane-next) { font-size: 30px; color: var(--dim); opacity: .5; }
+/* ---- the Guide (Quick Menu) ---- */
+body[data-shell="x360"] #quick .q-panel { display: none; }
+body[data-shell="x360"] #quick .q-shade, body[data-shell="x360"] #quick:not(.has-shot) .q-shade { background: rgba(0,0,0,.55); }
+body:not([data-shell="x360"]) #quick .x-guide { display: none; }
+.x-guide { position: absolute; left: 150px; top: 80px; bottom: 80px; width: 840px; display: flex; flex-direction: column; color: #fff;
+  background: linear-gradient(#2e2f33, #1c1d20); box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12);
+  animation: x-guide .25s var(--ease); font-family: var(--x-font); }
+@keyframes x-guide { from { transform: translateX(-60px); opacity: 0; } }
+.xg-top { display: flex; align-items: center; gap: 20px; padding: 30px 36px 22px; }
+.xg-pic { width: 72px; height: 72px; flex: none; display: grid; place-items: center; font-size: 38px;
+  background: linear-gradient(135deg, var(--x-accent-2), var(--x-accent)); }
+.xg-who { flex: 1; min-width: 0; }
+.xg-tag { font-size: 30px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xg-now { font-size: 20px; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xg-time { font-size: 26px; color: rgba(255,255,255,.75); }
+.xg-tabs { display: flex; gap: 6px; padding: 0 30px; border-bottom: 1px solid rgba(255,255,255,.12); }
+.xg-tab { width: 150px; padding: 12px 0 14px; text-align: center; color: rgba(255,255,255,.45); position: relative; }
+.xg-tab .xg-ti { width: 46px; height: 46px; margin: 0 auto 6px; }
+.xg-tab .xg-ti .i { filter: none; }
+.xg-tab .xg-tl { font-size: 19px; white-space: nowrap; }
+.xg-tab.on { color: #fff; }
+.xg-tab.on::after { content: ""; position: absolute; left: 24px; right: 24px; bottom: -1px; height: 4px; background: var(--x-accent-2); }
+.xg-rows { flex: 1; overflow: hidden; padding: 16px 0; }
+.xg-row { display: flex; align-items: center; gap: 22px; padding: 14px 36px; color: rgba(255,255,255,.85); }
+.xg-row.on { color: #fff; background: var(--x-accent); }
+.xg-ico { width: 48px; height: 48px; flex: none; display: grid; place-items: center; }
+.xg-ico .i { filter: none; }
+.xg-art { width: 48px; height: 48px; background-size: cover; background-position: center; }
+.xg-txt { flex: 1; min-width: 0; }
+.xg-label { font-size: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xg-sub { font-size: 19px; color: rgba(255,255,255,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xg-row.on .xg-sub { color: rgba(255,255,255,.85); }
+.xg-bar { height: 5px; margin-top: 8px; background: rgba(255,255,255,.2); }
+.xg-bar i { display: block; height: 100%; background: #fff; }
+.xg-more { font-size: 34px; color: rgba(255,255,255,.6); }
+.xg-foot { display: flex; align-items: center; padding: 18px 36px 22px; border-top: 1px solid rgba(255,255,255,.12); font-size: 20px; color: rgba(255,255,255,.7); }
+.xg-foot span { margin: 0 26px 0 10px; }
 
-body[data-shell="x360"][data-era="metro"] .item { width: 220px; height: 190px; }
-body[data-shell="x360"][data-era="metro"] .item :is(.art, .ico) { width: 150px; height: 130px; }
-body[data-shell="x360"][data-era="metro"] .item.on :is(.art, .ico) { width: 178px; height: 156px; }
-body[data-shell="x360"][data-era="metro"] .item .art.square { background-size: cover; }
-body[data-shell="x360"][data-era="metro"] .item :is(.art.poster, .art:not(.square)) { background-size: contain; }
-body[data-shell="x360"][data-era="metro"] .item.on .label { font-size: 34px; }
-body[data-shell="x360"][data-era="metro"] .item.on .sub { font-size: 21px; margin-top: 6px; }
-body[data-shell="x360"][data-era="metro"] .item.on .bar { width: 420px; }
-/* the strip sits above the grid, so it must not cover the pane header */
-body[data-shell="x360"][data-era="metro"] .item.on .txt { width: 1280px; }
+/* ---- launching, keyboard, the rest ---- */
+body[data-shell="x360"] #launch { background: rgba(0,0,0,.78); }
+body[data-shell="x360"] #launch .l-spin { border-color: rgba(255,255,255,.15); border-top-color: var(--x-accent-2); }
+body[data-shell="x360"] #launch .l-title { font-weight: 300; }
+body[data-shell="x360"] #osk { border-radius: 0; }
+body[data-shell="x360"] .osk-key.on { box-shadow: none; transform: none; }
+#stage:has(#quick:not([hidden])) #hint, #stage:has(#dialog:not([hidden])) #hint { opacity: .25; }
+#stage:has(#dialog:not([hidden])) #x-root { opacity: .3; filter: blur(2px); transition: opacity .2s, filter .2s; }

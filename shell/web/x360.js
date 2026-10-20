@@ -1,248 +1,337 @@
 'use strict';
-// The Xbox 360 dashboards, as alternatives to the cross-media bar. Settings › Theme ›
-// Interface picks the look, Dashboard Era picks which of the three 360 dashboards.
+// The Dashboard look — modelled on the Xbox 360's last dashboard (2011 onwards): lowercase
+// pivots across the top, a horizontally scrolling surface of tiles under them, flat colour,
+// lists with a solid highlight bar, a Guide with tabs, stacked dialog buttons, toasts along
+// the bottom. Settings › Theme › Interface switches between it and the XMB on the fly.
 //
-// These are *renderers only*: they plug into the Shell seam in xmb.js and reuse its item
-// model, folders (S.stack), Options panel, dialogs, input routing and polling untouched.
-// Each keeps to the item node contract documented there — a .item root holding a .txt with
-// a .sub and an optional .bar > i, and columnEls index-parallel to list().
+// It's a whole front end, not a re-skin: it builds its own page (#x-root), its own item
+// nodes and layouts, and draws the Quick Menu as a Guide — but every row is still the same
+// item from the same menu model (xmb.js), so A / B / Y and every command behave exactly as
+// they do in the XMB. It keeps xmb.js's item node contract (.item > .txt > .sub, .bar > i;
+// columnEls index-parallel to list()) so live download progress works here too.
+//
+// Three layouts, picked per page:
+//   home  — the top level: pivots + tiles, the first one a big "hero" tile
+//   grid  — a folder of mostly pictures (games, films, photos): tiles, no hero
+//   list  — any other folder (settings…): rows with a highlight bar + a details pane
 
-// The dashboards paint their own backdrop. It's a fixed, full-viewport element rather than
-// a #stage child so it still covers the letterbox bars on displays that aren't 16:9, and it
-// goes between #theme-bg and #waves: a theme's picture sits under it (showing through where
-// --x360-bg is translucent) and the waves canvas draws over it, which is what lets Blades
-// keep a hint of motion. Layering is by DOM order on purpose — a negative z-index would put
-// it behind body's opaque background (style.css: html, body { background: #000 }) and
-// nothing would show. Colour comes from --x360-bg, so a theme's theme.css can replace it
-// without needing JS.
-const X360Base = {
-  __proto__: XmbShell,                  // same item nodes, same renderColumn/hint/moveV/moveH
+const X360 = {
+  // ---- geometry: a 1920×1080 stage with TV-safe margins
+  L: 150, R: 1770,              // left / right edges of the content
+  TOP: 262,                     // first tile row
+  U: 344, H: 162, G: 16,        // tile unit (≈ a Steam header's 2.15:1), gap
+  ROWS: 3,
+  LIST_TOP: 262, ROW: 78, LIST_W: 860, LIST_BOT: 900,
+  dialogVertical: true,
+  quickTabs: true,
+  optionsGeom: { TOP: 214, MIN: 200, MAX: 980 },
+  ACCENTS: {
+    green: ['#107c10', '#5dc21e'], blue: ['#0b5fbf', '#3b9cff'], orange: ['#c4520c', '#ff8a2b'],
+    pink: ['#b7166f', '#f04ea5'], purple: ['#5c2d91', '#9b5de5'], red: ['#a4161a', '#e5383b'], silver: ['#5a6066', '#9aa3ab'],
+  },
+
+  mode: 'home', slots: [], scroll: 0,
+
+  // ---------------------------------------------------------------- lifecycle
   setup() {
-    if (!$('#x360-bg')) {
+    if (!$('#x-bg')) {                       // the backdrop covers the whole screen, letterbox included
       const bg = document.createElement('div');
-      bg.id = 'x360-bg'; bg.className = 'x-bg';
-      document.body.insertBefore(bg, $('#waves'));
+      bg.id = 'x-bg';
+      bg.innerHTML = '<div class="x-bg-glow"></div><div class="x-bg-band b1"></div><div class="x-bg-band b2"></div>';
+      document.body.insertBefore(bg, $('#stage'));
     }
+    if (!$('#x-root')) {
+      const r = document.createElement('div');
+      r.id = 'x-root';
+      r.innerHTML = `
+        <div class="x-top"><div class="x-crumb"></div>
+          <div class="x-me"><div class="x-pic"></div><div class="x-who"><div class="x-tag"></div><div class="x-status"></div></div></div></div>
+        <div class="x-pivots"></div>
+        <div class="x-title"></div>
+        <div class="x-detail"><div class="x-d-art"></div><div class="x-d-txt"><div class="x-d-label"></div><div class="x-d-badge"></div>
+          <div class="x-d-sub"></div><div class="x-d-bar"><i></i></div></div></div>
+        <div class="x-empty" hidden>Nothing here yet</div>`;
+      $('#stage').insertBefore(r, $('#column'));
+    }
+    $('#cats').innerHTML = ''; $('#crumb').hidden = true;
+    clearInterval(this.tick);                // the time sits under your name, like the 360's profile corner
+    const tick = () => { const t = $('.x-status'); if (t) t.textContent = $('#clock-time')?.textContent || ''; };
+    tick(); this.tick = setInterval(tick, 5000);
   },
   teardown() {
-    $('#x360-bg')?.remove();
-    $('#cats').innerHTML = ''; $('#column').innerHTML = ''; $('#crumb').hidden = true;
+    clearInterval(this.tick);
+    $('#x-root')?.remove(); $('#x-bg')?.remove(); $('#quick .x-guide')?.remove();
+    $('#column').innerHTML = ''; $('#column').style.transform = '';
+    document.body.removeAttribute('data-xbg'); document.body.removeAttribute('data-xmode');
+    document.body.style.removeProperty('--x-accent'); document.body.style.removeProperty('--x-accent-2');
   },
-  resetCats() { $('#cats').innerHTML = ''; },
-};
+  resetCats() { const p = $('.x-pivots'); if (p) p.innerHTML = ''; },
 
-// ---------------------------------------------------------------- blades (2005)
-// The original: a stack of slanted coloured blades, one per category. The selected blade
-// opens to 760px and holds the item list; the rest stay as 112px spines either side of it.
-const BladeShell = {
-  __proto__: X360Base,
-
-  X0: 80,                       // left edge of the stack
-  SPINE: 112,                   // width of a closed blade
-  OPEN: 760,                    // width of the open one
-  ROW: 74,                      // item row pitch
-  TOP: 250,                     // first row, inside the open blade
-  BOT: 940,                     // last row that clears the button hints
-  PAD: 70,                      // list inset from the blade's left edge
-
-  setup() { X360Base.setup.call(this); Shell.artWindow = 10; },
-
-  // x of blade i: the ones past the selection are pushed right by the open blade's extra width
-  bladeX(i) { return this.X0 + i * this.SPINE + (i > S.ci ? this.OPEN - this.SPINE : 0); },
-
-  renderCats() {
-    const wrap = $('#cats');
-    if (!wrap.children.length) {
-      CATS.forEach((c) => {
-        const el = document.createElement('div');
-        el.className = 'x-blade';
-        el.innerHTML = `<div class="x-face"></div>
-          <div class="x-spine"><div class="x-ico">${icon(c.icon)}</div><div class="x-vlbl">${esc(c.label)}</div></div>
-          <div class="x-head"><div class="x-ico">${icon(c.icon)}</div><div class="x-title"></div></div>`;
-        wrap.appendChild(el);
-      });
+  configure(st) {
+    const bg = X360_BG_NAMES[st.x360_bg] ? st.x360_bg : 'light';
+    const pic = bg === 'picture' && Theme.cur?.background?.image;
+    document.body.dataset.xbg = pic ? 'picture' : bg === 'picture' ? 'dark' : bg;
+    const [a, b] = this.ACCENTS[st.x360_accent] || this.ACCENTS.green;
+    const r = document.body.style;            // on body: x360.css's defaults live there too
+    r.setProperty('--x-accent', a); r.setProperty('--x-accent-2', b);
+    const me = $('.x-me');
+    if (me) {
+      $('.x-tag').textContent = st.user || 'Player';
+      $('.x-pic').textContent = (st.user || 'P').trim().charAt(0).toUpperCase();
     }
-    // inside a folder the blade stays open and its header becomes the breadcrumb
-    const f = S.stack.at(-1);
-    [...wrap.children].forEach((el, i) => {
-      const on = i === S.ci;
-      el.style.left = `${this.bladeX(i)}px`;
-      el.style.width = `${on ? this.OPEN : this.SPINE}px`;
-      el.style.zIndex = on ? 2 : 1;
-      el.classList.toggle('on', on);
-      if (!on) return;
-      el.querySelector('.x-title').textContent = f ? f.title : CATS[i].label;
-      el.querySelector('.x-head .x-ico').innerHTML = icon(f ? f.icon : CATS[i].icon);
-    });
   },
 
-  scroll: 0,                    // kept between moves, so rows below the cursor stay visible
+  // ---------------------------------------------------------------- item nodes
+  itemEl(it) {
+    const el = document.createElement('div');
+    el.className = 'item';
+    let slot;
+    if (it.art !== undefined) {
+      const h = hashHue(it.artTitle || it.label);
+      const shape = it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : '';
+      slot = `<div class="art${shape}" style="background-image:linear-gradient(135deg,hsl(${h} 45% 42%),hsl(${(h + 40) % 360} 50% 22%))"><span>${esc(it.artTitle || it.label)}</span></div>`;
+      el.classList.add(shape ? `x-${shape.trim()}` : 'x-pic');
+    } else {
+      slot = `<div class="ico">${icon(it.icon)}</div>`;
+      el.classList.add('x-ic');
+    }
+    el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}</div><div class="sub">${esc(gl(it.sub || ''))}</div>${
+      it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>${
+      it.badge ? `<div class="x-badge">${esc(it.badge)}</div>` : ''}`;
+    if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
+    return el;
+  },
 
-  // A fresh column starts at the top; position() pulls the selection back into view.
+  // ---------------------------------------------------------------- pages
+  pickMode() {
+    if (!S.stack.length) return 'home';
+    const items = list();
+    const pics = items.filter((i) => i.art !== undefined).length;
+    return items.length && pics >= items.length * 0.6 ? 'grid' : 'list';
+  },
+
+  render() {
+    document.body.classList.toggle('infolder', S.stack.length > 0);
+    this.renderCats();
+    this.renderColumn(true);
+  },
+
+  // pivots on the top level; a page title (and where you came from) in a folder
+  renderCats() {
+    const piv = $('.x-pivots'), title = $('.x-title'), crumb = $('.x-crumb');
+    if (!piv) return;
+    if (!S.stack.length) {
+      // the current pivot leads; the rest follow in order and wrap round, like the real thing
+      piv.innerHTML = CATS.map((_, k) => {
+        const i = (S.ci + k) % CATS.length;
+        return `<span class="${k === 0 ? 'on' : ''}">${esc(pivotName(CATS[i]))}</span>`;
+      }).join('');
+      piv.classList.remove('slide'); void piv.offsetWidth; piv.classList.add('slide');
+      piv.hidden = false; title.hidden = true;
+      crumb.textContent = '';
+    } else {
+      const path = [pivotName(CATS[S.ci]), ...S.stack.slice(0, -1).map((f) => f.title)];
+      crumb.textContent = path.join('  ›  ').toLowerCase();
+      title.textContent = (S.stack.at(-1).title || '').toLowerCase();
+      piv.hidden = true; title.hidden = false;
+    }
+  },
+
   renderColumn(rebuild = true) {
-    if (rebuild) this.scroll = 0;
-    XmbShell.renderColumn.call(this, rebuild);
+    const col = $('#column');
+    if (!S.stack.length && !S.items[CATS[S.ci].id]) S.items[CATS[S.ci].id] = [{ key: 'loading', label: 'Loading…', icon: 'refresh' }];
+    const items = list();
+    const mode = this.pickMode();
+    if (rebuild || mode !== this.mode) this.scroll = 0;
+    this.mode = mode;
+    document.body.dataset.xmode = mode;
+    if (rebuild) col.classList.add('swap');
+    col.innerHTML = '';
+    columnEls = items.map((it) => { const el = this.itemEl(it); col.appendChild(el); return el; });
+    this.layout(items);
+    $('.x-empty').hidden = items.length > 0;
+    this.position();
+    if (rebuild) requestAnimationFrame(() => requestAnimationFrame(() => col.classList.remove('swap')));
+    this.hint();
   },
 
-  // Rows are a fixed-pitch list inside the open blade. The list only slides when the
-  // selection would leave the window — the nudge-on-overflow rule the Options panel
-  // uses (xmb.js Options.render), not a scroll recomputed from the index, which would
-  // glue the cursor to the bottom edge and hide everything below it.
-  position() {
-    const items = list(), s = sel(), n = items.length;
-    const view = this.BOT - this.TOP;
-    const top = s * this.ROW, bot = top + this.ROW;
-    if (top - this.scroll < 0) this.scroll = top;
-    if (bot - this.scroll > view) this.scroll = bot - view;
-    this.scroll = Math.max(0, Math.min(this.scroll, Math.max(0, n * this.ROW - view)));
-    const x = this.bladeX(S.ci) + this.PAD;
-    columnEls.forEach((el, i) => {
-      const on = i === s;
-      const y = this.TOP + i * this.ROW - this.scroll;
-      el.style.transform = `translate(${x}px, ${y}px)`;
-      el.classList.toggle('on', on);
-      el.classList.toggle('dim', !on);
-      el.style.opacity = y < this.TOP - this.ROW || y > this.BOT ? 0 : '';
-      if (Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
-    });
-  },
-
-  render() {
-    document.body.classList.toggle('infolder', S.stack.length > 0);
-    $('#crumb').hidden = true;          // the open blade's header shows it instead
-    this.renderCats();
-    this.renderColumn(true);
-  },
-};
-
-// ---------------------------------------------------------------- tiles (NXE / Metro)
-// NXE and Metro share a model — tiles on a surface that slides horizontally, the category
-// on the other axis, and the selected item's text in a detail region — so they're one
-// renderer with two geometries. What differs is `rows`, the chrome (a channel rail vs a
-// pane header) and the cursor rules.
-const ERAS = {
-  nxe: {                        // 2008: one row of big tiles, channels down the left
-    rows: 1, tileW: 260, tileH: 260, gap: 28, surfaceX: 470, surfaceY: 330,
-    stripY: 700, railX: 90, railY: 480, railPitch: 96, cull: 5, artWindow: 10,
-  },
-  metro: {                      // 2011: a 3-row grid filled top-to-bottom, paged by column
-    rows: 3, tileW: 220, tileH: 190, gap: 12, surfaceX: 520, surfaceY: 310,
-    stripY: 225, headerY: 110, cull: 14, artWindow: 18,
-  },
-};
-
-const TileShell = {
-  __proto__: X360Base,
-
-  get cfg() { return ERAS[Shell.era] || ERAS.nxe; },
-  get metro() { return Shell.era === 'metro'; },
-
-  setup() { X360Base.setup.call(this); Shell.artWindow = this.cfg.artWindow; },
-
-  renderCats() {
-    const wrap = $('#cats'), c = this.cfg, f = S.stack.at(-1);
-    if (this.metro) {
-      // a pane header: the current category, with its neighbours ghosted either side
-      if (!wrap.children.length) {
-        wrap.innerHTML = '<div class="x-pane"><span class="x-pane-prev"></span>'
-          + '<span class="x-pane-cur"></span><span class="x-pane-next"></span></div>';
+  // where every tile / row goes, in stage pixels (before scrolling)
+  layout(items) {
+    const { U, H, G, ROWS, L, TOP } = this;
+    if (this.mode === 'list') {
+      this.slots = items.map((_, i) => ({ x: L, y: this.LIST_TOP + i * this.ROW, w: this.LIST_W, h: this.ROW - 6 }));
+      return;
+    }
+    const taken = new Set(), slots = [];
+    const free = (c, r) => !taken.has(`${c},${r}`);
+    const take = (c, r, w, h) => { for (let a = 0; a < w; a++) for (let b = 0; b < h; b++) taken.add(`${c + a},${r + b}`); };
+    let c = 0, r = 0;
+    items.forEach((it, i) => {
+      if (i === 0 && this.mode === 'home' && items.length > 2) {       // the hero: the first thing, big
+        take(0, 0, 2, 2); slots.push({ c: 0, r: 0, w: 2, h: 2 });
+        return;
       }
-      wrap.querySelector('.x-pane').style.top = `${c.headerY}px`;
-      wrap.querySelector('.x-pane-prev').textContent = CATS[S.ci - 1]?.label || '';
-      wrap.querySelector('.x-pane-cur').textContent = f ? f.title : (CATS[S.ci]?.label || '');
-      wrap.querySelector('.x-pane-next').textContent = CATS[S.ci + 1]?.label || '';
-      return;
-    }
-    // a vertical channel rail, the selected channel lit
-    if (!wrap.children.length) {
-      CATS.forEach((cat) => {
-        const el = document.createElement('div');
-        el.className = 'x-chan';
-        el.innerHTML = `<div class="x-ico">${icon(cat.icon)}</div><div class="x-clbl">${esc(cat.label)}</div>`;
-        wrap.appendChild(el);
-      });
-    }
-    [...wrap.children].forEach((el, i) => {
-      const on = i === S.ci;
-      const y = c.railY + (i - S.ci) * c.railPitch;
-      el.style.transform = `translate(${c.railX}px, ${y}px)`;
-      el.classList.toggle('on', on);
-      el.style.opacity = Math.abs(i - S.ci) > 4 ? 0 : '';
-      if (on) el.querySelector('.x-clbl').textContent = f ? f.title : CATS[i].label;
-      else el.querySelector('.x-clbl').textContent = CATS[i].label;
+      while (!free(c, r)) { r++; if (r >= ROWS) { r = 0; c++; } }       // column by column, top to bottom
+      take(c, r, 1, 1); slots.push({ c, r, w: 1, h: 1 });
     });
+    this.slots = slots.map((s) => ({ x: L + s.c * (U + G), y: TOP + s.r * (H + G), w: s.w * U + (s.w - 1) * G, h: s.h * H + (s.h - 1) * G }));
   },
 
   position() {
-    const items = list(), s = sel(), c = this.cfg;
-    const selCol = this.metro ? Math.floor(s / c.rows) : s;
+    const items = list(), s = sel(), cur = this.slots[s];
+    if (cur) {
+      if (this.mode === 'list') {
+        const top = this.LIST_TOP, bot = this.LIST_BOT;
+        if (cur.y - this.scroll < top) this.scroll = cur.y - top;
+        if (cur.y + this.ROW - this.scroll > bot) this.scroll = cur.y + this.ROW - bot;
+        this.scroll = Math.max(0, this.scroll);
+      } else {
+        if (cur.x - this.scroll < this.L) this.scroll = cur.x - this.L;
+        if (cur.x + cur.w - this.scroll > this.R) this.scroll = cur.x + cur.w - this.R;
+        this.scroll = Math.max(0, this.scroll);
+      }
+    }
+    const list_ = this.mode === 'list';
     columnEls.forEach((el, i) => {
-      const on = i === s;
-      const col = this.metro ? Math.floor(i / c.rows) : i;
-      const row = this.metro ? i % c.rows : 0;
-      const x = c.surfaceX + (col - selCol) * (c.tileW + c.gap);
-      const y = c.surfaceY + row * (c.tileH + c.gap);
+      const p = this.slots[i]; if (!p) return;
+      const x = list_ ? p.x : p.x - this.scroll, y = list_ ? p.y - this.scroll : p.y;
       el.style.transform = `translate(${x}px, ${y}px)`;
-      el.classList.toggle('on', on);
-      el.classList.toggle('dim', !on);
-      el.style.opacity = Math.abs(col - selCol) > c.cull ? 0 : '';
-      // the selected tile's own .txt is what CSS lifts out into the detail region; this
-      // offset is what keeps that region pinned to the stage whatever row the tile is on
-      el.style.setProperty('--detail-dy', `${c.stripY - y}px`);
-      if (Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
+      el.style.width = `${p.w}px`; el.style.height = `${p.h}px`;
+      el.classList.toggle('on', i === s);
+      el.classList.toggle('dim', false);
+      el.classList.toggle('hero', !list_ && p.w > this.U);
+      const off = list_ ? (y < this.LIST_TOP - this.ROW || y > this.LIST_BOT) : (x + p.w < 0 || x > 1920);
+      el.style.opacity = off ? 0 : '';
+      el.style.visibility = off ? 'hidden' : '';
+      if (!off || Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
     });
+    this.detail();
   },
 
-  render() {
-    document.body.classList.toggle('infolder', S.stack.length > 0);
-    $('#crumb').hidden = true;          // the rail / pane header carries the title
-    this.renderCats();
-    this.renderColumn(true);
+  // what the selected thing is: under the tiles, or in a pane beside the list
+  detail() {
+    const it = list()[sel()], d = $('.x-detail');
+    if (!d) return;
+    d.hidden = !it || it.key === 'loading';
+    if (d.hidden) return;
+    $('.x-d-label').textContent = gl(it.label || '');
+    $('.x-d-sub').textContent = gl(it.sub || '');
+    $('.x-d-badge').textContent = it.badge || '';
+    $('.x-d-badge').hidden = !it.badge;
+    const bar = $('.x-d-bar');
+    bar.hidden = it.progress == null;
+    if (it.progress != null) bar.firstElementChild.style.width = `${(it.progress * 100).toFixed(1)}%`;
+    const art = $('.x-d-art');
+    if (this.mode === 'list') {
+      art.hidden = false;
+      if (it.art) { art.className = `x-d-art pic${it.artShape ? ' ' + it.artShape : ''}`; art.style.backgroundImage = `url("${it.art}")`; art.innerHTML = ''; }
+      else { art.className = 'x-d-art ic'; art.style.backgroundImage = ''; art.innerHTML = icon(it.icon || 'info'); }
+    } else art.hidden = true;
+  },
+  patched() { this.detail(); },
+
+  hint() {
+    const it = list()[sel()];
+    const parts = [];
+    if (it && (it.action || it.children)) parts.push(`${glb('ok')}<span>select</span>`);
+    if (S.stack.length) parts.push(`${glb('back')}<span>back</span>`);
+    if (it?.options?.length) parts.push(`${glb('menu')}<span>options</span>`);
+    if (!S.stack.length) parts.push(`${glb('prev')}${glb('next')}<span>change pivot</span>`);
+    $('#hint').innerHTML = parts.join('');
   },
 
-  // NXE flips the axes: up/down walks channels, left/right walks the tile strip.
-  // Metro keeps up/down inside a column and pages the whole view at the column edges.
+  // ---------------------------------------------------------------- moving
   moveV(d) {
-    if (this.metro) {
-      const n = list().length, s = sel(), rows = this.cfg.rows;
-      const row = s % rows, col = Math.floor(s / rows);
-      if (row + d < 0 || row + d >= rows) return;
-      const i = col * rows + row + d;
-      if (i >= n) return;                            // ragged last column
-      setSel(i); Sfx.move(); this.position(); this.hint();
-      return;
-    }
-    this.goChannel(d);
+    if (this.mode === 'list') return this.step(sel() + d);
+    this.spatial(0, d);
   },
-
   moveH(d) {
-    const n = list().length, s = sel();
-    if (!this.metro) {
-      if (S.stack.length && d < 0 && s === 0) return back();   // left out of a folder
-      if (!n) return;
-      const i = Math.max(0, Math.min(n - 1, s + d));
-      if (i !== s) { setSel(i); Sfx.move(); this.position(); this.hint(); }
-      return;
+    if (this.mode === 'list') { if (d < 0 && S.stack.length) back(); return; }
+    if (!this.spatial(d, 0)) {
+      if (!S.stack.length) this.pivot(d);              // off the end of the tiles: the next pivot
+      else if (d < 0) back();
     }
-    const rows = this.cfg.rows;
-    const col = Math.floor(s / rows), row = s % rows;
-    const lastCol = Math.floor(Math.max(0, n - 1) / rows);
-    if (col + d < 0 || col + d > lastCol) {          // off the grid: page, or leave the folder
-      if (S.stack.length) { if (d < 0) back(); return; }
-      return this.goChannel(d);
-    }
-    const i = Math.min(n - 1, (col + d) * rows + row);
-    if (i !== s) { setSel(i); Sfx.move(); this.position(); this.hint(); }
+  },
+  step(i) {
+    const n = list().length; if (!n) return false;
+    i = Math.max(0, Math.min(n - 1, i));
+    if (i === sel()) return false;
+    setSel(i); Sfx.move(); this.position(); this.hint();
+    return true;
+  },
+  // the nearest tile that way, preferring ones in line with this one
+  spatial(dx, dy) {
+    const s = sel(), a = this.slots[s]; if (!a) return false;
+    const ac = { x: a.x + a.w / 2, y: a.y + a.h / 2 };
+    let best = -1, score = Infinity;
+    this.slots.forEach((b, j) => {
+      if (j === s) return;
+      const bc = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+      const along = dx ? (bc.x - ac.x) * dx : (bc.y - ac.y) * dy;
+      if (along <= 4) return;
+      const overlap = dx ? Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) : Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+      const across = overlap > 0 ? 0 : Math.abs(dx ? bc.y - ac.y : bc.x - ac.x);
+      const sc = along + across * 3;
+      if (sc < score) { score = sc; best = j; }
+    });
+    return best >= 0 && this.step(best);
+  },
+  pivot(d) {
+    if (S.stack.length) return false;
+    S.ci = (S.ci + d + CATS.length) % CATS.length;
+    Sfx.move(); this.render();
+    refresh(CATS[S.ci].id);
+    return true;
+  },
+  // LB / RB: pivots on the top level, a page at a time in a folder
+  bumper(d) {
+    if (!S.stack.length) return this.pivot(d);
+    if (this.mode === 'list') return this.step(sel() + d * 8) || true;
+    const s = sel(), a = this.slots[s];
+    const target = a.x + d * (this.R - this.L);
+    let best = s, dist = Infinity;
+    this.slots.forEach((b, j) => { const v = Math.abs(b.x - target) + Math.abs(b.y - a.y) * 2; if (v < dist) { dist = v; best = j; } });
+    this.step(best);
+    return true;
   },
 
-  goChannel(d) {
-    if (S.stack.length) return;
-    const i = Math.max(0, Math.min(CATS.length - 1, S.ci + d));
-    if (i === S.ci) return;
-    S.ci = i; Sfx.move(); this.render();
-    refresh(CATS[i].id);                 // without this the new channel shows the old tiles
+  // ---------------------------------------------------------------- the Guide (Quick Menu)
+  renderQuick(q) {
+    const root = $('#quick');
+    let g = root.querySelector('.x-guide');
+    if (!g) {
+      g = document.createElement('div');
+      g.className = 'x-guide';
+      g.innerHTML = `<div class="xg-top"><div class="xg-pic"></div><div class="xg-who"><div class="xg-tag"></div><div class="xg-now"></div></div><div class="xg-time"></div></div>
+        <div class="xg-tabs"></div><div class="xg-rows"></div><div class="xg-foot"></div>`;
+      root.appendChild(g);
+    }
+    const d = q.data || {}, st = S.state || {};
+    g.querySelector('.xg-pic').textContent = (st.user || 'P').charAt(0).toUpperCase();
+    g.querySelector('.xg-tag').textContent = st.user || 'Player';
+    g.querySelector('.xg-now').textContent = d.app ? `Playing ${d.app.title}` : 'In the dashboard';
+    g.querySelector('.xg-time').textContent = $('#clock-time')?.textContent || '';
+    g.querySelector('.xg-tabs').innerHTML = q.tabs().map(([p, ic, label]) =>
+      `<div class="xg-tab ${p === q.page ? 'on' : ''}"><div class="xg-ti">${icon(ic === 'home' ? 'users' : ic)}</div><div class="xg-tl">${esc(label.toLowerCase())}</div></div>`).join('');
+    g.querySelector('.xg-rows').innerHTML = q.rows.map((r, i) => `
+      <div class="xg-row ${i === q.sel ? 'on' : ''}">
+        <div class="xg-ico">${r.art ? `<div class="xg-art" style="background-image:url('${esc(r.art)}')"></div>` : icon(r.icon)}</div>
+        <div class="xg-txt"><div class="xg-label">${esc(r.label.replace(/ ▸$/, ''))}</div><div class="xg-sub">${esc(gl(r.sub || ''))}</div>
+          ${r.bar != null ? `<div class="xg-bar"><i style="width:${(r.bar * 100).toFixed(1)}%"></i></div>` : ''}</div>
+        ${/ ▸$/.test(r.label) ? '<div class="xg-more">›</div>' : ''}
+      </div>`).join('');
+    const r = q.rows[q.sel];
+    g.querySelector('.xg-foot').innerHTML = `${glb('ok')}<span>select</span>${r?.adjust ? '<b class="glyph xg-dpad">◀ ▶</b><span>adjust</span>' : ''}${glb('back')}<span>${q.page === 'main' ? 'close' : 'back'}</span>${glb('prev')}${glb('next')}<span>tabs</span>`;
+    g.querySelector('.xg-row.on')?.scrollIntoView({ block: 'nearest' });
+    return true;
   },
 };
 
-// One look, three eras; Settings only offers the ones registered here.
-Shell.register('x360', { eras: { blades: BladeShell, nxe: TileShell, metro: TileShell } });
+// the dashboard's own words for some categories (lowercase, short, like its pivots)
+const PIVOT_NAMES = { users: 'profile', game: 'games', photo: 'pictures', tv: 'tv' };
+const pivotName = (c) => (PIVOT_NAMES[c.id] || c.label).toLowerCase();
+
+const X360_BG_NAMES = { light: 'Light', dark: 'Dark', green: 'Green', picture: 'Theme picture' };
+const X360_ACCENT_NAMES = { green: 'Green', blue: 'Blue', orange: 'Orange', pink: 'Pink', purple: 'Purple', red: 'Red', silver: 'Silver' };
+
+Shell.register('x360', X360);

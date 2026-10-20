@@ -78,7 +78,7 @@ const PS_SVG = {
 const glb = (a) => {
   const g = gl(`{${a}}`);
   const svg = PS_SVG[g] ? `<svg viewBox="0 0 24 24" aria-label="${g}" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round">${PS_SVG[g]}</svg>` : esc(g);
-  return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}${PS_SVG[g] ? ' sym' : ''}" data-g="${esc(g)}">${svg}</b>`;
+  return `<b class="glyph g-${S.state?.glyphs?.style || 'xbox'}${PS_SVG[g] ? ' sym' : ''}" data-g="${esc(g)}" data-a="${esc(a)}">${svg}</b>`;
 };
 function applyGlyphs() {   // the few hints that live in the page itself
   $('#viewer .v-hint').innerHTML = `<b>◀ ▶</b>Browse ${glb('ok')}Slideshow ${glb('back')}Back ${glb('menu')}Hide info`;
@@ -124,6 +124,7 @@ const Dialog = {
     $('.dlg-fields').innerHTML = fields.map((f, i) =>
       `<label>${esc(f.label)}</label><input data-k="${esc(f.key)}" type="${f.secret ? 'password' : 'text'}" value="${esc(f.value || '')}" spellcheck="false">`).join('');
     this.renderButtons();
+    $('.dlg-buttons').classList.remove('dim');      // left over from a dialog that had text fields
     $('#dialog').hidden = false;
     const first = $('.dlg-fields input');
     this.fi = first ? 0 : -1;               // controller focus: a field index, or -1 = the buttons
@@ -176,9 +177,10 @@ const Dialog = {
       else if (action === 'back') this.close(null);
       return;
     }
-    if (action === 'up' && n) { this.fi = n - 1; this.padFocus(); Sfx.move(); }
-    else if (action === 'left') this.move(-1);
-    else if (action === 'right') this.move(1);
+    const vert = Shell.active?.dialogVertical;
+    if (action === 'up' && n && (!vert || this.sel === 0)) { this.fi = n - 1; this.padFocus(); Sfx.move(); }
+    else if (action === (vert ? 'up' : 'left')) this.move(-1);
+    else if (action === (vert ? 'down' : 'right')) this.move(1);
     else if (action === 'ok') this.close(this.sel);
     else if (action === 'back') this.close(null);
   },
@@ -219,12 +221,18 @@ function groupOptions(list) {
   const risky = out.filter((o) => /^(Delete|Uninstall|Remove)/.test(o.label));
   return [...out.filter((o) => !risky.includes(o)), ...risky];
 }
+// what an Options panel opened from the menu is about (the highlighted row)
+function list_title() { try { return list()[sel()]?.label || ''; } catch (e) { return ''; } }
 const Options = {
   open: false, sel: 0, list: [],
   offset: 0,
   show(list, sel = 0, parent = null) {
     if (!list?.length) return;
-    if (!parent) list = groupOptions(list);
+    if (!parent) {
+      list = groupOptions(list);
+      $('#options').dataset.title = this.title || (QuickMenu.open ? '' : list_title());
+      this.title = '';
+    }
     this.parent = parent;
     this.list = list; this.sel = sel; this.offset = 0; this.open = true;
     $('#options').hidden = false; this.render(); Sfx.ok();
@@ -236,7 +244,7 @@ const Options = {
       this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}${o.group ? ' grp' : ''}">${esc(gl(o.label))}</div>`).join('');
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
-    const TOP = 380, MIN = 140, MAX = 960;
+    const { TOP, MIN, MAX } = Shell.active?.optionsGeom || { TOP: 380, MIN: 140, MAX: 960 };
     const row = el.children[this.sel + (this.parent ? 1 : 0)];
     const y = TOP + this.offset + row.offsetTop;
     if (y < MIN) this.offset += MIN - y;
@@ -511,43 +519,47 @@ function ensureArt(el, it) {
 }
 
 // ---------------------------------------------------------------- shell seam
-// The *drawing* half of the menu is swappable: Settings › Theme › Interface picks one
-// (the XMB below, or one of the Xbox 360 dashboards in x360.js). Everything else —
-// the item model, folders, Options, dialogs, input, polling — is shared.
+// The front end is swappable: Settings › Theme › Interface picks a *look* — the XMB below,
+// or the Xbox 360 dashboard (x360.js). A look draws the menu and dresses the shared pieces;
+// everything underneath — the item model, folders, actions, Options, dialogs, the Quick
+// Menu's rows, input, polling — is one implementation, so both looks run the same commands.
 //
-// A shell provides: setup teardown resetCats render renderCats renderColumn position
-// itemEl hint moveV moveH. A look with several variants registers an `eras` map of
-// era id -> implementation instead, and Settings offers a second row to pick between them.
+// A look provides: setup teardown resetCats render renderCats renderColumn position itemEl
+// hint moveV moveH, and may add:
+//   configure(state)   apply its settings (called on every state update: keep it cheap)
+//   bumper(d)          LB / RB on the menu; return true if used (else they skip tracks)
+//   patched()          a running download changed some rows' text / progress
+//   dialogVertical     dialog buttons stack vertically (up / down choose)
+//   optionsGeom        {TOP, MIN, MAX}: where the Options list sits and may slide to
+//   renderQuick(q)     draw the Quick Menu (q = QuickMenu: rows, sel, page, data); true if drawn
+//   quickTabs          the Quick Menu has tabs (LB / RB, QuickMenu.bumper)
 //
 // It must also keep to the *item node contract*, because the shared code reaches into
-// the nodes a shell built:
+// the nodes a look built:
 //   · the root element has class "item"                    (ensureArt, patchJobRows)
 //   · it holds a .txt wrapper containing a .sub, and a .bar > i when progress != null
 //   · columnEls[i] is the node for list()[i] — index-parallel, whatever the visual order
 // Break the last one and a running download's progress bar lands on the wrong game.
 let columnEls = [];
 const Shell = {
-  id: 'xmb', era: null, impls: {},
+  id: 'xmb', impls: {},
   artWindow: 8,                             // rows either side of the cursor that load artwork
   register(id, impl) { this.impls[id] = impl; },
-  eraList(id) { const s = this.impls[id]; return s?.eras ? Object.keys(s.eras) : null; },
-  get active() {
-    const s = this.impls[this.id];
-    return s?.eras ? s.eras[this.era] : s;
-  },
-  // Called from applyState, so on every /api/state: a no-op unless the setting changed.
-  apply(iface, era) {
+  get active() { return this.impls[this.id]; },
+  // Called from applyState, so on every /api/state: rebuilds only when the look changed;
+  // configure() (background, accent…) runs every time and must be cheap.
+  apply(iface) {
     const id = this.impls[iface] ? iface : 'xmb';     // unknown look (old config, new backend): XMB
-    const eras = this.eraList(id);                    // looks without eras ignore the setting
-    const e = eras ? (eras.includes(era) ? era : eras[0]) : null;
-    document.body.dataset.shell = id;        // set before the early return, so a theme
-    document.body.dataset.era = e || '';     // reload can never lose the CSS scope
-    if (id === this.id && e === this.era) return;
+    document.body.dataset.shell = id;        // set before the early return, so a theme reload can never lose the CSS scope
+    if (id === this.id) { this.active?.configure?.(S.state); return; }
     this.active?.teardown?.();
-    this.id = id; this.era = e; columnEls = [];
+    if (Options.open) Options.hide();
+    this.id = id; columnEls = [];
     this.active.setup?.();
+    this.active.configure?.(S.state);
     // only the DOM is rebuilt: S.stack/S.ci/S.catSel/S.items survive, so you keep your place
     if (S.state) render();
+    if (QuickMenu.open) QuickMenu.render();
   },
   resetCats() { this.active?.resetCats?.(); },
 };
@@ -679,7 +691,12 @@ function confirm() {
   if (it.action) { Sfx.ok(); it.action(); }
 }
 function back() { if (S.stack.length) { S.stack.pop(); Sfx.back(); render(); } }
-function options() { const it = list()[sel()]; if (it?.options) Options.show(it.options); }
+function options() {
+  const it = list()[sel()];
+  if (!it?.options) return;
+  Options.title = it.label || '';       // the Dashboard's options flyout is headed by what it's for
+  Options.show(it.options);
+}
 
 function handle(action) {
   if (Osk.open) return Osk.handle(action);
@@ -688,8 +705,9 @@ function handle(action) {
   if (Viewer.open && !Dialog.open) return Viewer.handle(action);
   if (Dialog.open) {
     if (Dialog.fields().length) return Dialog.pad(action);
-    if (action === 'left') Dialog.move(-1);
-    else if (action === 'right') Dialog.move(1);
+    const vert = Shell.active?.dialogVertical && Dialog.buttons.length > 1;   // the 360 stacks its buttons
+    if (action === (vert ? 'up' : 'left')) Dialog.move(-1);
+    else if (action === (vert ? 'down' : 'right')) Dialog.move(1);
     else if (action === 'up' || action === 'down') Dialog.scroll(action === 'down' ? 1 : -1);   // long text
     else if (action === 'ok') Dialog.close(Dialog.sel);
     else if (action === 'back') Dialog.close(null);
@@ -725,6 +743,10 @@ const ACTION = { menu: 'opt' };
 function act(action) {
   if (Osk.open) return Osk.handle(action);            // the keyboard has the controller while it's up
   if (action === 'home') return QuickMenu.toggle();
+  if ((action === 'prev' || action === 'next') && !Dialog.open && !Options.open && !Osk.open) {
+    const d = action === 'next' ? 1 : -1;
+    if (QuickMenu.open ? QuickMenu.bumper?.(d) : (!Viewer.open && !Term.open && Shell.active?.bumper?.(d))) return;
+  }
   if ((action === 'prev' || action === 'next' || action === 'toggle') && !Dialog.open) return mediaKey(action);
   handle(ACTION[action] || action);
 }
@@ -909,7 +931,7 @@ async function mediaKey(action) {
 
 // ---------------------------------------------------------------- polling
 function applyState() {
-  Shell.apply(S.state.interface, S.state.era);   // Settings › Theme › Interface; a no-op if unchanged
+  Shell.apply(S.state.interface);   // Settings › Theme › Interface; rebuilds only if it changed
   Waves.setTheme(S.state.theme);
   applyGlyphs();
   $('#demo-badge').hidden = !S.state.demo;
@@ -977,6 +999,7 @@ function patchJobRows(jobs) {
     const bar = el.querySelector('.bar i'); if (bar) bar.style.width = `${(it.progress * 100).toFixed(1)}%`;
     else if (it.progress != null) { const t = el.querySelector('.txt'); if (t) t.insertAdjacentHTML('beforeend', `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>`); }
   });
+  Shell.active?.patched?.();                // a look with a detail panel refreshes it
 }
 setInterval(pollJobs, 1000);
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
