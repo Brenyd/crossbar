@@ -22,7 +22,7 @@ PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", 
 # The Guide (looks whose look.json says "overlay": {"style": "guide"}, like the Dashboard): the
 # same rows, grouped into tabs walked with LB / RB; Home is where it opens. Which rows each
 # tab shows, by row key:
-GUIDE_TABS = [("games", "Games & Apps", "applications-games-symbolic"), ("media", "Media", "audio-x-generic-symbolic"),
+GUIDE_TABS = [("games", "Games & Apps", "applications-games-symbolic"), ("media", "Media", "media-playback-start-symbolic"),
               ("main", "Home", "go-home-symbolic"), ("social", "Social", "system-users-symbolic"),
               ("guide-settings", "Settings", "emblem-system-symbolic")]
 GUIDE_ROWS = {"main": ["resume", "close", "browser", "home", "media", "look", "power"],
@@ -345,7 +345,7 @@ class Model:
         if m:
             def ctl(a):
                 return lambda: (api.post("/api/music/control", {"action": a}), self.refresh())
-            rows.append({"key": "media", "icon": "audio-x-generic-symbolic", "label": m.get("title") or "Music",
+            rows.append({"key": "media", "icon": "media-playback-start-symbolic", "label": m.get("title") or "Music",
                          "sub": f"{(m.get('artist') + ' · ') if m.get('artist') else ''}{'Paused' if m.get('paused') else 'Playing'}"
                                 f" · {fmt(m.get('position'))} / {fmt(m.get('duration'))}",
                          "bar": (m["position"] / m["duration"]) if m.get("duration") else None,
@@ -354,7 +354,7 @@ class Model:
         elif sp:
             def sctl(a):
                 return lambda: (api.post("/api/spotify/control", {"action": a}), self.refresh())
-            rows.append({"key": "media", "icon": "audio-x-generic-symbolic", "label": sp.get("name") or "Spotify",
+            rows.append({"key": "media", "icon": "media-playback-start-symbolic", "label": sp.get("name") or "Spotify",
                          "sub": f"Spotify · {sp.get('artist', '')}{'' if sp.get('here') else ' · on ' + str(sp.get('device'))}"
                                 f" · {'Playing' if sp.get('playing') else 'Paused'}",
                          "bar": (sp["position"] / sp["duration"]) if sp.get("duration") else None,
@@ -413,7 +413,7 @@ class Model:
             def swap(dd):
                 api.post("/api/settings", {"interface": ids[(i + (1 if dd > 0 else -1)) % len(ids)]})
                 self.refresh()
-            rows.append({"key": "look", "icon": "preferences-desktop-theme-symbolic", "label": "Interface",
+            rows.append({"key": "look", "icon": "view-grid-symbolic", "label": "Interface",
                          "sub": looks[i]["name"], "hint": "◀ ▶ or {ok} switch", "ok": lambda: swap(1), "adjust": swap})
         rows.append({"key": "go-social", "icon": "system-users-symbolic", "label": "Social", "sub": "Friends, chat, voice — in the menu",
                      "ok": lambda: api.post("/api/overlay/open", {"cat": "party"})})

@@ -217,10 +217,11 @@ body[data-shell="x360"] .toast .ico .i { color: #fff; filter: none; }
 body[data-shell="x360"] #quick .q-panel { display: none; }
 body[data-shell="x360"] #quick .q-shade, body[data-shell="x360"] #quick:not(.has-shot) .q-shade { background: rgba(0,0,0,.55); }
 body:not([data-shell="x360"]) #quick .x-guide { display: none; }
-.x-guide { position: absolute; left: 150px; top: 80px; bottom: 80px; width: 840px; display: flex; flex-direction: column; color: #fff;
+/* centred, about half the screen — the 360's Guide is a box in the middle, not a side panel */
+.x-guide { position: absolute; left: 480px; top: 220px; width: 960px; height: 640px; display: flex; flex-direction: column; color: #fff;
   background: linear-gradient(#2e2f33, #1c1d20); box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12);
   animation: x-guide .25s var(--ease); font-family: var(--x-font); }
-@keyframes x-guide { from { transform: translateX(-60px); opacity: 0; } }
+@keyframes x-guide { from { scale: .94; opacity: 0; } }
 .xg-top { display: flex; align-items: center; gap: 20px; padding: 30px 36px 22px; }
 .xg-pic { width: 72px; height: 72px; flex: none; display: grid; place-items: center; font-size: 38px;
   background: linear-gradient(135deg, var(--x-accent-2), var(--x-accent)); }
@@ -273,3 +274,19 @@ body[data-shell="x360"] .osk-key.on { box-shadow: none; transform: none; }
 .xg-tab { flex: 1; width: auto; }
 .xg-tab.home .xg-ti { width: 54px; height: 54px; margin-top: -4px; }
 .xg-head { padding: 14px 36px 0; font-size: 22px; color: rgba(255,255,255,.6); text-transform: lowercase; }
+
+/* the Guide, compact like the 360's */
+.xg-top { padding: 22px 30px 12px; }
+.xg-pic { width: 58px; height: 58px; font-size: 30px; }
+.xg-tag { font-size: 26px; }
+.xg-tab { padding: 8px 0 10px; }
+.xg-tab .xg-ti { width: 36px; height: 36px; margin-bottom: 4px; }
+.xg-tab.home .xg-ti { width: 42px; height: 42px; margin-top: -3px; }
+.xg-tab .xg-tl { font-size: 17px; }
+.xg-head { padding: 10px 30px 0; font-size: 19px; }
+.xg-rows { padding: 8px 0; }
+.xg-row { padding: 8px 30px; gap: 18px; }
+.xg-ico, .xg-art { width: 40px; height: 40px; }
+.xg-label { font-size: 23px; }
+.xg-sub { font-size: 16px; }
+.xg-foot { padding: 12px 30px 16px; font-size: 18px; }

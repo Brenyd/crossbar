@@ -73,11 +73,11 @@ def guide_css(scale, look):
     text, dim = look.get("text", "#ffffff"), look.get("dim", "rgba(255,255,255,0.62)")
     return f"""
     .panel.guide {{ background: linear-gradient({p1}, {p2}); padding: 0; border-radius: 0;
-      box-shadow: 0 {px(20)} {px(60)} rgba(0,0,0,0.6); margin: {px(70)} 0 {px(70)} {px(140)}; }}
-    .panel.guide .g-top {{ padding: {px(26)} {px(32)} {px(16)}; }}
-    .panel.guide .g-pic {{ background: linear-gradient(135deg, {acc2}, {acc}); color: white; font-size: {px(34)};
-      min-width: {px(68)}; min-height: {px(68)}; }}
-    .panel.guide .g-name {{ color: {text}; font-size: {px(28)}; }}
+      box-shadow: 0 {px(20)} {px(60)} rgba(0,0,0,0.6); }}
+    .panel.guide .g-top {{ padding: {px(20)} {px(30)} {px(10)}; }}
+    .panel.guide .g-pic {{ background: linear-gradient(135deg, {acc2}, {acc}); color: white; font-size: {px(28)};
+      min-width: {px(56)}; min-height: {px(56)}; }}
+    .panel.guide .g-name {{ color: {text}; font-size: {px(24)}; }}
     .panel.guide .g-now, .panel.guide .g-time {{ color: {dim}; font-size: {px(18)}; }}
     .panel.guide .g-time {{ font-size: {px(24)}; }}
     .panel.guide .g-tabs {{ padding: 0 {px(24)}; border-bottom: 1px solid rgba(255,255,255,0.12); }}
@@ -85,14 +85,17 @@ def guide_css(scale, look):
     .panel.guide .g-tab label {{ font-size: {px(17)}; }}
     .panel.guide .g-tab.on {{ color: {text}; border-bottom-color: {acc2}; }}
     .panel.guide .g-head {{ color: {dim}; font-size: {px(20)}; padding: {px(12)} {px(32)} 0; }}
-    .panel.guide .rows {{ padding: {px(12)} 0; }}
-    .panel.guide .row {{ border-radius: 0; padding: {px(12)} {px(32)}; color: rgba(255,255,255,0.86); }}
+    .panel.guide .rows {{ padding: {px(8)} 0; }}
+    .panel.guide .g-tab image {{ -gtk-icon-size: {px(28)}; }}
+    .panel.guide .row {{ border-radius: 0; padding: {px(7)} {px(30)}; color: rgba(255,255,255,0.86); }}
+    .panel.guide .label {{ font-size: {px(21)}; }}
+    .panel.guide .sub {{ font-size: {px(15)}; }}
     .panel.guide .row.on {{ background: {acc}; color: white; box-shadow: none; }}
     .panel.guide .row.on .sub {{ color: rgba(255,255,255,0.85); }}
     .panel.guide .row.danger.on {{ background: #a4161a; }}
     .panel.guide .label {{ font-weight: 400; }}
     .panel.guide progressbar progress {{ background: {acc2}; }}
-    .panel.guide .foot {{ padding: {px(14)} {px(32)} {px(20)}; border-top: 1px solid rgba(255,255,255,0.12); margin: 0; }}
+    .panel.guide .foot {{ padding: {px(10)} {px(30)} {px(14)}; border-top: 1px solid rgba(255,255,255,0.12); margin: 0; }}
     .panel.guide .notice {{ padding: 0 {px(32)}; }}
     """
 
@@ -191,7 +194,7 @@ class Overlay(Gtk.Application):
             t = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=int(4 * scale))
             t.add_css_class("g-tab")
             img = Gtk.Image.new_from_icon_name(icon)
-            img.set_pixel_size(int((40 if key == "main" else 32) * scale))
+            img.set_pixel_size(int((34 if key == "main" else 28) * scale))
             t.append(img)
             t.append(Gtk.Label(label=label.lower()))
             self.g_tabs.append(t)
@@ -216,11 +219,22 @@ class Overlay(Gtk.Application):
         for w in (self.g_top, self.g_tabs, self.g_head, self.kicker, self.title, sep, self.rows, self.notice, self.foot):
             panel.append(w)
         self.panel, self.look_sig = panel, None
+        # layout: the XMB's panel runs down the left edge; the Guide sits centred, a fixed size
+        # like the 360's (style_for_look switches): [shade-left] [column: panel] [shade]
         shade = Gtk.Box()
         shade.add_css_class("shade")
         shade.set_hexpand(True)
-        root.append(panel)
+        shade_l = Gtk.Box()
+        shade_l.add_css_class("shade")
+        shade_l.set_hexpand(True)
+        shade_l.set_visible(False)
+        col = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        col.append(panel)
+        root.append(shade_l)
+        root.append(col)
         root.append(shade)
+        self.shade_l, self.col, self.screen = shade_l, col, (width, height)
+        self.panel_w = int(min(width * 0.40, 760 * scale))
         win.set_child(root)
 
         keys = Gtk.EventControllerKey()
@@ -229,7 +243,8 @@ class Overlay(Gtk.Application):
 
         self.win, self.scale = win, scale
         # rows that fit between the header and the footer; the list scrolls past that
-        self.max_rows = max(4, int((height - 330 * scale) / (92 * scale)))
+        self.max_rows = self.panel_rows = max(4, int((height - 330 * scale) / (92 * scale)))
+        self.guide_rows = 6
         self.offset = 0
         self.make_hud(scale)
         self.glyph_data = {}
@@ -371,6 +386,15 @@ class Overlay(Gtk.Application):
         self._load_css(self.provider, css(self.css_scale, self.theme) + guide_css(self.css_scale, look))
         guide = look.get("style") == "guide"
         (self.panel.add_css_class if guide else self.panel.remove_css_class)("guide")
+        # the Guide: centred on the screen, 960 × 640 at 1080p (the 360's Guide is a box in the
+        # middle, about half the screen wide); the panel: full height down the left
+        s = self.scale
+        self.shade_l.set_visible(guide)
+        (self.col.add_css_class if guide else self.col.remove_css_class)("shade")
+        self.panel.set_valign(Gtk.Align.CENTER if guide else Gtk.Align.FILL)
+        self.panel.set_vexpand(not guide)
+        self.panel.set_size_request(int(960 * s) if guide else self.panel_w, int(640 * s) if guide else -1)
+        self.max_rows = self.guide_rows if guide else self.panel_rows
         for w in (self.g_top, self.g_tabs):
             w.set_visible(guide)
         for w in (self.kicker, self.title, self.sep):
