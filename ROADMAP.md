@@ -13,9 +13,11 @@ These shipped but don't work properly yet. They come before any new features.
 
 | | Area | What's wrong | Since |
 |---|---|---|---|
-| 🔧 | **VPN split tunnelling** | Apps chosen to use the VPN don't reliably go through it, and the leak tests and Check Split Tunneling still fail on a real install | 1.1 |
-| 🔧 | **VPN port forwarding** | PIA port forwarding doesn't get or keep a port, so Torrents can't use a forwarded port | 1.1 |
-| 🔧 | **Torrent search plugins** | Searching through qBittorrent's plugins doesn't return results. Adding a `.torrent` file or a magnet link works | 1.1 |
+| 🧪 | **VPN split tunnelling** | VPN apps lost DNS whenever Crossbar restarted (and OpenVPN never had it). Fixed in 1.2.3, with a DNS Through the VPN setting; needs confirming on the PS5 | 1.1 |
+| 🧪 | **VPN port forwarding** | Only started on reconnect and gave up after one failure. 1.2.3 starts it straight away, retries, survives restarts, opens the firewall and adds Check Port Forwarding; needs confirming | 1.1 |
+| 🧪 | **Torrents through the VPN** | The engine stayed bound to the previous connection's address. 1.2.3 rebinds on every connect; needs confirming | 1.1 |
+| 🧪 | **Torrent search plugins** | No results (the DNS problem above). 1.2.3 fixes DNS, adds Sort, and says why when nothing is found; needs confirming | 1.1 |
+| 🧪 | **Leak tests** | The torrent test relied on a third-party page; rebuilt in 1.2.3 to check the engine directly. DNS test explains systemd-resolved leaks; needs confirming | 1.1 |
 | 🧪 | **Heavy games on the PS5** | Cyberpunk 2077 froze the console while loading, then left a black screen. 1.2.2 adds Memory Guard, the black-screen fix and quieter background work; it needs confirming on the PS5 | 1.2.2 |
 | 🧪 | **Quick Menu and controller on every machine** | Overlay, controller hand-off and YouTube keys need reports from more hardware | 0.7 |
 
@@ -33,6 +35,14 @@ These shipped but don't work properly yet. They come before any new features.
 Newest first. Each version lists what it added; ⚠️ marks features that still need work (see *Now* above).
 
 ### 1.2 series: two interfaces, and staying out of the game's way
+
+**1.2.3 Alpha**
+- 🧪 VPN apps' DNS kept working across Crossbar restarts, and for OpenVPN; **DNS Through the VPN** setting
+- 🧪 Port forwarding: instant on/off, retries, survives restarts, same port kept, firewall opened, Check Port Forwarding
+- 🧪 Torrents rebind to each new VPN address
+- 🧪 Torrent IP leak test rebuilt (no third-party page); clearer DNS leak test
+- ✅ **Torrent search sorting**: Seeds, Leechers, File Size, Upload Date, Name, Site; results show their age
+- ✅ "Nothing found" explains whether it's DNS, the connection or the plugins
 
 **1.2.2 Alpha**
 - ✅ **Memory Guard:** closes a game that runs the console out of memory, instead of letting everything freeze

@@ -112,7 +112,13 @@ def start():
     for _ in range(60):
         time.sleep(0.25)
         if running():
-            _apply_vpn_binding()
+            _apply_vpn_binding(rebind=True)
+            try:                                          # a port the VPN already forwards
+                from . import vpn as _v
+                if _v._state.get("pf_port"):
+                    on_vpn_port(_v._state["pf_port"])
+            except Exception:
+                pass
             return True
         if _proc["p"].poll() is not None:
             raise TorrentError("The torrent engine stopped right away (see ~/.cache/crossbar-torrent.log)")
@@ -386,15 +392,28 @@ def toggle_alt_speed():
     return summary()
 
 
-def _apply_vpn_binding():
-    """"Only use the VPN": bound to the VPN's interface (WireGuard cbvpn / OpenVPN cbtun)."""
+def _apply_vpn_binding(rebind=False):
+    """"Only use the VPN": bound to the VPN's interface (WireGuard cbvpn / OpenVPN cbtun) and its
+    current address. Each connection gets a new address (PIA hands one out per connection), and
+    the engine doesn't always notice, so on (re)connect it's given the new one explicitly: the
+    changed setting makes it reopen its connections there."""
     if not prefs_local().get("vpn_only"):
         return
     from . import vpn
     iface = vpn.TUN if vpn.cfg().get("protocol") == "openvpn" else vpn.CONN
+    addr = ""
+    if rebind and vpn.nm_state() == "activated":
+        addr = vpn._vpn_addr() or ""
     try:
+        if not running():
+            return
+        cur = _req("GET", "/api/v2/app/preferences") or {}
+        if cur.get("current_network_interface") == iface and cur.get("current_interface_address", "") == addr and not rebind:
+            return
         _req("POST", "/api/v2/app/setPreferences", data={"json": json.dumps({"current_network_interface": iface,
-                                                                             "current_interface_address": ""})})
+                                                                             "current_interface_address": addr})})
+        if rebind:
+            _req("POST", "/api/v2/torrents/reannounce", data={"hashes": "all"})
     except (OSError, TorrentError):
         pass
 
@@ -498,12 +517,16 @@ def search_start(pattern, category="all", plugin_names=None):
     for old in [k for k, v in _searches.items() if k < sid - 8]:      # keep the last few
         _searches.pop(old, None)
 
+    st["via_vpn"] = argv[1:2] == [vpn.VPNRUN]
+
     def read_out():
         for line in p.stdout:
             r = parse_result(line, names)
             if r:
                 st["results"].append(r)
         p.wait()
+        if not st["results"]:
+            st["net"] = net_check(pl, names, st["via_vpn"])      # no results: is it the plugins or the network?
         st["running"] = False
 
     def read_err():
@@ -535,8 +558,11 @@ def parse_result(line, engines=None):
             return int(float(x))
         except ValueError:
             return -1
+    date = num(parts[7]) if len(parts) > 7 else -1
+    if date > 10 ** 11:                                  # milliseconds from some plugins
+        date //= 1000
     return {"url": parts[0], "name": urllib.parse.unquote(parts[1]), "size": num(parts[2]), "seeds": num(parts[3]),
-            "peers": num(parts[4]), "site": parts[5], "page": parts[6] if len(parts) > 6 else "",
+            "peers": num(parts[4]), "site": parts[5], "page": parts[6] if len(parts) > 6 else "", "date": date if date > 0 else -1,
             "engine": engines[0] if engines and len(engines) == 1 else _engine_for_site(parts[5])}
 
 
@@ -551,16 +577,89 @@ def _engine_for_site(site):
     return urllib.parse.urlparse(site).netloc
 
 
-def search_results(sid, offset=0, limit=200):
+SORTS = {  # key: (label, field, biggest first by default)
+    "seeds": ("Seeds", "seeds", True), "peers": ("Leechers", "peers", True), "size": ("File Size", "size", True),
+    "date": ("Upload Date", "date", True), "name": ("Name", "name", False), "site": ("Site", "engine", False),
+}
+
+
+def sort_results(res, sort="seeds", desc=None):
+    label, field, big_first = SORTS.get(sort, SORTS["seeds"])
+    desc = big_first if desc is None else bool(desc)
+    if field in ("name", "engine"):
+        key = lambda x: (str(x.get(field) or "").lower(), -(x["seeds"] if x["seeds"] >= 0 else 0))
+        return sorted(res, key=key, reverse=desc)
+    known = [x for x in res if isinstance(x.get(field), int) and x[field] >= 0]
+    unknown = [x for x in res if not (isinstance(x.get(field), int) and x[field] >= 0)]
+    # ties: more seeds first; results without that number (a plugin that doesn't give dates) go last
+    known.sort(key=lambda x: (x[field], x["seeds"]), reverse=desc)
+    return known + sorted(unknown, key=lambda x: -(x["seeds"] if x["seeds"] >= 0 else 0))
+
+
+def search_results(sid, offset=0, limit=200, sort="seeds", desc=None):
     st = _searches.get(int(sid))
     if not st:
         return {"running": False, "total": 0, "results": [], "expired": True, "errors": []}
-    res = sorted(st["results"], key=lambda x: -(x["seeds"] if isinstance(x["seeds"], int) else 0))
+    res = sort_results(list(st["results"]), sort, desc)
     errs = []
     if not st["running"] and not res and st["errors"]:
         errs = [e for e in st["errors"] if not e.startswith(("Traceback", "File ", "^"))][-2:] or st["errors"][-1:]
+    label, _f, big_first = SORTS.get(sort, SORTS["seeds"])
     return {"running": st["running"], "total": len(res), "results": res[int(offset):int(offset) + limit], "errors": errs,
-            "engines": st["engines"]}
+            "engines": st["engines"], "sort": sort if sort in SORTS else "seeds", "sort_label": label,
+            "desc": big_first if desc is None else bool(desc), "has_dates": any(x.get("date", -1) > 0 for x in res),
+            "net": st.get("net"), "via_vpn": st.get("via_vpn"), "elapsed": round(time.time() - st["started"])}
+
+
+NET_PROBE = r'''
+import json, socket, sys, time
+out = {}
+for host in sys.argv[1:4]:
+    t = time.time()
+    try:
+        ip = socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        out[host] = {"dns": "ok", "ip": ip}
+        try:
+            socket.create_connection((ip, 443), timeout=8).close()
+            out[host]["connect"] = "ok"
+        except OSError as e:
+            out[host]["connect"] = str(e)[:80]
+    except OSError as e:
+        out[host] = {"dns": f"failed ({time.time() - t:.0f} s): {str(e)[:60]}"}
+print(json.dumps(out))
+'''
+
+
+def net_check(pl, names, via_vpn):
+    """Can the search reach the plugins' sites from where it runs (through the VPN, when it does)?
+    {"ok": bool, "summary": "...", "hosts": {...}}"""
+    import sys
+    from . import vpn
+    hosts = []
+    for p in pl:
+        if p["name"] in names:
+            h = urllib.parse.urlparse(p.get("url") or "").hostname
+            if h and h not in hosts:
+                hosts.append(h)
+    hosts = (hosts or ["www.google.com"])[:3]
+    argv = [sys.executable or "python3", "-c", NET_PROBE, *hosts]
+    if via_vpn:
+        argv = vpn.wrap(argv, "torrents")
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=40, cwd="/")
+        res = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return {"ok": False, "summary": f"Couldn't test the connection: {e}", "hosts": {}}
+    dns_bad = [h for h, v in res.items() if v.get("dns") != "ok"]
+    conn_bad = [h for h, v in res.items() if v.get("dns") == "ok" and v.get("connect") != "ok"]
+    where = "through the VPN" if via_vpn else "from this console"
+    if res and len(dns_bad) == len(res):
+        summary = f"Site names can't be looked up {where} (DNS isn't working): " + ("check VPN › Leak Tests › Check Split Tunneling" if via_vpn else "check the network")
+    elif res and len(conn_bad) + len(dns_bad) == len(res):
+        summary = f"The plugins' sites can't be reached {where}" + (" (the VPN may be blocking them, or the tunnel is down)" if via_vpn else "")
+    else:
+        summary = f"The connection {where} works: the plugins found nothing, or their sites changed (Search Plugins › Update All)"
+    return {"ok": not (dns_bad or conn_bad), "summary": summary, "hosts": res}
 
 
 def search_stop(sid):

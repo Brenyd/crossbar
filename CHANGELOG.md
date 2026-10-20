@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.2.3 Alpha (testing branch)
+- **VPN apps' DNS survives restarts**: with split tunneling on, VPN apps' lookups go to a relay
+  inside Crossbar, and the firewall kept sending them there after Crossbar restarted (an update,
+  Restart Crossbar, Memory Guard) while nothing was listening. So nothing that used the VPN could
+  look up a name: torrent trackers and DHT, search plugins, the leak tests. The relay now starts
+  first thing, the VPN's DNS server is saved, and OpenVPN connections (which never had one in split
+  mode) use one too (Cloudflare's, through the tunnel, when the provider doesn't say)
+- **DNS Through the VPN** (Split Tunneling): Automatic sends every lookup to the VPN's DNS when
+  systemd-resolved does the lookups (it asks for every app itself, so per-app DNS can't work there),
+  or choose For Everything / For VPN Apps Only. The VPN's DNS server is always reached through the tunnel
+- **Port forwarding**: switching it on works straight away (it needed a reconnect, and did nothing
+  if you said no); it retries when PIA doesn't answer (it gave up for good after the first failure);
+  it carries on after Crossbar restarts; PIA's signature is kept so the port stays the same; a
+  location without port forwarding says so; the port is opened in ufw / firewalld on the VPN only;
+  Torrents picks the port up when it starts later; Y › Check Port Forwarding shows each step
+- **Torrents through the VPN**: each VPN connection has a new address; the engine is now bound to
+  the new one (and asks its trackers again) on every connect and restart, instead of staying on
+  the old one
+- **Torrent IP leak test rebuilt**: no more third-party tracker page. It checks a connection made the
+  way the engine makes them and the address the BitTorrent network reports to the engine, and with
+  the VPN off and "Only Use the VPN" on, confirms there's no torrent traffic
+- **DNS leak test**: compares with your own address checked fresh, shows the VPN's DNS server, and
+  explains a systemd-resolved leak with the setting that fixes it
+- **Torrent search**: **Sort** by Seeds, Leechers, File Size, Upload Date, Name or Site (kept for the
+  next search); results show their age; "Nothing found" now says why — DNS, the connection, or
+  the plugins — after testing the plugins' sites the way the search reaches them
+- Split tunneling: everything leaving through the VPN gets the VPN's address (sites sent through it
+  included), and reverse-path checks are relaxed whether or not the app group exists
+
 ## 1.2.2 Alpha
 - **Memory Guard** (Settings › System, on by default): when a game runs the console out of
   memory, Crossbar first closes the menu window to give it room, and if memory still runs out,

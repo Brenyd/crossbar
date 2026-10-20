@@ -5,7 +5,7 @@
 **A console front end for Linux gaming PCs and Linux on PS5.**<br>
 Boot straight to the couch. Every game, app, song, show and friend — from a controller.
 
-![Version](https://img.shields.io/badge/version-1.2.2_Alpha-informational)
+![Version](https://img.shields.io/badge/version-1.2.3_Alpha-informational)
 ![Base](https://img.shields.io/badge/base-Arch_%2F_CachyOS-1793d1)
 ![PS5](https://img.shields.io/badge/runs_on-PC_%26_PS5_Linux-black)
 ![Controller](https://img.shields.io/badge/controller-first-success)

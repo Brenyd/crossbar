@@ -568,6 +568,7 @@ GET = {
     "/api/vpn/regions": lambda q: vpn.regions(q.get("provider")),
     "/api/vpn/ip": lambda q: vpn.addresses(),
     "/api/vpn/check": lambda q: vpn.split_check(),
+    "/api/vpn/pfcheck": lambda q: vpn.pf_check(),
     "/api/torrent": lambda q: torrent.summary(),
     "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
     "/api/torrent/files": lambda q: torrent.files(q["hash"]),
@@ -577,7 +578,8 @@ GET = {
     "/api/torrent/plugins/unofficial": lambda q: torrent.unofficial_plugins(),
     "/api/torrent/plugins/official": lambda q: torrent.official_plugins(),
     "/api/torrent/plugin-login": lambda q: torrent.plugin_fields(q["name"]),
-    "/api/torrent/search": lambda q: torrent.search_results(q["id"], int(q.get("offset") or 0)),
+    "/api/torrent/search": lambda q: torrent.search_results(q["id"], int(q.get("offset") or 0), sort=q.get("sort") or "seeds",
+                                                          desc=None if q.get("desc") in (None, "") else q.get("desc") in ("1", "true")),
     "/api/wintricks/all": lambda q: wintricks.all_components(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
@@ -1303,6 +1305,8 @@ def main():
     os.makedirs(util.GAMES_DIR, exist_ok=True)
     session.watchdog()
     memguard.start(lambda text: HUB.publish({"type": "notice", "text": text, "icon": "info"}))
+    if vpn.split_on():
+        vpn.DNS_RELAY.start()        # first thing: VPN apps' lookups are sent to it while the VPN is up
     PADS.start()
 
     def keep_xmb_marked():
@@ -1333,6 +1337,7 @@ def main():
         ps5hw.apply_saved()
         SPOTIFY.ensure_receiver()
         vpn.on_port(torrent.on_vpn_port)            # a port the VPN forwards becomes the torrent port
+        vpn.resume()                                # VPN already up: DNS relay, split rules, port forwarding carry on
         vpn.autoconnect()
         vpn.split_watch()                           # split rules follow the VPN even when it came up without us
         torrent.autostart()

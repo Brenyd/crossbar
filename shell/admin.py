@@ -459,6 +459,8 @@ def vpn_split(req):
         except (KeyError, ValueError, TypeError):
             fail("Bad app group")
         gid = int(gid)
+    for k in ("all", dev):                        # replies arrive on the VPN for traffic sent there: loose check
+        _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
     route = ["ip", "-4", "route", "add", "default"] + (["via", gw] if gw else []) + ["dev", dev, "table", SPLIT_TABLE]
     r = _run(*route)
     if r.returncode:
@@ -491,7 +493,7 @@ def vpn_split(req):
   }}
 {dnat}  chain post {{
     type nat hook postrouting priority srcnat; policy accept;
-    meta mark {SPLIT_MARK} oifname "{dev}" masquerade
+    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
   }}
 }}
 """
@@ -499,12 +501,62 @@ def vpn_split(req):
         if r.returncode:
             split_clear()
             fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
-        for k in ("all", dev):                    # replies arrive on the VPN for these: loose check
-            _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
+    else:
+        # no app group: still give anything leaving through the VPN the VPN's address
+        r = _run("nft", "-f", "-", inp=f"""table inet crossbar_split {{
+  chain post {{
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
+  }}
+}}
+""")
+        if r.returncode:
+            fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
     print(json.dumps({"ok": True, "sites": len(to), "apps": gid is not None, "dns": bool(dns)}))
 
 
 VPN_GROUP = "crossbar-vpn"
+PORT_STATE = "/var/lib/crossbar/vpn-port.json"
+
+
+def vpn_port(req):
+    """Let the VPN's forwarded port in through this computer's firewall — ufw or firewalld, if one
+    is on — on the VPN interface only. The previous port is closed again."""
+    dev = clean(req.get("dev"), "Network device", r"[A-Za-z0-9_.-]{1,15}", maxlen=15)
+    try:
+        port = int(req.get("port"))
+    except (TypeError, ValueError):
+        fail("Bad port")
+    if not 1024 <= port <= 65535:
+        fail("Bad port")
+    try:
+        old = json.load(open(PORT_STATE))
+    except (OSError, ValueError):
+        old = {}
+    done = []
+    if shutil.which("ufw") and "Status: active" in _run("ufw", "status").stdout:
+        if old.get("ufw") and (old.get("port"), old.get("dev")) != (port, dev):
+            _run("ufw", "--force", "delete", "allow", "in", "on", old["dev"], "to", "any", "port", str(old["port"]))
+        r = _run("ufw", "allow", "in", "on", dev, "to", "any", "port", str(port), "comment", "Crossbar VPN forwarded port")
+        if r.returncode:
+            fail(f"ufw: {r.stderr.strip()[-160:]}")
+        done.append("ufw")
+    if shutil.which("firewall-cmd") and _run("firewall-cmd", "--state").returncode == 0:
+        zone = _run("firewall-cmd", f"--get-zone-of-interface={dev}").stdout.strip()
+        if not zone:
+            zone = "trusted"                   # the VPN interface only ever receives the forwarded port
+            _run("firewall-cmd", f"--zone={zone}", f"--add-interface={dev}")
+        if old.get("firewalld") and old.get("port") != port:
+            for proto in ("tcp", "udp"):
+                _run("firewall-cmd", f"--zone={old.get('zone') or zone}", f"--remove-port={old['port']}/{proto}")
+        for proto in ("tcp", "udp"):
+            _run("firewall-cmd", f"--zone={zone}", f"--add-port={port}/{proto}")
+        done.append("firewalld")
+    os.makedirs(os.path.dirname(PORT_STATE), exist_ok=True)
+    with open(PORT_STATE, "w") as f:
+        json.dump({"port": port, "dev": dev, "ufw": "ufw" in done, "firewalld": "firewalld" in done,
+                   "zone": locals().get("zone")}, f)
+    print(json.dumps({"ok": True, "firewalls": done}))
 
 
 def vpn_group(req):
@@ -541,7 +593,7 @@ if __name__ == "__main__":
         fail("crossbar-admin must run as root (via pkexec)")
     actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
                "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control,
-               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status}
+               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status, "vpn-port": vpn_port}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

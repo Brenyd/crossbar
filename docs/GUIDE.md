@@ -340,6 +340,12 @@ Uninstall). Emulators installed from Game › Emulation stay there.
 engine (qbittorrent-nox) in the background, reachable only from this machine.
 - **Search**: press to search; **Options** (Y / △) on it turns each installed plugin on or off for
   searches. Categories other than Everything only use the plugins that have them.
+- **Sort** (the row under the result count, or Y on any result): Seeds, Leechers, File Size, Upload
+  Date (newest or oldest first — for sites that give dates), Name or Site. Your choice is kept for
+  the next search. Each result shows its size, seeds, leechers and age.
+- **Nothing found?** The first row says why: Crossbar tests the plugins' sites from where the search
+  runs (through the VPN, when Torrents uses it) and tells you whether DNS, the connection, or the
+  plugins themselves are the problem (A on that row shows the details).
 - Search goes through your **search plugins**: Search Plugins › Get Official Plugins, or
   **Get Community Plugins** (the list on the [qBittorrent wiki](https://github.com/qbittorrent/search-plugins/wiki/Unofficial-search-plugins),
   public and private sites). Plugins for private sites ask for your account when they're installed
@@ -359,8 +365,12 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
 **Settings › Network & Bluetooth › Network › VPN** connects with WireGuard or OpenVPN itself
 (through NetworkManager) — no VPN company's app.
 - **Private Internet Access**: sign in with your username and password; every region with its
-  latency; WireGuard or OpenVPN; **port forwarding** (kept alive every 15 minutes, and handed to
-  the torrent client). Follows PIA's own [manual-connections](https://github.com/pia-foss/manual-connections) scripts.
+  latency; WireGuard or OpenVPN; **port forwarding**: switch it on any time (no reconnect), pick a
+  location marked PORT FWD (PIA's US locations don't forward). The port is kept open every 15
+  minutes, kept across restarts (the same port while PIA's signature lasts, about two months),
+  opened in this computer's firewall (ufw / firewalld) on the VPN only, and used by Torrents as its
+  listening port. If PIA doesn't answer it retries and shows why; Y › **Check Port Forwarding**
+  goes through it step by step. Follows PIA's own [manual-connections](https://github.com/pia-foss/manual-connections) scripts.
 - **Mullvad** (account number) and **NordVPN** (access token): sign in, pick a city or country.
 - **Proton VPN, Surfshark, Windscribe, IVPN, AirVPN, ExpressVPN, your own server**: import the
   WireGuard `.conf` / OpenVPN `.ovpn` files from your account page (a folder or `.zip` of them gives
@@ -370,10 +380,16 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
   through the VPN too. Turn it off and everything uses the VPN. Apps that use the VPN are started
   (through util-linux's `newgrp`) in a `crossbar-vpn` group which the firewall routes through the VPN (created once, with your
   password); Crossbar's own checks use your normal line. **Check Split Tunneling** shows whether
-  it's working.
-- **Leak Tests**: a torrent IP leak test (your torrent engine announces a made-up torrent to
-  [WhatIsMyIP.net's tracker checker](https://www.whatismyip.net/tools/torrent-ip-checker/); Crossbar shows the address it saw
-  next to yours without the VPN) and a DNS leak test ([bash.ws](https://bash.ws/dnsleak)).
+  it's working. VPN apps' lookups go to the VPN's DNS server through the tunnel (Crossbar keeps that
+  working across restarts). **DNS Through the VPN**: *Automatic* (the default) sends every lookup on
+  the system there when systemd-resolved does the lookups — it asks on every app's behalf, so a VPN
+  app's lookups could otherwise go to your normal DNS — *For Everything*, or *For VPN Apps Only*.
+- **Leak Tests**: a **torrent IP leak test** — what peers see from your torrent engine, checked two
+  ways with nothing third-party in between: a connection made exactly the way the engine makes them
+  (its bound address, its VPN group), and the address the BitTorrent network reports back to the
+  engine (qBittorrent 5); either one matching your own address is a leak, and with "Only Use the
+  VPN" and the VPN off it confirms there's no torrent traffic at all — and a **DNS leak test**
+  ([bash.ws](https://bash.ws/dnsleak)), run as a VPN app.
 - **Connect at Startup**, **Check My Address** (what VPN apps and everything else are seen as). Passwords, tokens and keys stay in a file only you
   can read.
 
