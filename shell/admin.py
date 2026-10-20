@@ -482,6 +482,17 @@ def vpn_split(req):
     oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
   }}
 """
+    # The tunnel's own encrypted packets: WireGuard encrypts an app's packet in place, so the encrypted
+    # copy can still look like the app's (same socket owner) and would be marked and sent back into
+    # the tunnel — a loop, and the app's connection never gets anywhere. Leave them alone: by
+    # WireGuard's own mark, and by the VPN server's address.
+    ex = [v4(x, "VPN server", net=False) for x in (req.get("exempt") or [])[:8]]
+    ex = [x for x in ex if x]
+    emark = req.get("exempt_mark")
+    if emark is not None and (not isinstance(emark, int) or not 0 < emark < 2 ** 32):
+        fail("Bad mark")
+    exempt = (f"    meta mark {emark:#x} return\n" if emark else "") + \
+             (f"    ip daddr {{ {', '.join(ex)} }} return\n" if ex else "")
     if gid is not None:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
         # DNS from VPN apps: to a local resolver (127.x, the usual stub) → Crossbar's relay, which asks
@@ -498,7 +509,7 @@ def vpn_split(req):
         rules = f"""table inet crossbar_split {{
   chain out {{
     type route hook output priority mangle; policy accept;
-    meta skgid {gid} meta mark set {SPLIT_MARK} counter
+{exempt}    meta skgid {gid} meta mark set {SPLIT_MARK} counter
   }}
   chain v6 {{
     type filter hook output priority filter; policy accept;

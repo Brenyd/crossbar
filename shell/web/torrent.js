@@ -342,10 +342,16 @@ function torrentsItem() {
       const st = await call(() => api.post('/api/torrent/start'));
       if (!st) return [{ key: 'na', label: 'The torrent engine isn\'t running', icon: 'info', sub: 'Needs qbittorrent-nox: Settings › System › Update Crossbar' }];
       S.torrent = st;
+      S.vpnPort = (await api.get('/api/vpn').catch(() => null))?.forwarded_port || null;
       const plugins = await api.get('/api/torrent/plugins').catch(() => []);
       return [
         { key: 'speed', label: `↓ ${tRate(st.dl)}   ↑ ${tRate(st.up)}`, icon: st.status === 'connected' ? 'network' : 'info',
-          sub: `${st.count} torrents · ${st.status === 'connected' ? 'reachable' : st.status === 'firewalled' ? 'firewalled (port not open)' : 'offline'}${st.vpn_bound ? ` · bound to ${st.interface}` : ''}${st.alt_speed ? ' · slow mode' : ''}`,
+          sub: `${st.count} torrents · ${st.status === 'connected' ? 'reachable' : st.status === 'firewalled'
+            ? `firewalled: peers can't connect in${st.vpn_bound ? (S.vpnPort ? ` (VPN port ${S.vpnPort})` : ' — needs the VPN\'s forwarded port (VPN › Port Forwarding); downloads still work, just slower') : ''}`
+            : 'offline'}${st.vpn_bound ? ` · bound to ${st.interface}` : ''}${st.alt_speed ? ' · slow mode' : ''}`,
+          action: () => message([st.status === 'firewalled' ? 'Firewalled means other peers can\'t start connections to you. You can still download from peers you connect to.' : st.status === 'connected' ? 'Peers can reach you.' : 'The engine has no connection right now.',
+            st.vpn_bound ? 'Behind the VPN, peers can only reach you through a port the VPN forwards: turn on VPN › Port Forwarding\n(a PIA location marked PORT FWD) and Torrents uses that port automatically.' : '',
+            `Listening port: ${st.listen_port || '?'}`].filter(Boolean).join('\n\n'), 'Connection'),
           options: [{ label: 'Pause Everything', action: () => tPost('action', { hashes: ['all'], what: 'pause' }, 'Everything paused') },
             { label: 'Resume Everything', action: () => tPost('action', { hashes: ['all'], what: 'resume' }, 'Everything resumed') },
             { label: st.alt_speed ? 'Normal Speed' : 'Slow Mode (limits in Settings)', action: () => tPost('altspeed', {}, st.alt_speed ? 'Normal speed' : 'Slow mode') }] },

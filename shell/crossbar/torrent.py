@@ -106,7 +106,10 @@ def start():
     if _version_tuple(_nox_version()) >= (5, 0):
         argv.append("--confirm-legal-notice")
     from . import vpn
-    argv = vpn.wrap(argv, "torrents")                     # in the VPN's group when torrents use the VPN
+    if not prefs_local().get("vpn_only"):
+        argv = vpn.wrap(argv, "torrents")                 # chosen as a VPN app: in the VPN's group
+    # "Only Use the VPN": bound to the VPN's interface and address instead (no group needed: traffic
+    # from the VPN's address takes the tunnel directly, and with the VPN down there's no traffic at all)
     _cache.pop("sid", None)
     _proc["p"] = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(60):
@@ -524,7 +527,7 @@ def search_start(pattern, category="all", plugin_names=None):
         import sys
         per = st["per"][name]
         argv = vpn.wrap([sys.executable or "python3", "-c", RUNNER, name, category, *words], "torrents")
-        env = {**os.environ, "PYTHONWARNINGS": "ignore", "PYTHONDONTWRITEBYTECODE": "1"}
+        env = vpn.app_env("torrents", {**os.environ, "PYTHONWARNINGS": "ignore", "PYTHONDONTWRITEBYTECODE": "1"})
         try:
             p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                  text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
@@ -710,7 +713,7 @@ def net_check(pl, names, via_vpn):
     if via_vpn:
         argv = vpn.wrap(argv, "torrents")
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=40, cwd="/")
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=40, cwd="/", env=vpn.app_env("torrents") if via_vpn else None)
         res = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
     except (OSError, subprocess.TimeoutExpired, ValueError) as e:
         return {"ok": False, "summary": f"Couldn't test the connection: {e}", "hosts": {}}
@@ -745,7 +748,7 @@ def download_result(url, engine=None, save_path=None):
         from . import vpn
         try:
             r = subprocess.run(vpn.wrap([sys.executable or "python3", "nova2dl.py", engine, url], "torrents"), cwd=nova,
-                               capture_output=True, text=True, timeout=60)
+                               capture_output=True, text=True, timeout=60, env=vpn.app_env("torrents"))
             first = (r.stdout.strip().splitlines() or [""])[0]
             path = first.split(" ", 1)[0]
             if r.returncode == 0 and path and os.path.isfile(path):
@@ -927,6 +930,35 @@ def set_plugin_login(name, values):
             f.write(src)
         os.replace(py + ".tmp", py)
     return plugin_fields(name)
+
+
+def fix_engine_group():
+    """1.2.6: with "Only Use the VPN", the engine runs bound to the VPN rather than in the VPN apps'
+    group. An engine still running in the group from before (it outlives Crossbar restarts) is
+    restarted once, the new way."""
+    if not prefs_local().get("vpn_only") or not running():
+        return False
+    try:
+        import grp
+        gid = grp.getgrnam("crossbar-vpn").gr_gid
+    except (KeyError, ImportError):
+        return False
+    pids = subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "qbittorrent-nox"], capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        try:
+            gids = next(ln for ln in open(f"/proc/{pid}/status") if ln.startswith("Gid:")).split()[1:]
+        except (OSError, StopIteration):
+            continue
+        if str(gid) in gids[:2]:
+            print("torrent: restarting the engine outside the VPN apps' group (bound to the VPN instead)", flush=True)
+            stop()
+            for _ in range(40):
+                time.sleep(0.25)
+                if not running():
+                    break
+            start()
+            return True
+    return False
 
 
 def autostart():

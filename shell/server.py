@@ -1372,6 +1372,10 @@ def main():
         vpn.autoconnect()
         vpn.split_watch()                           # split rules follow the VPN even when it came up without us
         torrent.autostart()
+        try:
+            torrent.fix_engine_group()
+        except Exception as e:
+            print(f"torrent: {e}", flush=True)
         threading.Thread(target=torrent_notices, daemon=True).start()
         if util.load_config()["discord"].get("signed_in"):
             try:

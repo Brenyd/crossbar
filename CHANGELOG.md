@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.2.6 Alpha (testing branch)
+- **VPN apps time out — the cause**: WireGuard encrypts a packet in place, so the encrypted copy can
+  still look like it came from the VPN app that sent it. The split-tunneling rule marked it too and
+  sent it back into the tunnel: a loop, so VPN apps (the test app, the DNS leak test, the torrent
+  engine in the VPN group) connected nowhere, while traffic from the VPN's own address worked.
+  WireGuard's packets now carry their own mark and, with the VPN server's address, are left alone
+- **Torrents "Only Use the VPN"**: the engine is bound to the VPN's interface and address only,
+  not also run as a VPN app — traffic from the VPN's address goes straight through the tunnel (the
+  path that works), and with the VPN down there's no torrent traffic. An engine still running the
+  old way is restarted once
+- **Search plugins and the leak tests** (Crossbar's own helpers) send their connections from the
+  VPN's address too
+- **Firewalled** in Torrents explains itself: peers can't connect in without the VPN's forwarded
+  port; downloads still work (A on the line for more)
+
 ## 1.2.5 Alpha (testing branch)
 - **VPN apps' connections no longer hang** (split tunneling): traffic sent into the VPN by the split
   rules had already been sized for your normal connection, and the VPN's packets are smaller, so

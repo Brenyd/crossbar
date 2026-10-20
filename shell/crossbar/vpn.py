@@ -734,7 +734,7 @@ def connect(job=None):
         os.remove(path)
         dns = _conf_dns(conf) or DEFAULT_DNS.get(provider) or FALLBACK_DNS
         _state["dns"] = dns
-        _set(dns=dns, pf_params=pf or None)
+        _set(dns=dns, pf_params=pf or None, endpoints=_conf_endpoints(conf))
         if split_on():
             # Split tunneling: the VPN is only a road some traffic takes (chosen apps and sites),
             # not the default route. Its DNS server is used by the VPN apps (see apply_split), and,
@@ -745,6 +745,8 @@ def connect(job=None):
                    "ipv6.never-default", "yes", "ipv4.ignore-auto-dns", "yes", "ipv6.ignore-auto-dns", "yes",
                    "ipv4.dns", dns if everyone else "", "ipv4.dns-priority", "-50" if everyone else "100",
                    "ipv6.dns", "", "ipv6.method", "disabled" if protocol == "openvpn" else "ignore", check=False)
+            if protocol == "wireguard":         # WireGuard's own (encrypted) packets carry this mark: never re-routed
+                _nmcli("connection", "modify", CONN, "wireguard.fwmark", str(WG_FWMARK), check=False)
         else:
             _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.dns-priority", "-50",
                    "ipv6.dns-priority", "-50", check=False)
@@ -1154,6 +1156,21 @@ def wrap(argv, app_id):
     return [sys.executable or "python3", VPNRUN, "--", *argv]
 
 
+VPNBIND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vpnbind")
+
+
+def app_env(app_id, env=None):
+    """Environment for one of Crossbar's own Python helpers that uses the VPN: its connections leave
+    from the VPN's address (the route that works whatever the app-group marking does)."""
+    env = dict(env if env is not None else os.environ)
+    if uses_vpn(app_id) and nm_state() == "activated":
+        addr = _vpn_addr()
+        if addr:
+            env["CROSSBAR_VPN_SRC"] = addr
+            env["PYTHONPATH"] = VPNBIND + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+
 def _resolve(targets):
     out = []
     for t in targets:
@@ -1208,6 +1225,25 @@ def dns_all():
     return bool(v)
 
 
+WG_FWMARK = 0xCA6C                 # on WireGuard's encrypted packets (split tunneling leaves them alone)
+
+
+def _conf_endpoints(conf):
+    """The VPN server's own address(es): the tunnel's encrypted packets go there, and must never be
+    sent into the tunnel themselves."""
+    out = re.findall(r"^\s*Endpoint\s*=\s*\[?([\d.]+)\]?:\d+", conf or "", re.M | re.I)
+    out += re.findall(r"^\s*remote\s+([\d.]+)\b", conf or "", re.M | re.I)
+    return sorted(set(out))[:8]
+
+
+def _live_endpoints():
+    """The server address of the connection that's up (made before Crossbar saved it)."""
+    out = _nmcli("connection", "show", CONN, timeout=10, check=False)
+    eps = re.findall(r"endpoint:\s*\[?(\d+\.\d+\.\d+\.\d+)\]?:\d+", out, re.I)
+    eps += re.findall(r"remote\s*=\s*(\d+\.\d+\.\d+\.\d+)", out, re.I)
+    return sorted(set(eps))[:8]
+
+
 def _conf_dns(conf):
     m = re.search(r"^\s*DNS\s*=\s*([\d.]+)", conf or "", re.M | re.I)
     return m.group(1) if m else None
@@ -1246,7 +1282,8 @@ def apply_split():
     if dns:
         to = sorted(set(to + [f"{dns}/32"]))      # the VPN's DNS server is always reached through the tunnel
     req = {"enable": True, "dev": _iface(), "gateway": None, "to": to,
-           "from": [addr] if addr else [], "gid": gid, "dns": dns, "dns_relay": relay}
+           "from": [addr] if addr else [], "gid": gid, "dns": dns, "dns_relay": relay,
+           "exempt": c.get("endpoints") or [], "exempt_mark": WG_FWMARK}
     return _admin("vpn-split", req)
 
 
@@ -1418,6 +1455,14 @@ def resume():
         return
     if split_on():
         DNS_RELAY.start()
+        if not cfg().get("endpoints"):
+            try:
+                _set(endpoints=_live_endpoints())
+            except Exception as e:
+                print(f"vpn: endpoints: {e}", flush=True)
+        if cfg().get("protocol") != "openvpn":     # mark WireGuard's own packets on the live connection too
+            _nmcli("connection", "modify", CONN, "wireguard.fwmark", str(WG_FWMARK), check=False)
+            _nmcli("device", "reapply", CONN, check=False, timeout=20)
         try:
             ensure_split(force=True)           # once per start: an update may bring new rules (1.2.5: MSS clamping)
         except Exception as e:

@@ -108,7 +108,7 @@ def torrent_test(job):
     else:
         job.set(0.3, "Connecting the way the torrent engine does…")
         src = addr if (vpn_only and connected) else None
-        pr = _engine_probe(src, uses)
+        pr = _engine_probe(src, uses and not vpn_only)          # just like the engine: bound, or a VPN app
         if pr.get("ip"):
             seen.append({"ip": pr["ip"], "agent": "a connection from the torrent engine's address" + (f" ({pr.get('loc')})" if pr.get("loc") else ""), "time": ""})
         elif pr.get("error"):
@@ -187,7 +187,7 @@ def dns_test(job):
     job.set(0.1, "Looking up test names…")
     argv = vpn.wrap([sys.executable, "-m", "crossbar.leaktest", "dns"], "leaktest")
     if argv[1:2] == [vpn.VPNRUN]:                         # as an app that uses the VPN (split tunneling on)
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=120,
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=120, env=vpn.app_env("leaktest"),
                            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         try:
             raw = json.loads(r.stdout.strip().splitlines()[-1])
