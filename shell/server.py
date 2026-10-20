@@ -1280,6 +1280,7 @@ def main():
         SPOTIFY.ensure_receiver()
         vpn.on_port(torrent.on_vpn_port)            # a port the VPN forwards becomes the torrent port
         vpn.autoconnect()
+        vpn.split_watch()                           # split rules follow the VPN even when it came up without us
         torrent.autostart()
         threading.Thread(target=torrent_notices, daemon=True).start()
         if util.load_config()["discord"].get("signed_in"):

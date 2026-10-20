@@ -107,33 +107,30 @@ async function torrentSearch() {
       return rows;
     } });
 }
-// Search is a folder: a new search, and which installed plugins it uses (on/off right there).
-const SEARCH_FOLDER = {
-  key: 'search', label: 'Search', icon: 'search', sub: 'Through your search plugins',
-  children: async () => {
-    const have = await api.get('/api/torrent/plugins');
-    const on = have.filter((p) => p.enabled);
-    const toggle = async (p) => { if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }, `${p.full_name}: ${p.enabled ? 'off' : 'on'} for searches`)) reloadFolder(); };
-    return [
-      { key: 'new', label: 'New Search…', icon: 'search', sub: on.length ? `With ${on.map((p) => p.full_name).join(', ')}`.slice(0, 140) : 'Turn on a plugin below first',
-        action: torrentSearch },
-      { key: 'with', label: 'Search With', icon: 'check', sub: `${on.length} of ${have.length} plugins on · {ok} turns one on or off`,
-        children: async () => {
-          const list = await api.get('/api/torrent/plugins');
-          if (!list.length) return [{ key: 'none', label: 'No search plugins yet', icon: 'info', sub: 'Get some in Search Plugins', action: () => openFolder(PLUGINS_FOLDER) }];
-          return [
-            { key: 'all-on', label: 'Turn All On', icon: 'check', action: async () => { for (const p of list.filter((x) => !x.enabled)) await tPost('plugin/action', { name: p.name, what: 'enable', enable: true }); reloadFolder(); } },
-            { key: 'all-off', label: 'Turn All Off', icon: 'power', action: async () => { for (const p of list.filter((x) => x.enabled)) await tPost('plugin/action', { name: p.name, what: 'enable', enable: false }); reloadFolder(); } },
-            ...list.map((p) => ({ key: `sw:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power', badge: p.enabled ? 'ON' : 'OFF',
-              sub: `${p.enabled ? 'Used' : 'Not used'} in searches${p.categories.length ? ` · ${p.categories.filter((c) => c !== 'all').join(', ')}` : ''}`.slice(0, 140),
-              action: () => toggle(p), options: [{ label: p.enabled ? 'Turn Off' : 'Turn On', action: () => toggle(p) },
-                ...(p.login ? [{ label: 'Sign In…', action: () => pluginSignIn(p.name) }] : [])] }))];
-        } },
-      PLUGINS_FOLDER,
-    ];
-  },
-};
-
+// Search: {ok} starts a search; {menu} (Options) turns each installed plugin on or off for searches.
+function searchPluginOptions(list) {
+  const toggle = (p, i) => async () => {
+    if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled })) p.enabled = !p.enabled;
+    Options.show(searchPluginOptions(list), i);
+    reloadFolder();
+  };
+  const setAll = (on) => async () => {
+    for (const p of list.filter((x) => x.enabled !== on)) if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: on })) p.enabled = on;
+    toast(on ? 'All search plugins on' : 'All search plugins off', 'search'); reloadFolder();
+  };
+  return [
+    ...list.map((p, i) => ({ label: `${p.enabled ? '✓' : '–'}  ${p.full_name}${p.enabled ? '' : '  (off)'}`, action: toggle(p, i) })),
+    ...(list.length > 1 ? [{ label: 'Turn All On', action: setAll(true) }, { label: 'Turn All Off', action: setAll(false) }] : []),
+    { label: 'Get More Plugins…', action: () => openFolder(PLUGINS_FOLDER) },
+  ];
+}
+function searchItem(plugins) {
+  const on = plugins.filter((p) => p.enabled);
+  return { key: 'search', label: 'Search', icon: 'search',
+    sub: !plugins.length ? 'Get a search plugin first: {menu} Options' : on.length ? `With ${on.map((p) => p.full_name).join(', ')}`.slice(0, 120) : 'Every plugin is off: {menu} Options to turn some on',
+    action: plugins.length ? torrentSearch : () => openFolder(PLUGINS_FOLDER),
+    options: searchPluginOptions(plugins) };
+}
 // ---- search plugins -------------------------------------------------------------------------------
 async function pluginSignIn(name) {
   const fields = await call(() => api.get(`/api/torrent/plugin-login?name=${encodeURIComponent(name)}`));
@@ -298,13 +295,14 @@ function torrentsItem() {
       const st = await call(() => api.post('/api/torrent/start'));
       if (!st) return [{ key: 'na', label: 'The torrent engine isn\'t running', icon: 'info', sub: 'Needs qbittorrent-nox: Settings › System › Update Crossbar' }];
       S.torrent = st;
+      const plugins = await api.get('/api/torrent/plugins').catch(() => []);
       return [
         { key: 'speed', label: `↓ ${tRate(st.dl)}   ↑ ${tRate(st.up)}`, icon: st.status === 'connected' ? 'network' : 'info',
           sub: `${st.count} torrents · ${st.status === 'connected' ? 'reachable' : st.status === 'firewalled' ? 'firewalled (port not open)' : 'offline'}${st.vpn_bound ? ` · bound to ${st.interface}` : ''}${st.alt_speed ? ' · slow mode' : ''}`,
           options: [{ label: 'Pause Everything', action: () => tPost('action', { hashes: ['all'], what: 'pause' }, 'Everything paused') },
             { label: 'Resume Everything', action: () => tPost('action', { hashes: ['all'], what: 'resume' }, 'Everything resumed') },
             { label: st.alt_speed ? 'Normal Speed' : 'Slow Mode (limits in Settings)', action: () => tPost('altspeed', {}, st.alt_speed ? 'Normal speed' : 'Slow mode') }] },
-        SEARCH_FOLDER,
+        searchItem(plugins),
         transfersFolder('downloading', 'Downloading'),
         transfersFolder('completed', 'Finished & Seeding'),
         transfersFolder('all', 'All Torrents'),

@@ -211,10 +211,13 @@ async function checkSplit() {
     `The VPN's own address is seen as: ${r.vpn || '?'}`,
     `Crossbar itself is seen as: ${r.normal || '?'}`,
     `VPN app group: ${r.group?.exists ? (r.group.member ? 'ready' : 'you\'re not in it yet') : 'not made yet'}${r.app_gid_ok === false ? ' · the test app didn\'t get it' : ''}`];
+  if (r.split && r.connected) lines.push(`VPN connection: ${r.iface} · address ${r.vpn_addr || 'not found'} · routing rules ${r.rules ? 'in place' : 'missing'}${r.reapplied ? ' (just put back)' : ''}`);
+  if (r.split_error) lines.push(`Setting up the rules failed: ${r.split_error}`);
+  if (r.vpn_error) lines.push(`Through the VPN's address: ${r.vpn_error}`);
   if (r.app_error) lines.push(`Test app: ${r.app_error}`);
   if (r.helper?.error) lines.push(`System helper: ${r.helper.error}`);
   else if (r.helper?.nft) { const m = r.helper.nft.match(/counter packets (\d+)/); if (m) lines.push(`Packets sent through the VPN for apps so far: ${m[1]}`); }
-  message(lines.join('\n'), 'Split Tunneling Check');
+  message(lines.filter((x, i) => x !== '' || i === 1).join('\n'), 'Split Tunneling Check');
 }
 const LEAK_FOLDER = { key: 'leaks', label: 'Leak Tests', icon: 'search', sub: 'Torrent IP and DNS',
   children: async () => [

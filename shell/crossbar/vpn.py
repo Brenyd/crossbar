@@ -21,6 +21,7 @@ import glob
 import http.client
 import json
 import os
+import sys
 import re
 import shutil
 import socket
@@ -717,7 +718,7 @@ def connect(job=None):
         _state["dns"] = vpn_dns or _nm_dns()
         if split_on():
             try:
-                apply_split()
+                ensure_split(force=True)
             except RuntimeError as e:
                 _state["error"] = f"Split tunneling: {e}"
         else:
@@ -737,6 +738,7 @@ def connect(job=None):
 def disconnect():
     stop_port_forward()
     clear_split()
+    _split_applied.clear()
     _nmcli("connection", "down", CONN, check=False)
     _state["error"] = None
     _publish()
@@ -876,6 +878,7 @@ def stop_port_forward():
 # (A group works from any session — a TV login included — where moving apps into a systemd group
 # needs a desktop-style session.)
 VPN_GROUP = "crossbar-vpn"
+VPNRUN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vpnrun.py")
 
 
 def split_on():
@@ -926,7 +929,10 @@ def wrap(argv, app_id):
     if not uses_vpn(app_id):
         return argv
     gid, member = _group()
-    if gid is None or not member or not util.which("sg"):
+    if not util.which("newgrp"):
+        print("vpn: newgrp (util-linux) is missing: VPN apps can't be started in the VPN group", flush=True)
+        return argv
+    if gid is None or not member:
         try:
             ensure_group()
         except RuntimeError as e:
@@ -935,8 +941,8 @@ def wrap(argv, app_id):
         gid, member = _group()
         if not member:
             return argv
-    import shlex
-    return ["sg", VPN_GROUP, "-c", "exec " + shlex.join(argv)]      # same process: sg execs the shell, the shell execs it
+    # Arch has no `sg`: vpnrun.py goes through util-linux's newgrp (same process, same environment)
+    return [sys.executable or "python3", VPNRUN, "--", *argv]
 
 
 def _resolve(targets):
@@ -989,6 +995,55 @@ def apply_split():
     return _admin("vpn-split", req)
 
 
+_split_applied = {}
+
+
+def _rules_present(addr):
+    """Are the split rules in place for this connection? (`ip rule` / a table's routes need no root.)"""
+    try:
+        rules = subprocess.run(["ip", "-4", "rule", "show"], capture_output=True, text=True, timeout=10).stdout
+        route = subprocess.run(["ip", "-4", "route", "show", "table", "2000"], capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.TimeoutExpired):
+        return True                                       # can't tell: don't keep asking the helper
+    return ("fwmark 0x2000 lookup 2000" in rules and f"dev {_iface()}" in route
+            and (not addr or f"from {addr} lookup 2000" in rules))
+
+
+def ensure_split(force=False):
+    """Split tunneling on and the VPN up, but the rules missing or for an old address (the VPN came
+    up without Crossbar — at boot, or NetworkManager reconnected it): put them back."""
+    if not split_on() or nm_state() != "activated":
+        return False
+    addr = _vpn_addr()
+    key = (_iface(), addr)
+    if not force and _split_applied.get("key") == key and _rules_present(addr):
+        return False
+    if not force and _rules_present(addr) and _split_applied.get("key") is not None:
+        _split_applied["key"] = key
+        return False
+    try:
+        apply_split()
+        _split_applied["key"] = key
+        _split_applied.pop("error", None)
+    except RuntimeError as e:
+        _split_applied["error"] = str(e)
+        raise
+    return True
+
+
+def split_watch():
+    """Background: keep the split rules in step with the connection."""
+    def run():
+        time.sleep(15)
+        while True:
+            try:
+                ensure_split()
+            except Exception as e:
+                print(f"vpn: split rules: {e}", flush=True)
+            time.sleep(30)
+    threading.Thread(target=run, daemon=True).start()
+
+
 def split_check():
     """Is split tunneling really working? Asks the internet what it sees from Crossbar itself, from
     an app in the VPN group, and from the VPN's own address; plus what the helper set up."""
@@ -996,6 +1051,13 @@ def split_check():
     from . import speedtest
     out = {"split": split_on(), "connected": nm_state() == "activated", "isp_ip": cfg().get("isp_ip")}
     out["normal"] = speedtest._trace().get("ip")
+    if out["split"] and out["connected"]:
+        try:
+            out["reapplied"] = ensure_split()
+        except RuntimeError as e:
+            out["split_error"] = str(e)
+    out["iface"], out["vpn_addr"] = _iface(), _vpn_addr()
+    out["rules"] = _rules_present(out["vpn_addr"]) if out["connected"] else None
     gid, member = _group()
     out["group"] = {"exists": gid is not None, "member": member}
     argv = wrap([sys.executable, "-c", "import sys,os;sys.path.insert(0,os.getcwd());from crossbar import speedtest;"

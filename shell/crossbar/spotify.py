@@ -39,12 +39,21 @@ class SpotifyError(RuntimeError):
     code = 0
 
 
+def _zombie(pid):
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] == "Z"
+    except (OSError, IndexError):
+        return True
+
+
 class Spotify:
     def __init__(self):
         self.receiver = None
         self._pkce = {}
         self._got_token = threading.Event()
         self._lock = threading.Lock()
+        self._last = None          # the last thing seen playing on this speaker (see now())
 
     # ---- librespot receiver ------------------------------------------------
     def _librespot_args(self):
@@ -61,10 +70,52 @@ class Spotify:
     def receiver_running(self):
         return self.receiver is not None and self.receiver.poll() is None
 
+    @staticmethod
+    def _speaker_pids():
+        """Every librespot of ours running as the Crossbar speaker — including ones left behind by
+        an earlier run of Crossbar (an update restarts it), which would otherwise keep playing
+        alongside a new one: two audio streams, one of them out of reach."""
+        pids = []
+        for d in os.listdir("/proc"):
+            if not d.isdigit() or int(d) == os.getpid():
+                continue
+            try:
+                if os.stat(f"/proc/{d}").st_uid != os.getuid():
+                    continue
+                with open(f"/proc/{d}/cmdline", "rb") as f:
+                    argv = f.read().split(b"\0")
+            except OSError:
+                continue
+            if argv and os.path.basename(argv[0]) == b"librespot" and DEVICE_NAME.encode() in argv:
+                pids.append(int(d))
+        return pids
+
+    def _stop_speakers(self):
+        if self.receiver_running():
+            self.receiver.terminate()
+            try:
+                self.receiver.wait(3)
+            except subprocess.TimeoutExpired:
+                self.receiver.kill()
+        self.receiver = None
+        pids = self._speaker_pids()
+        for sig in (15, 9):
+            for pid in pids:
+                try:
+                    os.kill(pid, sig)
+                except OSError:
+                    pass
+            for _ in range(30):
+                pids = [p for p in pids if os.path.exists(f"/proc/{p}") and not _zombie(p)]
+                if not pids:
+                    return
+                time.sleep(0.1)
+
     def ensure_receiver(self):
         with self._lock:
             if self.receiver_running() or not self.receiver_signed_in() or not util.which("librespot"):
                 return
+            self._stop_speakers()          # one speaker only: never start a second next to a leftover
             os.makedirs(os.path.dirname(LOG), exist_ok=True)
             log = open(LOG, "a")
             self.receiver = subprocess.Popen(self._librespot_args(), stdin=subprocess.DEVNULL,
@@ -81,8 +132,7 @@ class Spotify:
         if not util.which("librespot"):
             raise RuntimeError("librespot is not installed")
         os.makedirs(CACHE, exist_ok=True)
-        if self.receiver_running():
-            self.receiver.terminate()
+        self._stop_speakers()
         p = subprocess.Popen(self._librespot_args() + ["--enable-oauth"], stdin=subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
                              start_new_session=True)
@@ -346,6 +396,8 @@ class Spotify:
             raise err from None
 
     def _play(self, context_uri, uris, offset, shuffle):
+        if self._lost() or (self.now() or {}).get("lost"):
+            self.restart_speaker()       # stop the out-of-reach audio before starting anything
         dev = self.device_id()
         body = {}
         if context_uri:
@@ -392,6 +444,11 @@ class Spotify:
         """Move what's playing elsewhere to this console. If the speaker can't take the transfer
         (the librespot bug above), start the same track here at the same point instead."""
         now = self.now() or {}
+        if now.get("lost"):              # it's already playing here, on its own: restart and pick it up
+            self.restart_speaker()
+            self.api("PUT", "/me/player/play", {"uris": [now["uri"]], "position_ms": int(now.get("position", 0)) * 1000},
+                     device_id=self.device_id())
+            return
         try:
             self.api("PUT", "/me/player", {"device_ids": [self.device_id()], "play": True})
             return
@@ -406,14 +463,15 @@ class Spotify:
                  device_id=dev)
 
     def restart_speaker(self):
-        if self.receiver_running():
-            self.receiver.terminate()
-            try:
-                self.receiver.wait(3)
-            except subprocess.TimeoutExpired:
-                self.receiver.kill()
-        self.receiver = None
+        with self._lock:
+            self._stop_speakers()
+        self._last = None
         self.ensure_receiver()
+
+    def _lost(self):
+        """The speaker was playing, but Spotify no longer knows it (librespot lost its connection
+        and keeps playing on its own: Crossbar can't see or control that)."""
+        return bool(self._last and self._last.get("lost"))
 
     def now(self):
         if not self._load():
@@ -423,17 +481,38 @@ class Spotify:
         except RuntimeError:
             return None
         if not d or not d.get("item"):
+            # Spotify says nothing is playing. If our speaker was playing a moment ago and is still
+            # running, it's playing on its own (lost session): keep showing it, so it can be
+            # stopped or picked up again — playing anything restarts the speaker first.
+            last = self._last
+            if last and self.receiver_running() and (last.get("playing") or last.get("lost")):
+                gone = time.time() - last["seen"]
+                if last["position"] + gone < last["duration"] + 5:
+                    self._last = {**last, "lost": True}
+                    return {**{k: v for k, v in last.items() if k != "seen"}, "position": int(last["position"] + gone),
+                            "playing": True, "here": True, "lost": True}
+            self._last = None
             return None
         t = self._track(d["item"]) if d["item"].get("type") == "track" else {
             "uri": d["item"]["uri"], "name": d["item"]["name"], "artist": "", "album": "", "art": None,
             "duration": d["item"].get("duration_ms", 0) // 1000}
-        return {**t, "playing": d.get("is_playing", False), "position": (d.get("progress_ms") or 0) // 1000,
-                "device": (d.get("device") or {}).get("name", ""), "here": (d.get("device") or {}).get("name") == DEVICE_NAME,
-                "shuffle": d.get("shuffle_state", False), "repeat": d.get("repeat_state", "off")}
+        out = {**t, "playing": d.get("is_playing", False), "position": (d.get("progress_ms") or 0) // 1000,
+               "device": (d.get("device") or {}).get("name", ""), "here": (d.get("device") or {}).get("name") == DEVICE_NAME,
+               "shuffle": d.get("shuffle_state", False), "repeat": d.get("repeat_state", "off")}
+        self._last = {**out, "seen": time.time()} if out["here"] else None
+        return out
 
     def control(self, action):
         """Returns what's playing afterwards (for the "Now Playing" notice)."""
         now = self.now() or {}
+        if now.get("lost"):
+            # the speaker is playing on its own: stopping means stopping it; anything else
+            # picks the same track up again on a fresh speaker
+            if action in ("toggle", "pause"):
+                self.restart_speaker()
+                return {**now, "playing": False, "lost": False}
+            self.transfer()
+            return self.now() or now
         if action == "toggle":
             self.api("PUT", "/me/player/pause" if now.get("playing") else "/me/player/play")
             return {**now, "playing": not now.get("playing")}

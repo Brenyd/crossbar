@@ -144,7 +144,7 @@ def dns_test(job):
     st = vpn.status()
     job.set(0.1, "Looking up test names…")
     argv = vpn.wrap([sys.executable, "-m", "crossbar.leaktest", "dns"], "leaktest")
-    if argv[0] == "sg":                                   # as an app that uses the VPN (split tunneling on)
+    if argv[1:2] == [vpn.VPNRUN]:                         # as an app that uses the VPN (split tunneling on)
         r = subprocess.run(argv, capture_output=True, text=True, timeout=120,
                            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         try:

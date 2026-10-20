@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.1.3 Alpha
+- **Split tunneling on Arch**: VPN apps were started with `sg`, which Arch doesn't ship ("No such
+  file or directory: 'sg'" in the DNS leak test, Check Split Tunneling and torrent search). They now
+  go through util-linux's `newgrp`, which every Arch system has
+- **Split rules follow the VPN**: if the VPN comes up without Crossbar (at boot, or NetworkManager
+  reconnects it) the routing rules are put back within half a minute; Check Split Tunneling puts
+  them back on the spot and shows the VPN connection, its address and whether the rules are there
+- **Torrent search**: Search is one item again. {ok} searches, Y / △ (Options) lists your
+  plugins to turn on or off (✓ on, – off), all on / all off, and Get More Plugins
+- **Dialogs**: the menu behind a dialog fades back, so its text no longer reads through
+- **Spotify**: one speaker only. A speaker left over from before an update or restart is stopped
+  instead of playing alongside a new one (the double audio). When Spotify loses the speaker while
+  music keeps playing, the track stays in Music with Stop / Reconnect, and playing anything
+  restarts the speaker first
+
 ## 1.1.2 Alpha
 - **Split tunneling works from the console session**: apps that use the VPN were marked through a
   systemd user scope, which didn't take on the TTY session, so they still went out your own line

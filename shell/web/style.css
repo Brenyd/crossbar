@@ -231,3 +231,5 @@ body.osk-open #dialog .dlg-fields label { margin-top: 12px; }
 /* grouped Y menu: a group shows › and, once open, its name on top */
 .opt.grp::after { content: '  ›'; opacity: .6; }
 .opt-head { font-size: 22px; letter-spacing: 3px; text-transform: uppercase; color: var(--dim); padding: 0 0 10px 0; }
+/* the menu behind a dialog fades back so its text doesn't read through the dialog's */
+#stage:has(#dialog:not([hidden])) :is(#column, #cats, #crumb, #options) { opacity: .18; filter: blur(3px); transition: opacity .2s, filter .2s; }

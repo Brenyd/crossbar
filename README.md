@@ -1,4 +1,4 @@
-# Crossbar — 1.1.2 Alpha
+# Crossbar — 1.1.3 Alpha
 
 **A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
 cross-media bar — categories across, items down, flowing waves behind — and runs everything from a
@@ -431,8 +431,8 @@ Uninstall). Emulators installed from Game › Emulation stay there.
 
 **Apps › Torrents** is a torrent client made for the controller and the TV, running qBittorrent's
 engine (qbittorrent-nox) in the background, reachable only from this machine.
-- **Search** (a folder): **New Search…**, **Search With** to turn each installed plugin on or off for
-  searches, and Search Plugins. Categories other than Everything only use the plugins that have them.
+- **Search**: press to search; **Options** (Y / △) on it turns each installed plugin on or off for
+  searches. Categories other than Everything only use the plugins that have them.
 - Search goes through your **search plugins**: Search Plugins › Get Official Plugins, or
   **Get Community Plugins** (the list on the [qBittorrent wiki](https://github.com/qbittorrent/search-plugins/wiki/Unofficial-search-plugins),
   public and private sites). Plugins for private sites ask for your account when they're installed
@@ -461,7 +461,7 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
 - **Split Tunneling** (on by default): nothing uses the VPN except the apps and sites you add —
   Torrents, Steam and its games, other games, Discord, the browser, AppImages — and their DNS goes
   through the VPN too. Turn it off and everything uses the VPN. Apps that use the VPN are started
-  in a `crossbar-vpn` group which the firewall routes through the VPN (created once, with your
+  (through util-linux's `newgrp`) in a `crossbar-vpn` group which the firewall routes through the VPN (created once, with your
   password); Crossbar's own checks use your normal line. **Check Split Tunneling** shows whether
   it's working.
 - **Leak Tests**: a torrent IP leak test (your torrent engine announces a made-up torrent to

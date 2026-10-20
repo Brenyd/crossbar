@@ -137,8 +137,9 @@ function spotifyNowItem(n, key = 'sp-now') {
     { label: `Repeat: ${n.repeat !== 'off' ? 'On' : 'Off'}`, action: ctl('repeat') },
   ];
   if (!n.here) opts.unshift({ label: 'Play on Crossbar', action: spotifyTransfer });
+  if (n.lost) opts.splice(0, opts.length, { label: 'Stop', action: ctl('toggle') }, { label: 'Reconnect (keeps playing)', action: spotifyTransfer });
   return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY',
-    sub: `${n.artist} · ${fmtTime(n.position)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.playing ? '' : ' · Paused'}`,
+    sub: `${n.artist} · ${fmtTime(n.position)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.lost ? ' · Spotify lost the speaker: {menu} to reconnect' : n.playing ? '' : ' · Paused'}`,
     progress: n.duration ? n.position / n.duration : null, action: ctl('toggle'), options: opts };
 }
 function reloadOrRefresh() { if (S.stack.length) reloadFolder(); else refresh('music'); }
