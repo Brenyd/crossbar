@@ -128,6 +128,8 @@ def state():
         "theme": cfg["theme"],
         "theme_pack": themes.current_id(),
         "sounds": cfg["sounds"],
+        "interface": cfg.get("interface", "xmb"),
+        "era": cfg.get("era", "nxe"),
         "providers": [{"id": p.id, "name": p.name, "login_fields": p.login_fields,
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
                       for p in providers().values()],
@@ -434,10 +436,15 @@ def r_login(pid, b):
 
 
 def r_settings(b):
-    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games", "glyphs"}
+    allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
+               "glyphs", "interface", "era"}
 
     if "glyphs" in b and b["glyphs"] not in ("auto", *glyphs.STYLES):
         raise ValueError("glyphs must be auto, xbox, playstation or nintendo")
+    if "interface" in b and b["interface"] not in ("xmb", "x360"):
+        raise ValueError("interface must be xmb or x360")
+    if "era" in b and b["era"] not in ("blades", "nxe", "metro"):
+        raise ValueError("era must be blades, nxe or metro")
 
     def apply(c):
         for k, v in b.items():
@@ -448,6 +455,8 @@ def r_settings(b):
     util.update_config(apply)
     if "glyphs" in b:
         player.write_glyphs()          # a playing video picks the new style up within seconds
+    if "interface" in b or "era" in b:
+        HUB.publish({"type": "interface"})     # any other open page follows along
     return state()
 
 

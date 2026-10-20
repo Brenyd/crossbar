@@ -1,10 +1,11 @@
 'use strict';
-// Crossbar XMB shell. Categories run horizontally, items vertically; folders
+// Crossbar shell. The XMB look: categories run horizontally, items vertically; folders
 // push a new column. Keyboard: arrows, Enter, Esc, Tab. Gamepad: d-pad/stick, A, B, Y.
+// Only the *drawing* half is swappable (see "shell seam" below); everything else —
+// the item model, folders, Options, dialogs, input, polling — is shared by every look.
 
 const $ = (s) => document.querySelector(s);
 const STAGE = $('#stage');
-const CAT_X = 560, CAT_GAP = 230;
 
 // ---------------------------------------------------------------- utilities
 const api = {
@@ -509,107 +510,168 @@ function ensureArt(el, it) {
   img.src = it.art;
 }
 
-function itemEl(it) {
-  const el = document.createElement('div');
-  el.className = 'item';
-  let slot;
-  if (it.art !== undefined) {
-    const h = hashHue(it.artTitle || it.label);
-    slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
-  } else slot = `<div class="ico">${icon(it.icon)}</div>`;
-  el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
-    <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
-  if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
-  return el;
-}
-
-function renderCats() {
-  const wrap = $('#cats');
-  if (!wrap.children.length) {
-    CATS.forEach((c, i) => {
-      const el = document.createElement('div');
-      el.className = 'cat';
-      el.style.left = `${CAT_X + i * CAT_GAP}px`;
-      el.innerHTML = `<div class="ico">${icon(c.icon)}</div><div class="lbl">${esc(c.label)}</div>`;
-      wrap.appendChild(el);
-    });
-  }
-  wrap.style.transform = `translateX(${-S.ci * CAT_GAP}px)`;
-  [...wrap.children].forEach((el, i) => el.classList.toggle('on', i === S.ci));
-}
-
+// ---------------------------------------------------------------- shell seam
+// The *drawing* half of the menu is swappable: Settings › Theme › Interface picks one
+// (the XMB below, or one of the Xbox 360 dashboards in x360.js). Everything else —
+// the item model, folders, Options, dialogs, input, polling — is shared.
+//
+// A shell provides: setup teardown resetCats render renderCats renderColumn position
+// itemEl hint moveV moveH. A look with several variants registers an `eras` map of
+// era id -> implementation instead, and Settings offers a second row to pick between them.
+//
+// It must also keep to the *item node contract*, because the shared code reaches into
+// the nodes a shell built:
+//   · the root element has class "item"                    (ensureArt, patchJobRows)
+//   · it holds a .txt wrapper containing a .sub, and a .bar > i when progress != null
+//   · columnEls[i] is the node for list()[i] — index-parallel, whatever the visual order
+// Break the last one and a running download's progress bar lands on the wrong game.
 let columnEls = [];
-function renderColumn(rebuild = true) {
-  const col = $('#column');
-  if (!S.stack.length && !S.items[CATS[S.ci].id]) S.items[CATS[S.ci].id] = [{ key: 'loading', label: 'Loading…', icon: 'refresh' }];
-  const items = list();
-  if (rebuild) col.classList.add('swap');
-  col.innerHTML = '';
-  columnEls = items.map((it) => { const el = itemEl(it); col.appendChild(el); return el; });
-  position();
-  if (rebuild) requestAnimationFrame(() => requestAnimationFrame(() => col.classList.remove('swap')));
-  hint();
-}
+const Shell = {
+  id: 'xmb', era: null, impls: {},
+  artWindow: 8,                             // rows either side of the cursor that load artwork
+  register(id, impl) { this.impls[id] = impl; },
+  eraList(id) { const s = this.impls[id]; return s?.eras ? Object.keys(s.eras) : null; },
+  get active() {
+    const s = this.impls[this.id];
+    return s?.eras ? s.eras[this.era] : s;
+  },
+  // Called from applyState, so on every /api/state: a no-op unless the setting changed.
+  apply(iface, era) {
+    const id = this.impls[iface] ? iface : 'xmb';     // unknown look (old config, new backend): XMB
+    const eras = this.eraList(id);                    // looks without eras ignore the setting
+    const e = eras ? (eras.includes(era) ? era : eras[0]) : null;
+    document.body.dataset.shell = id;        // set before the early return, so a theme
+    document.body.dataset.era = e || '';     // reload can never lose the CSS scope
+    if (id === this.id && e === this.era) return;
+    this.active?.teardown?.();
+    this.id = id; this.era = e; columnEls = [];
+    this.active.setup?.();
+    // only the DOM is rebuilt: S.stack/S.ci/S.catSel/S.items survive, so you keep your place
+    if (S.state) render();
+  },
+  resetCats() { this.active?.resetCats?.(); },
+};
 
-function position() {
-  const items = list(), s = sel();
-  // the rows below make room for the *highlighted* row's size (a 140px artwork tile, a progress
-  // bar), not their own: otherwise an icon row tucks under a big tile
-  const selArt = items[s]?.art !== undefined;
-  const selExtra = items[s]?.progress != null ? 18 : 0;
-  columnEls.forEach((el, i) => {
-    const on = i === s;
-    const isArt = items[i].art !== undefined;
-    const square = isArt && items[i].artShape === 'square';       // app icons: centred like icons
-    const slotW = square ? (on ? 120 : 72) : isArt ? (on ? 300 : 150) : (on ? 104 : 72);
-    let y;
-    if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
-    else if (i === s) y = selArt ? 500 : 480;
-    else y = (selArt ? 648 : 596) + selExtra + (i - s - 1) * 100;
-    const x = CAT_X - slotW / 2;
-    el.style.transform = `translate(${x}px, ${y}px)`;
-    el.classList.toggle('on', on);
-    el.classList.toggle('dim', !on);
-    el.style.opacity = y < -60 || y > 900 ? 0 : '';     // > 900 would run under the button hints
-    if (Math.abs(i - s) <= 8) ensureArt(el, items[i]);
-  });
-}
+const XmbShell = {
+  CAT_X: 560, CAT_GAP: 230,
+  setup() {},                               // #cats/#column/#crumb are already in index.html
+  teardown() { $('#cats').innerHTML = ''; $('#column').innerHTML = ''; $('#crumb').hidden = true; },
+  resetCats() { $('#cats').innerHTML = ''; },
 
-function render() {
-  const inFolder = S.stack.length > 0;
-  document.body.classList.toggle('infolder', inFolder);
-  $('#crumb').hidden = !inFolder;
-  if (inFolder) {
-    const f = S.stack.at(-1);
-    $('#crumb .crumb-ico').innerHTML = icon(f.icon);
-    $('#crumb .crumb-label').textContent = f.title;
-  }
-  renderCats();
-  renderColumn(true);
-}
+  itemEl(it) {
+    const el = document.createElement('div');
+    el.className = 'item';
+    let slot;
+    if (it.art !== undefined) {
+      const h = hashHue(it.artTitle || it.label);
+      slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 55% 38%),hsl(${(h + 40) % 360} 60% 18%))">${esc(it.artTitle)}</div>`;
+    } else slot = `<div class="ico">${icon(it.icon)}</div>`;
+    el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}${it.badge ? `<span class="badge">${esc(it.badge)}</span>` : ''}</div>
+      <div class="sub">${esc(gl(it.sub || ''))}</div>${it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
+    if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
+    return el;
+  },
 
-function hint() {
-  const it = list()[sel()];
-  const parts = [];
-  if (it && (it.action || it.children)) parts.push(`${glb('ok')}Enter`);
-  if (S.stack.length) parts.push(`${glb('back')}Back`);
-  if (it?.options?.length) parts.push(`${glb('menu')}Options`);
-  $('#hint').innerHTML = parts.join(' ');
-}
+  renderCats() {
+    const wrap = $('#cats');
+    if (!wrap.children.length) {
+      CATS.forEach((c, i) => {
+        const el = document.createElement('div');
+        el.className = 'cat';
+        el.style.left = `${this.CAT_X + i * this.CAT_GAP}px`;
+        el.innerHTML = `<div class="ico">${icon(c.icon)}</div><div class="lbl">${esc(c.label)}</div>`;
+        wrap.appendChild(el);
+      });
+    }
+    wrap.style.transform = `translateX(${-S.ci * this.CAT_GAP}px)`;
+    [...wrap.children].forEach((el, i) => el.classList.toggle('on', i === S.ci));
+  },
 
-// ---------------------------------------------------------------- input
-function moveV(d) {
-  const n = list().length; if (!n) return;
-  const i = Math.max(0, Math.min(n - 1, sel() + d));
-  if (i !== sel()) { setSel(i); Sfx.move(); position(); hint(); }
-}
-function moveH(d) {
-  if (S.stack.length) { if (d < 0) back(); return; }
-  const i = Math.max(0, Math.min(CATS.length - 1, S.ci + d));
-  if (i === S.ci) return;
-  S.ci = i; Sfx.move(); render();
-  refresh(CATS[i].id);
-}
+  renderColumn(rebuild = true) {
+    const col = $('#column');
+    if (!S.stack.length && !S.items[CATS[S.ci].id]) S.items[CATS[S.ci].id] = [{ key: 'loading', label: 'Loading…', icon: 'refresh' }];
+    const items = list();
+    if (rebuild) col.classList.add('swap');
+    col.innerHTML = '';
+    columnEls = items.map((it) => { const el = this.itemEl(it); col.appendChild(el); return el; });
+    this.position();
+    if (rebuild) requestAnimationFrame(() => requestAnimationFrame(() => col.classList.remove('swap')));
+    this.hint();
+  },
+
+  position() {
+    const items = list(), s = sel();
+    // the rows below make room for the *highlighted* row's size (a 140px artwork tile, a progress
+    // bar), not their own: otherwise an icon row tucks under a big tile
+    const selArt = items[s]?.art !== undefined;
+    const selExtra = items[s]?.progress != null ? 18 : 0;
+    columnEls.forEach((el, i) => {
+      const on = i === s;
+      const isArt = items[i].art !== undefined;
+      const square = isArt && items[i].artShape === 'square';       // app icons: centred like icons
+      const slotW = square ? (on ? 120 : 72) : isArt ? (on ? 300 : 150) : (on ? 104 : 72);
+      let y;
+      if (i < s) y = (S.stack.length ? 370 : 175) - (s - i - 1) * 100; // above the category bar
+      else if (i === s) y = selArt ? 500 : 480;
+      else y = (selArt ? 648 : 596) + selExtra + (i - s - 1) * 100;
+      const x = this.CAT_X - slotW / 2;
+      el.style.transform = `translate(${x}px, ${y}px)`;
+      el.classList.toggle('on', on);
+      el.classList.toggle('dim', !on);
+      el.style.opacity = y < -60 || y > 900 ? 0 : '';     // > 900 would run under the button hints
+      if (Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
+    });
+  },
+
+  render() {
+    const inFolder = S.stack.length > 0;
+    document.body.classList.toggle('infolder', inFolder);
+    $('#crumb').hidden = !inFolder;
+    if (inFolder) {
+      const f = S.stack.at(-1);
+      $('#crumb .crumb-ico').innerHTML = icon(f.icon);
+      $('#crumb .crumb-label').textContent = f.title;
+    }
+    this.renderCats();
+    this.renderColumn(true);
+  },
+
+  hint() {
+    const it = list()[sel()];
+    const parts = [];
+    if (it && (it.action || it.children)) parts.push(`${glb('ok')}Enter`);
+    if (S.stack.length) parts.push(`${glb('back')}Back`);
+    if (it?.options?.length) parts.push(`${glb('menu')}Options`);
+    $('#hint').innerHTML = parts.join(' ');
+  },
+
+  moveV(d) {
+    const n = list().length; if (!n) return;
+    const i = Math.max(0, Math.min(n - 1, sel() + d));
+    if (i !== sel()) { setSel(i); Sfx.move(); this.position(); this.hint(); }
+  },
+  moveH(d) {
+    if (S.stack.length) { if (d < 0) back(); return; }
+    const i = Math.max(0, Math.min(CATS.length - 1, S.ci + d));
+    if (i === S.ci) return;
+    S.ci = i; Sfx.move(); this.render();
+    refresh(CATS[i].id);
+  },
+};
+Shell.register('xmb', XmbShell);
+
+// The rest of the shell (and every module) calls these by name; they follow whichever
+// look is active. Declarations, not arrow consts, so they hoist like the functions they replace.
+function itemEl(it)              { return Shell.active.itemEl(it); }
+function renderCats()            { Shell.active?.renderCats(); }
+function renderColumn(r = true)  { Shell.active?.renderColumn(r); }
+function position()              { Shell.active?.position(); }
+function render()                { Shell.active?.render(); }
+function hint()                  { Shell.active?.hint(); }
+function moveV(d)                { Shell.active?.moveV(d); }
+function moveH(d)                { Shell.active?.moveH(d); }
+
+// ---------------------------------------------------------------- acting on a row
 function confirm() {
   const it = list()[sel()];
   if (!it) return;
@@ -796,6 +858,7 @@ function connectEvents() {
     if (ev.type === 'notice') { toast(ev.text, ev.icon || 'info'); return; }        // backend notices (torrent finished…)
     if (ev.type === 'vpn') { const f = S.stack.at(-1); if (f && /^(vpn|network)/.test(f.source.key)) reloadFolder(); return; }
     if (ev.type === 'theme') { Theme.load(); return; }
+    if (ev.type === 'interface') { loadState(); return; }   // Interface / Dashboard Era changed
     if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; return; }
     if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
@@ -846,6 +909,7 @@ async function mediaKey(action) {
 
 // ---------------------------------------------------------------- polling
 function applyState() {
+  Shell.apply(S.state.interface, S.state.era);   // Settings › Theme › Interface; a no-op if unchanged
   Waves.setTheme(S.state.theme);
   applyGlyphs();
   $('#demo-badge').hidden = !S.state.demo;
@@ -946,7 +1010,7 @@ async function boot() {
   // categories added by later scripts (Apps) take their place in the bar
   CATS.sort((a, b) => ORDER.indexOf(a.id) - ORDER.indexOf(b.id));
   S.ci = CATS.findIndex((c) => c.id === 'game');
-  $('#cats').innerHTML = '';
+  Shell.resetCats();
   if (typeof loadApps === 'function') await Promise.race([Promise.all([loadApps(), loadFolders()]), new Promise((r) => setTimeout(r, 3000))]);
   S.items = {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

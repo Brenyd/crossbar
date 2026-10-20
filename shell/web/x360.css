@@ -1,0 +1,234 @@
+/* The Xbox 360 dashboards (web/x360.js). Loaded after style.css and inert until
+   Settings › Theme › Interface turns one on: every selector here is scoped to
+   body[data-shell="x360"], which xmb.js's Shell seam sets. Nothing in this file can
+   apply to the cross-media bar.
+
+   The 360 tiles and rows are the same .item nodes the XMB uses, so style.css already
+   styles them; these rules win on specificity rather than by neutralising it.
+
+   Theme packs recolour all of this from theme.css (loaded last, so it overrides this
+   file): --x360-bg for the backdrop, --x360-hue-0..9 for the blade colours. */
+
+body[data-shell="x360"] {
+  --x360-bg: #0a0d0e;
+  --x360-tile: color-mix(in srgb, var(--accent) 24%, #0d1113);
+  --x360-edge: color-mix(in srgb, var(--accent) 55%, #ffffff 12%);
+}
+/* sits between #theme-bg and #waves by DOM order (see x360.js setup) — no z-index, or
+   body's opaque background would paint over it */
+body[data-shell="x360"] .x-bg { position: fixed; inset: 0; background: var(--x360-bg); }
+
+/* the breadcrumb is drawn into the dashboard's own chrome instead */
+body[data-shell="x360"] #crumb { display: none !important; }
+/* the blade stack / channel rail is the dashboard's frame: it stays put inside folders,
+   unlike the XMB's category bar (style.css: body.infolder #cats { opacity: 0 }) */
+body[data-shell="x360"].infolder #cats { opacity: 1; }
+
+body[data-shell="x360"] #hint { bottom: 42px; letter-spacing: .3px; }
+
+/* the Y menu: squared off and tinted to the dashboard, but the same panel and the same
+   keys — xmb.js's Options drives it unchanged */
+body[data-shell="x360"] #options {
+  background: linear-gradient(90deg, rgb(0 0 0 / 0), rgb(4 6 7 / .9) 22%);
+}
+body[data-shell="x360"] .opt { padding: 13px 26px; }
+body[data-shell="x360"] .opt.on {
+  color: var(--text);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 46%, transparent), transparent 92%);
+}
+/* recolour style.css's existing left bar rather than adding a second one */
+body[data-shell="x360"] .opt.on::before {
+  background: var(--x360-edge); box-shadow: 0 0 12px var(--x360-edge);
+}
+body[data-shell="x360"] .opt-head { color: color-mix(in srgb, var(--accent) 60%, #ffffff); }
+
+/* ================================================================ blades (2005) */
+body[data-shell="x360"][data-era="blades"] {
+  --x360-bg: radial-gradient(130% 90% at 18% 55%,
+    color-mix(in srgb, var(--accent) 42%, #0b1a0b) 0%, rgb(4 8 5 / 88%) 100%);
+  /* one hue per category, in ORDER (xmb.js): users settings photo music video tv game apps store party.
+     Green sits on Game, orange on Store — the Games and Marketplace blades of the original. */
+  --x360-hue-0: 205; --x360-hue-1: 210; --x360-hue-2: 175; --x360-hue-3: 280; --x360-hue-4: 315;
+  --x360-hue-5: 255; --x360-hue-6: 105; --x360-hue-7: 45;  --x360-hue-8: 28;  --x360-hue-9: 190;
+}
+/* the waves keep a hint of motion behind the blades — the only era that ever had any */
+body[data-shell="x360"][data-era="blades"] #waves { opacity: .3; }
+
+body[data-shell="x360"][data-era="blades"] #cats { position: absolute; inset: 0; transform: none; }
+body[data-shell="x360"][data-era="blades"] .x-blade {
+  position: absolute; top: 0; height: 100%; overflow: hidden;
+  --h: 150;
+  transition: left .34s var(--ease), width .34s var(--ease);
+}
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(1) { --h: var(--x360-hue-0); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(2) { --h: var(--x360-hue-1); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(3) { --h: var(--x360-hue-2); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(4) { --h: var(--x360-hue-3); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(5) { --h: var(--x360-hue-4); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(6) { --h: var(--x360-hue-5); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(7) { --h: var(--x360-hue-6); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(8) { --h: var(--x360-hue-7); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(9) { --h: var(--x360-hue-8); }
+body[data-shell="x360"][data-era="blades"] .x-blade:nth-child(10) { --h: var(--x360-hue-9); }
+
+/* the slant lives on the face, so icons and text stay upright like the original */
+body[data-shell="x360"][data-era="blades"] .x-face {
+  position: absolute; top: -80px; bottom: -80px; left: -60px; right: -60px;
+  transform: skewX(-6deg);
+  background: linear-gradient(175deg, hsl(var(--h) 42% 30%) 0%, hsl(var(--h) 48% 15%) 55%, hsl(var(--h) 52% 9%) 100%);
+  border-left: 2px solid hsl(var(--h) 60% 52% / .55);
+  box-shadow: inset 0 0 90px rgb(0 0 0 / .45), 6px 0 26px rgb(0 0 0 / .4);
+  opacity: .88; transition: opacity .34s, filter .34s;
+}
+body[data-shell="x360"][data-era="blades"] .x-blade.on .x-face {
+  opacity: 1; filter: brightness(1.22) saturate(1.1);
+}
+
+/* closed blade: icon above a vertical label */
+body[data-shell="x360"][data-era="blades"] .x-spine {
+  position: absolute; left: 0; top: 0; width: 112px; height: 100%;
+  display: flex; flex-direction: column; align-items: center; padding-top: 110px; gap: 20px;
+  transition: opacity .25s;
+}
+body[data-shell="x360"][data-era="blades"] .x-spine .x-ico { width: 54px; height: 54px; flex: none; }
+body[data-shell="x360"][data-era="blades"] .x-spine .x-vlbl {
+  writing-mode: vertical-rl; font-size: 23px; letter-spacing: 2px; color: var(--dim);
+  white-space: nowrap; overflow: hidden; max-height: 620px;
+}
+body[data-shell="x360"][data-era="blades"] .x-blade.on .x-spine { opacity: 0; }
+
+/* open blade: horizontal header, then a rule the list sits under */
+body[data-shell="x360"][data-era="blades"] .x-head {
+  position: absolute; left: 70px; top: 104px; right: 60px; height: 96px;
+  display: flex; align-items: center; gap: 26px; opacity: 0;
+  transition: opacity .3s .08s;
+  border-bottom: 1px solid rgb(255 255 255 / .28);
+}
+body[data-shell="x360"][data-era="blades"] .x-blade.on .x-head { opacity: 1; }
+body[data-shell="x360"][data-era="blades"] .x-head .x-ico { width: 68px; height: 68px; flex: none; }
+body[data-shell="x360"][data-era="blades"] .x-head .x-title {
+  font-size: 40px; letter-spacing: .5px; white-space: nowrap; overflow: hidden;
+  text-shadow: 0 2px 10px rgb(0 0 0 / .6);
+}
+
+/* rows: a left-aligned list, not the XMB's centred pivot */
+body[data-shell="x360"][data-era="blades"] .item { height: 64px; gap: 22px; }
+body[data-shell="x360"][data-era="blades"] .item .ico { width: 46px; height: 46px; }
+body[data-shell="x360"][data-era="blades"] .item.on .ico { width: 56px; height: 56px; }
+body[data-shell="x360"][data-era="blades"] .item .art { width: 128px; height: 72px; border-radius: 2px; }
+body[data-shell="x360"][data-era="blades"] .item.on .art { width: 160px; height: 90px; }
+body[data-shell="x360"][data-era="blades"] .item .art.poster { width: 54px; height: 76px; }
+body[data-shell="x360"][data-era="blades"] .item.on .art.poster { width: 64px; height: 90px; }
+body[data-shell="x360"][data-era="blades"] .item .art.square { width: 52px; height: 52px; }
+body[data-shell="x360"][data-era="blades"] .item.on .art.square { width: 64px; height: 64px; }
+body[data-shell="x360"][data-era="blades"] .item .label { font-size: 27px; }
+body[data-shell="x360"][data-era="blades"] .item.on .label { font-size: 31px; }
+body[data-shell="x360"][data-era="blades"] .item .sub { font-size: 18px; }
+body[data-shell="x360"][data-era="blades"] .item .bar { width: 300px; }
+body[data-shell="x360"][data-era="blades"] .item.dim { opacity: .62; }
+/* the selected row gets the era's lit chip rather than the XMB's pulsing glow */
+body[data-shell="x360"][data-era="blades"] .item.on .ico,
+body[data-shell="x360"][data-era="blades"] .item.on .art { animation: none; }
+body[data-shell="x360"][data-era="blades"] .item.on .label { text-shadow: 0 0 18px var(--x360-edge), 0 2px 6px rgb(0 0 0 / .7); }
+
+/* ================================================================ tiles: NXE + Metro */
+/* Both eras lay items out as tiles and show the selected one's text in a detail region.
+   The tile root stays a fixed box and is never scaled — the artwork inside overflows a
+   centred grid cell to "pop" instead. That keeps the root's position stable, which is what
+   lets the detail region be the selected tile's own .txt, lifted out by CSS alone: a
+   selection change is then just the .on class moving, with no rebuild (xmb.js calls
+   position() without one). --detail-dy, set per tile in position(), pins the region to the
+   stage no matter which row the tile sits on. */
+body[data-shell="x360"][data-era="nxe"],
+body[data-shell="x360"][data-era="metro"] { --x360-tile-edge: color-mix(in srgb, var(--accent) 70%, #ffffff 18%); }
+
+body[data-shell="x360"][data-era="nxe"] #waves,
+body[data-shell="x360"][data-era="metro"] #waves { opacity: 0; }
+
+body[data-shell="x360"][data-era="nxe"] #cats,
+body[data-shell="x360"][data-era="metro"] #cats { position: absolute; inset: 0; transform: none; }
+
+body[data-shell="x360"][data-era="nxe"] .item,
+body[data-shell="x360"][data-era="metro"] .item {
+  display: grid; place-items: center; gap: 0;
+  background: var(--x360-tile);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 6px 20px rgb(0 0 0 / .45);
+  transition: transform .26s var(--ease), opacity .26s, box-shadow .2s, background .2s;
+}
+body[data-shell="x360"][data-era="nxe"] .item.dim,
+body[data-shell="x360"][data-era="metro"] .item.dim { opacity: .74; }
+body[data-shell="x360"][data-era="nxe"] .item.on,
+body[data-shell="x360"][data-era="metro"] .item.on {
+  background: color-mix(in srgb, var(--accent) 42%, #0d1113);
+  box-shadow: inset 0 0 0 3px var(--x360-tile-edge), 0 10px 34px rgb(0 0 0 / .6);
+}
+
+/* artwork and icons fill the tile; the selected one overflows its centred cell to pop */
+body[data-shell="x360"][data-era="nxe"] .item :is(.art, .ico),
+body[data-shell="x360"][data-era="metro"] .item :is(.art, .ico) {
+  border-radius: 0; box-shadow: none; background-color: transparent;
+  transition: width .26s var(--ease), height .26s var(--ease);
+}
+body[data-shell="x360"][data-era="nxe"] .item.on :is(.art, .ico),
+body[data-shell="x360"][data-era="metro"] .item.on :is(.art, .ico) { animation: none; }
+
+/* the detail region: the selected tile's own .txt, lifted out of the tile */
+body[data-shell="x360"][data-era="nxe"] .item .txt,
+body[data-shell="x360"][data-era="metro"] .item .txt { display: none; }
+body[data-shell="x360"][data-era="nxe"] .item.on .txt,
+body[data-shell="x360"][data-era="metro"] .item.on .txt {
+  display: block; position: absolute; left: 0; top: var(--detail-dy); width: 880px;
+  text-align: left; pointer-events: none;
+}
+body[data-shell="x360"][data-era="nxe"] .item.on .sub,
+body[data-shell="x360"][data-era="metro"] .item.on .sub { height: auto; opacity: 1; white-space: normal; }
+
+/* ---------------- NXE (2008) */
+body[data-shell="x360"][data-era="nxe"] {
+  --x360-bg: linear-gradient(160deg,
+    color-mix(in srgb, var(--accent) 20%, #1b2124) 0%, rgb(9 12 13 / 92%) 62%, rgb(5 7 8 / 96%) 100%);
+}
+body[data-shell="x360"][data-era="nxe"] .x-chan {
+  position: absolute; left: 0; top: 0; width: 330px; height: 80px;
+  display: flex; align-items: center; gap: 20px;
+  transition: transform .3s var(--ease), opacity .3s;
+}
+body[data-shell="x360"][data-era="nxe"] .x-chan .x-ico { width: 40px; height: 40px; flex: none; opacity: .7; }
+body[data-shell="x360"][data-era="nxe"] .x-chan .x-clbl {
+  font-size: 25px; color: var(--dim); white-space: nowrap; overflow: hidden;
+}
+body[data-shell="x360"][data-era="nxe"] .x-chan.on .x-ico { width: 52px; height: 52px; opacity: 1; }
+body[data-shell="x360"][data-era="nxe"] .x-chan.on .x-clbl {
+  font-size: 35px; color: var(--text); text-shadow: 0 0 20px var(--x360-tile-edge);
+}
+
+body[data-shell="x360"][data-era="nxe"] .item { width: 260px; height: 260px; }
+body[data-shell="x360"][data-era="nxe"] .item :is(.art, .ico) { width: 200px; height: 200px; }
+body[data-shell="x360"][data-era="nxe"] .item.on :is(.art, .ico) { width: 248px; height: 248px; }
+body[data-shell="x360"][data-era="nxe"] .item .art:not(.square) { background-size: cover; }
+body[data-shell="x360"][data-era="nxe"] .item .art.poster { background-size: contain; }
+body[data-shell="x360"][data-era="nxe"] .item.on .label { font-size: 46px; white-space: normal; }
+body[data-shell="x360"][data-era="nxe"] .item.on .sub { font-size: 25px; margin-top: 10px; }
+body[data-shell="x360"][data-era="nxe"] .item.on .bar { width: 420px; }
+
+/* ---------------- Metro (2011) */
+body[data-shell="x360"][data-era="metro"] {
+  --x360-bg: color-mix(in srgb, var(--accent) 22%, #101014);
+}
+body[data-shell="x360"][data-era="metro"] .x-pane {
+  position: absolute; left: 120px; right: 80px; display: flex; align-items: baseline; gap: 34px;
+  white-space: nowrap; overflow: hidden;
+}
+body[data-shell="x360"][data-era="metro"] .x-pane-cur { font-size: 56px; letter-spacing: -.5px; }
+body[data-shell="x360"][data-era="metro"] :is(.x-pane-prev, .x-pane-next) { font-size: 30px; color: var(--dim); opacity: .5; }
+
+body[data-shell="x360"][data-era="metro"] .item { width: 220px; height: 190px; }
+body[data-shell="x360"][data-era="metro"] .item :is(.art, .ico) { width: 150px; height: 130px; }
+body[data-shell="x360"][data-era="metro"] .item.on :is(.art, .ico) { width: 178px; height: 156px; }
+body[data-shell="x360"][data-era="metro"] .item .art.square { background-size: cover; }
+body[data-shell="x360"][data-era="metro"] .item :is(.art.poster, .art:not(.square)) { background-size: contain; }
+body[data-shell="x360"][data-era="metro"] .item.on .label { font-size: 34px; }
+body[data-shell="x360"][data-era="metro"] .item.on .sub { font-size: 21px; margin-top: 6px; }
+body[data-shell="x360"][data-era="metro"] .item.on .bar { width: 420px; }
+/* the strip sits above the grid, so it must not cover the pane header */
+body[data-shell="x360"][data-era="metro"] .item.on .txt { width: 1280px; }

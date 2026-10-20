@@ -4,6 +4,11 @@
 
 const check = (on) => (on ? '✓ ' : '');
 
+// Settings › Theme › Interface. An interface id with no shell registered in xmb.js's
+// Shell seam is hidden here and falls back to the XMB, so a half-installed build still boots.
+const IFACES = [['xmb', 'Crossbar — the cross-media bar'], ['x360', 'Xbox 360 Dashboard']];
+const ERAS_UI = [['blades', 'Blades (2005)'], ['nxe', 'New Xbox Experience (2008)'], ['metro', 'Metro (2011)']];
+
 // Open a Settings sub-folder directly (used by "Wi-Fi" in Network, missing-folder hints…).
 function openSettingsFolder(id) {
   const f = SETTINGS_FOLDERS.find((x) => x.key === id);
@@ -477,7 +482,7 @@ const SETTINGS_FOLDERS = [
   CONTROLS_FOLDER,
   GAMES_FOLDER,
   {
-    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Theme packs, colour, adding your own',
+    key: 'theme', label: 'Theme', icon: 'palette', sub: 'Interface, theme packs, colour, adding your own',
     children: async () => {
       const st = S.state;
       const [list, cur] = await Promise.all([api.get('/api/themes'), api.get('/api/theme')]);
@@ -489,6 +494,23 @@ const SETTINGS_FOLDERS = [
         options: [{ label: 'Use This Theme', action: async () => { await call(() => api.post('/api/theme/set', { id: t.id })); await Theme.load(); reloadFolder(); } },
           ...(t.user ? [{ label: 'Remove', action: async () => { if (await confirmBox(`Remove the theme ${t.name}?`)) { await call(() => api.post('/api/theme/remove', { id: t.id }), 'Theme removed'); await Theme.load(); reloadFolder(); } } }] : [])],
       }));
+      // which look draws the menu (xmb.js's Shell seam), and for the 360 which dashboard era
+      const ifc = Shell.impls[st.interface] ? st.interface : 'xmb', era = st.era || 'nxe';
+      const pick = (rows, k, set) => Options.show(
+        rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
+        Math.max(0, rows.findIndex(([v]) => v === k)));
+      const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
+      const looks = IFACES.filter(([v]) => Shell.impls[v]);          // only what's actually installed
+      if (looks.length > 1) {
+        items.unshift({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, ifc),
+          action: () => pick(looks, ifc, (v) => ({ interface: v })) });
+      }
+      const eras = (Shell.eraList(ifc) || []).map((e) => ERAS_UI.find(([v]) => v === e)).filter(Boolean);
+      if (eras.length > 1) {
+        items.splice(looks.length > 1 ? 1 : 0, 0,
+          { key: 'era', label: 'Dashboard Era', icon: 'palette', sub: named(eras, era),
+            action: () => pick(eras, era, (v) => ({ era: v })) });
+      }
       if (cur.waves.mode === 'month') {
         const c = st.theme === 'auto' ? 0 : st.theme + 1;
         const opts = [{ label: `${check(c === 0)}Automatic (changes monthly)`, action: () => setSetting({ theme: 'auto' }).then(reloadFolder) }]

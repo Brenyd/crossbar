@@ -1,6 +1,14 @@
 # Changelog
 
 ## 1.1.4 Alpha
+- **Xbox 360 interface**: Settings › Theme & Time › Theme › **Interface** switches the menu between
+  the cross-media bar and an Xbox 360 dashboard, and **Dashboard Era** picks which 360: Blades
+  (2005, slanted coloured blades with the list in the open one), the New Xbox Experience (2008,
+  channels down the left and a row of big tiles — ▲ ▼ changes channel, ◀ ▶ walks the tiles) or
+  Metro (2011, a three-row grid of flat tiles that pages between categories). It changes the
+  moment you pick it, with no restart, and you keep your place in the menu. Your games, apps,
+  folders, Options menu, dialogs, Quick Menu, keyboard and controller mapping are all unchanged,
+  and theme packs recolour the dashboards too (new `--x360-*` CSS variables in docs/THEMES.md)
 - **VPN apps' DNS**: their lookups went to the system's local resolver (127.0.0.53), which the
   firewall tried to send out of the tunnel; the kernel refuses that, so lookups hung (test app
   timed out, "Couldn't reach bash.ws", torrent search found nothing). Those lookups now go to a

@@ -129,6 +129,32 @@ Plain CSS for the menu page, loaded last. Useful CSS variables:
 (scanlines over everything) is a small example. CSS only styles the menu; the Quick Menu and the
 system keyboard use the colours from `theme.json`.
 
+### The Xbox 360 dashboards
+
+If someone picks **Settings › Theme › Interface › Xbox 360 Dashboard**, your colours still apply
+— the dashboards build their own look out of `colors.accent`. `body` carries
+`data-shell="x360"` and `data-era="blades" | "nxe" | "metro"`, so you can style each era, and
+`theme.css` is loaded last so it overrides them:
+
+```css
+/* a flatter, greener Metro */
+body[data-shell="x360"][data-era="metro"] { --x360-bg: #1a4d2e; }
+/* keep the waves moving behind the tiles */
+body[data-shell="x360"] #waves { opacity: 1; }
+/* recolour the Game blade (blades are coloured by hue, in category order) */
+body[data-shell="x360"][data-era="blades"] { --x360-hue-6: 145; }
+```
+
+| Variable | What it does |
+|---|---|
+| `--x360-bg` | the backdrop: any `background` value (colour, gradient, `none` to show the theme's picture) |
+| `--x360-tile` | tile fill for NXE and Metro |
+| `--x360-edge` / `--x360-tile-edge` | the lit edge and glow on the selected row or tile |
+| `--x360-hue-0` … `--x360-hue-9` | Blades only: one hue (0–360) per category, in the order they appear — `users settings photo music video tv game apps store party` |
+
+Themes can't ship JavaScript, so the dashboards' *layout* isn't themeable — only their colours
+and anything else CSS can reach.
+
 ## Stock themes
 
 | Theme | Shows off |

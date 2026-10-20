@@ -206,6 +206,29 @@ The Quick Menu has the temperatures (A shows/hides the overlay) and the fan targ
 Thanks to [syrufex/PS5-Temperature-Control-Panel-Linux](https://github.com/syrufex/PS5-Temperature-Control-Panel-Linux)
 (MIT), whose app showed which driver interfaces to use; Crossbar's version is its own code and UI.
 
+## Interfaces
+
+**Settings › Theme & Time › Theme › Interface** picks how the menu is drawn. It changes the
+moment you choose it — no restart, and you keep your place in the menu while it rebuilds.
+
+| Interface | Looks like |
+|---|---|
+| **Crossbar** | the cross-media bar: categories across, items down, folders push a new column. The default |
+| **Xbox 360 Dashboard** | the 360, in whichever of its three eras you pick under **Dashboard Era** |
+
+The eras:
+
+| Era | Layout |
+|---|---|
+| **Blades (2005)** | slanted coloured blades, one per category. The selected blade opens and holds the item list; ◀ ▶ changes blade, ▲ ▼ moves down the list |
+| **New Xbox Experience (2008)** | channels down the left, a row of big tiles across. **▲ ▼ changes channel, ◀ ▶ walks the tiles** — the axes swap round |
+| **Metro (2011)** | a three-row grid of flat tiles filled top-to-bottom. ▲ ▼ moves within a column, ◀ ▶ moves between columns and pages to the next category at the edges |
+
+Everything else is unchanged whichever you pick: the same games and apps, folders, Options
+(**Y**) menu, dialogs, Quick Menu, on-screen keyboard and controller mapping. Theme packs still
+apply — they recolour the 360 dashboards too, and can restyle them further from `theme.css`
+(see [docs/THEMES.md](docs/THEMES.md)).
+
 ## Button glyphs
 
 **Settings › Controller & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
@@ -566,7 +589,7 @@ The Settings column groups related sections: **Display & Sound**, **Network & Bl
 | Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
 | Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, frame rate overlay, demo library |
 | Artwork | SteamGridDB API key, fill in missing artwork, reset all |
-| Theme | Theme packs (stock and your own, install from a folder or .zip), wave colour for Classic — see [docs/THEMES.md](docs/THEMES.md) |
+| Theme | Interface (cross-media bar or Xbox 360 dashboard, and which 360 era), theme packs (stock and your own, install from a folder or .zip), wave colour for Classic — see [Interfaces](#interfaces) and [docs/THEMES.md](docs/THEMES.md) |
 | Media | Music / Video / Photo folders, IPTV, resume videos, subtitles default |
 | Date & Time | Time zone, automatic time, 12/24-hour clock |
 | Accounts | Steam, GOG, Epic sign-in; Spotify; Discord (sign in, which voice channels show in Social); user name |
@@ -614,12 +637,19 @@ shell/crossbar/display.py     resolution / refresh / scale via sway
 shell/crossbar/party.py       voice services + channels
 shell/mpv/crossbar-osc.lua    the controller-friendly video control panel
 shell/crossbar/login_helper.py  web-view window for GOG/Epic sign-in
-shell/web/                    the XMB: xmb.js (core), media.js (Photo/Music/Video/TV/Network), quick.js, settings.js
+shell/web/                    the menu: xmb.js (core), media.js (Photo/Music/Video/TV/Network), quick.js, settings.js
+shell/web/x360.js             the Xbox 360 dashboards (Blades / NXE / Metro), an alternative to the XMB
 iso/                          archiso overlay: packages, autologin, sway session, boot setup
 ```
 
 Boot path: autologin `player` on tty1 → sway (tabbed, so one app is visible at a time) →
-`crossbar-shell` starts the backend and a kiosk Chromium window → the XMB.
+`crossbar-shell` starts the backend and a kiosk Chromium window → the menu.
+
+Only the *drawing* half of the menu is swappable. `xmb.js` holds a "shell seam": the item
+model, folders, Options panel, dialogs, input routing and polling are shared, and a look
+supplies `render` / `position` / `moveV` / `moveH` and friends. `XmbShell` (in `xmb.js`) is the
+cross-media bar; `x360.js` registers the three 360 dashboards against the same seam. Adding a
+look means registering one more object — see the comments at the top of both files.
 
 ## Known gaps (next steps)
 
