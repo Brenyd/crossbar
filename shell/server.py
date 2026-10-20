@@ -27,7 +27,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import looks, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import looks, memguard, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -152,6 +152,7 @@ def state():
         "gamescope": cfg.get("gamescope", False),
         "steam_bigpicture": cfg.get("steam_bigpicture", True),
         "free_memory_in_games": cfg.get("free_memory_in_games", True),
+        "memory_guard": cfg.get("memory_guard", True), "memory": memguard.status(),
         "glyphs": glyphs.current(),
         "desktop_available": session.desktop_available(),
         "ps5hw": ps5hw.available(),
@@ -382,6 +383,7 @@ def r_launch(b):
     before = {w["con_id"] for w in system.windows()}
     title = b.get("title", "")
     live = (b["provider"] in ("emu", "lutris", "shortcut") or not demo_on()) and os.environ.get("SWAYSOCK")
+    session.clear_home_hold()                 # a new game: the menu may close for it again
     quick.STATE["game"] = {"provider": b["provider"], "id": str(b["id"]), "title": title, "at": time.time()}   # its trophies, in the Quick Menu
 
     def progress(msg):
@@ -454,7 +456,7 @@ def recent_video(cfg):
 
 def r_settings(b):
     allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
-               "glyphs", "interface"}
+               "glyphs", "interface", "memory_guard"}
 
     if "glyphs" in b and b["glyphs"] not in ("auto", *glyphs.STYLES):
         raise ValueError("glyphs must be auto, xbox, playstation or nintendo")
@@ -1300,12 +1302,19 @@ def main():
     FORCE_DEMO = a.demo
     os.makedirs(util.GAMES_DIR, exist_ok=True)
     session.watchdog()
+    memguard.start(lambda text: HUB.publish({"type": "notice", "text": text, "icon": "info"}))
     PADS.start()
 
     def keep_xmb_marked():
+        brought = False
         while True:
-            system.ensure_xmb_mark()
-            time.sleep(5)
+            found = system.ensure_xmb_mark()
+            # after Restart Crossbar / Go Home with a game (maybe a hung one) still on screen,
+            # the new menu window must come to the front, not open behind it
+            if found and not brought and session.home_held():
+                system.show_shell()
+            brought = brought or bool(found)
+            time.sleep(1 if not brought else 5)
     threading.Thread(target=keep_xmb_marked, daemon=True).start()
     system.bind_home_keys(controls.load()["keyboard"]["home"])
     def torrent_notices():

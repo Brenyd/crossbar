@@ -624,7 +624,7 @@ class Gamepads:
                         f = system.focused()
                         app = ((f or {}).get("app") or "").lower()
                         if app.startswith("steam_app_") or app == "gamescope":
-                            threading.Thread(target=session.enter_game_mode, args=(app,), daemon=True).start()
+                            threading.Thread(target=session.enter_game_mode, args=(app, True), daemon=True).start()
                     if any(k in line for k in ('"focus"', '"close"', '"new"', '"fullscreen_mode"')):
                         time.sleep(0.05)
                         self.update_grab()

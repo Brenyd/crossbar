@@ -59,8 +59,9 @@ const X360 = {
     tick(); this.tick = setInterval(tick, 5000);
     // what's playing, centred along the top (music or Spotify)
     clearInterval(this.nowTick); clearInterval(this.nowPoll);
-    this.nowPoll = setInterval(() => this.pollNow(), 3000); this.pollNow();
-    this.nowTick = setInterval(() => this.drawNow(), 1000);
+    const here = () => !document.body.classList.contains('away');   // nothing to draw while a game is in front
+    this.nowPoll = setInterval(() => { if (here()) this.pollNow(); }, 3000); this.pollNow();
+    this.nowTick = setInterval(() => { if (here()) this.drawNow(); }, 1000);
   },
 
   async pollNow() {

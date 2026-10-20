@@ -259,6 +259,8 @@ def force_close(con_id, grace=4):
     if not win:
         return
 
+    m = re.match(r"steam_app_(\d+)$", win.get("app") or "")
+
     def finish():
         time.sleep(grace)
         if any(w["con_id"] == con_id for w in all_windows()):
@@ -266,8 +268,13 @@ def force_close(con_id, grace=4):
                 try:
                     os.kill(win["pid"], sig)
                 except ProcessLookupError:
-                    return
+                    break
                 time.sleep(3)
+        if m:
+            # a Steam (Proton) game is many processes: end the rest through Steam's launcher
+            # ("reaper"), or the game keeps its memory with no window
+            subprocess.run(["pkill", "-TERM", "-u", str(os.getuid()), "-f", f"reaper SteamLaunch AppId={m.group(1)}( |$)"],
+                           capture_output=True)
     threading.Thread(target=finish, daemon=True).start()
 
 

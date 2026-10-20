@@ -67,7 +67,34 @@ def _read(folder, builtin):
     }
 
 
+_CACHE = {"sig": None, "looks": []}
+
+
+def _signature():
+    """Changes when a look folder or its look.json changes (cheap: a few stat calls)."""
+    sig = []
+    for base, _ in _dirs():
+        try:
+            sig.append((base, os.stat(base).st_mtime_ns))
+            for n in os.listdir(base):
+                try:
+                    sig.append((n, os.stat(os.path.join(base, n, "look.json")).st_mtime_ns))
+                except OSError:
+                    pass
+        except OSError:
+            sig.append((base, None))
+    return tuple(sig)
+
+
 def all_looks():
+    """Every look installed (cached until a look.json changes)."""
+    sig = _signature()
+    if sig != _CACHE["sig"]:
+        _CACHE["looks"], _CACHE["sig"] = _scan(), sig
+    return [dict(m) for m in _CACHE["looks"]]
+
+
+def _scan():
     """Every look installed, built-in first; a user look can't take a built-in's id."""
     out, seen = [], set()
     for base, builtin in _dirs():

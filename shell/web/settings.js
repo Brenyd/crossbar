@@ -309,6 +309,10 @@ const GAMES_FOLDER = {
       { key: 'freemem', label: 'Free Memory While Gaming', icon: 'game',
         sub: st.free_memory_in_games !== false ? 'On — the menu closes while a game runs; Quick Menu, music and voice keep working' : 'Off — the menu stays open behind games',
         action: async () => { await setSetting({ free_memory_in_games: st.free_memory_in_games === false }); reloadFolder(); } },
+      { key: 'memguard', label: 'Memory Guard', icon: 'game',
+        sub: (st.memory_guard !== false ? 'On — a game that runs out of memory is closed instead of freezing the console' : 'Off — running out of memory can freeze everything')
+          + (st.memory?.killed?.length ? ` · last closed: ${st.memory.killed.at(-1).name}` : ''),
+        action: async () => { await setSetting({ memory_guard: st.memory_guard === false }); reloadFolder(); } },
       { key: 'fps', label: 'Frame Rate Overlay', icon: 'display',
         sub: !st.perf?.available ? 'Needs MangoHud (installed with Crossbar 0.11)' : `${({ off: 'Off', fps: 'FPS only', graph: 'FPS + frame time graph', full: 'Full: FPS, CPU, GPU, temperatures' })[st.perf.fps] || st.perf.fps} · ${st.perf.corner.replace('-', ' ')} — also in the Quick Menu`,
         children: async () => {
@@ -705,8 +709,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.1 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.1 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.2 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.2 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

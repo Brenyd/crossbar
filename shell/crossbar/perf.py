@@ -7,6 +7,7 @@ Steam games get it through Steam (Crossbar starts Steam with MANGOHUD=1); if Ste
 running from elsewhere, it applies after Steam restarts. Vulkan games (incl. Proton/DXVK) only.
 """
 import os
+import time
 
 from . import util
 
@@ -41,13 +42,21 @@ def status():
             "corner": p.get("corner", "top-right"), "size": p.get("size", "auto"), "font_size": font_size()}
 
 
+_SH = [0.0, 1080]
+
+
 def screen_height():
+    """The screen's height (cached a minute: asking sway on every status poll adds up)."""
+    if time.time() - _SH[0] < 60:
+        return _SH[1]
     try:
         from . import display
         hs = [o["current"]["height"] for o in display.outputs() if o["current"].get("height")]
-        return max(hs) if hs else 1080
+        _SH[1] = max(hs) if hs else 1080
     except Exception:
-        return 1080
+        _SH[1] = 1080
+    _SH[0] = time.time()
+    return _SH[1]
 
 
 def font_size():

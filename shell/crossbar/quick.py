@@ -98,6 +98,8 @@ def overlay_switch(con_id):
     if not con_id:
         system.show_shell()
         return True
+    from . import session
+    session.clear_home_hold()                 # back to the game: game mode may close the menu again
     system.bring_to_front(int(con_id))
     return True
 

@@ -700,6 +700,18 @@ const AXIS_INDEX = ['ABS_X', 'ABS_Y', 'ABS_RX', 'ABS_RY'];
 const pad = { prev: new Set(), next: {}, consumed: new Set(), capture: null, lastReport: '' };
 S.xmbFocused = true;
 
+// "Away": a game or app is in front, or a game is loading behind the launch screen. The menu
+// then does next to nothing — animations pause, the backdrop stops drawing, polling slows right
+// down — so every bit of CPU, GPU and memory bandwidth goes to the game.
+function isAway() { return !S.xmbFocused || document.hidden || !$('#launch').hidden; }
+function syncAway() {
+  const a = isAway();
+  if (a !== document.body.classList.contains('away')) document.body.classList.toggle('away', a);
+  return a;
+}
+document.addEventListener('visibilitychange', syncAway);
+setInterval(syncAway, 2000);
+
 function backendHasPads() { return !!(S.state?.pads?.devices?.length); }
 function browserPadsWanted() { return !backendHasPads() && S.xmbFocused && document.hasFocus(); }
 
@@ -762,7 +774,9 @@ function pollPads(now) {
     }
   }
   pad.prev = held;
-  requestAnimationFrame(pollPads);
+  // away from the menu the backend reads the controller; check far less often
+  if (document.body.classList.contains('away') && !pad.capture) setTimeout(() => requestAnimationFrame(pollPads), 250);
+  else requestAnimationFrame(pollPads);
 }
 function fire(a) {
   S.lastInput = 'pad';
@@ -790,7 +804,7 @@ function connectEvents() {
     const ev = JSON.parse(m.data);
     if (ev.type === 'launching') {
       $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
-      clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; }, 320000); return;
+      clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; syncAway(); }, 320000); syncAway(); return;
     }
     if (ev.type === 'art') { refresh('game'); return; }
     if (ev.type === 'notice') { toast(ev.text, ev.icon || 'info'); return; }        // backend notices (torrent finished…)
@@ -798,12 +812,12 @@ function connectEvents() {
     if (ev.type === 'theme') { Theme.load(); return; }
     if (ev.type === 'interface') { loadState(); return; }   // Interface / Dashboard Era changed
     if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
-    if (ev.type === 'launched') { $('#launch').hidden = true; return; }
-    if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
+    if (ev.type === 'launched') { $('#launch').hidden = true; syncAway(); return; }
+    if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; syncAway(); toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
     if (ev.type === 'term') { if (ev.id === Term.id) Term.output(ev.data); return; }
     if (ev.type === 'term-exit') { if (ev.id === Term.id) { Term.id = null; if (Term.open) Term.hide(); } return; }
     if (ev.type === 'open-terminal') { Term.show(ev.cmd); return; }
-    if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; return; }
+    if (ev.type === 'focus') { S.xmbFocused = ev.xmb; if (ev.xmb) pad.justFocused = true; syncAway(); return; }
     if (ev.type === 'open-cat') {          // from the Quick Menu overlay: a category, maybe a folder in it
       if (QuickMenu.open) QuickMenu.close(false);
       if (CATS.some((c) => c.id === ev.cat)) goCat(ev.cat);
@@ -923,15 +937,18 @@ function patchJobRows(jobs) {
   });
   Shell.active?.patched?.();                // a look with a detail panel refreshes it
 }
-setInterval(pollJobs, 1000);
+let jobTicks = 0;
+setInterval(() => { if (!syncAway() || ++jobTicks % 10 === 0) pollJobs(); }, 1000);   // every 10 s while away
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
 setInterval(() => {
-  if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state) return;
+  if (Dialog.open || Options.open || Viewer.open || QuickMenu.open || !S.state || isAway()) return;
   const f = S.stack.at(-1);
   if (f) { if (f.source.live) reloadFolder(); }
   else if (CATS[S.ci].live) refresh(CATS[S.ci].id);
 }, 2000);
+let stateTicks = 0;
 setInterval(async () => {   // pick up windows opening/closing (games, Discord)
+  if (isAway() && ++stateTicks % 4) return;   // every 16 s while away
   const before = JSON.stringify(S.state?.windows || []);
   try { await loadState(); } catch { return; }
   if (JSON.stringify(S.state.windows) !== before && !S.stack.length && ['game', 'party'].includes(CATS[S.ci].id)) refresh(CATS[S.ci].id);

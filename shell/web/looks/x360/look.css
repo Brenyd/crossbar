@@ -27,10 +27,10 @@ body[data-shell="x360"][data-xbg="green"] {
   background: linear-gradient(160deg, #fbfbfc 0%, #e9ecef 48%, #cdd3d8 100%); }
 #x-bg .x-bg-glow { position: absolute; inset: 0; background: radial-gradient(ellipse 60% 55% at 72% 18%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%); }
 #x-bg .x-bg-band { position: absolute; left: -20%; width: 140%; height: 46%; border-radius: 50%; filter: blur(30px);
-  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.75), rgba(255,255,255,0)); animation: x-drift 26s ease-in-out infinite alternate; }
+  background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.75), rgba(255,255,255,0)); }
 #x-bg .b1 { top: 38%; transform: rotate(-9deg); }
-#x-bg .b2 { top: 58%; height: 30%; transform: rotate(-4deg); opacity: .55; animation-duration: 34s; animation-direction: alternate-reverse; }
-@keyframes x-drift { to { translate: 6% -3%; } }
+#x-bg .b2 { top: 58%; height: 30%; transform: rotate(-4deg); opacity: .55; }
+/* the bands stay still: a blurred layer that moves repaints the whole 4K screen every frame */
 body[data-xbg="dark"] #x-bg { background: radial-gradient(ellipse 80% 70% at 70% 10%, #34363b 0%, #1b1c1f 55%, #0e0e10 100%); }
 body[data-xbg="dark"] #x-bg .x-bg-glow { background: radial-gradient(ellipse 50% 40% at 15% 100%, color-mix(in srgb, var(--x-accent) 22%, transparent), transparent 70%); }
 body[data-xbg="dark"] #x-bg .x-bg-band { background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.05), rgba(255,255,255,0)); }

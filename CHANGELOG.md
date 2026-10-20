@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.2.2 Alpha (testing branch)
+- **Memory Guard** (Settings › System, on by default): when a game runs the console out of
+  memory, Crossbar first closes the menu window to give it room, and if memory still runs out,
+  closes the game and says so, instead of the whole console freezing for minutes (sound
+  stuttering, no picture, no controller)
+- **Black screen after a game fixed**: with a game window still around (a hung one, or Big
+  Picture coming back), Go to Home and Restart Crossbar would bring the menu back and then close
+  it straight away again for "game mode". Going Home now keeps the menu, Restart brings it to the
+  front, and if the piece that runs the menu window was killed it's started again
+- **Close a Steam game** ends all of it (Proton runs a game as many processes), not just its window
+- **The menu goes quiet behind games**: while a game is loading or in front, animations
+  pause, the backdrop stops drawing, the controller is read by the backend only, and status
+  polling drops from several times a second to every 10–16 s
+- The Dashboard's backdrop no longer moves (a blurred layer moving repainted the whole 4K screen
+  every frame)
+- Cheaper status checks: the screen size and the list of looks are cached
+- VPN: the DNS relay uses a fixed set of workers (not a thread per question) and can't spin on
+  a broken socket; when split-tunnel rules can't be applied, retries back off to 10 minutes
+  instead of starting a privileged helper every 30 s
+
 ## 1.2.1 Alpha (testing branch)
 - **Friends & Party in the Quick Menu** (both looks, in-game too): your Discord voice channels
   (the ones shown in Social) to join or leave, who's online on Discord and Steam (A calls a Discord
