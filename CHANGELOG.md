@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.5 Alpha
+- **Update Branch** (Settings › System): pick which GitHub branch Update Crossbar installs — main
+  (stable) or a test branch such as testing/xbox-360-interface — and switch back the same way.
+  Picking one offers to install it right away; About shows the branch you're on
+
 ## 1.1.4 Alpha
 - **Xbox 360 interface**: Settings › Theme & Time › Theme › **Interface** switches the menu between
   the cross-media bar and an Xbox 360 dashboard, and **Dashboard Era** picks which 360: Blades

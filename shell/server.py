@@ -153,6 +153,8 @@ def state():
         "desktop_available": session.desktop_available(),
         "ps5hw": ps5hw.available(),
         "boot_mode": session.boot_mode(),
+        "update_branch": __import__("crossbar.updater", fromlist=["x"]).chosen(),
+        "installed_branch": __import__("crossbar.updater", fromlist=["x"]).installed(),
         "gamescope_available": bool(util.which("gamescope")),
         "controls": controls.load(),
         "pads": PADS.status(),
@@ -552,6 +554,7 @@ GET = {
     "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
     "/api/torrent/files": lambda q: torrent.files(q["hash"]),
     "/api/torrent/settings": lambda q: torrent.settings(),
+    "/api/update/branches": lambda q: __import__("crossbar.updater", fromlist=["x"]).branches(),
     "/api/torrent/plugins": lambda q: torrent.plugins(),
     "/api/torrent/plugins/unofficial": lambda q: torrent.unofficial_plugins(),
     "/api/torrent/plugins/official": lambda q: torrent.official_plugins(),
@@ -1109,10 +1112,11 @@ def route_post(path, b):
             raise RuntimeError("Couldn't upload the report — is the internet connected?")
         return {"url": url}
     if head == "update":
-        # a fresh private folder each time (a leftover root-owned /tmp/crossbar-main broke updates)
-        return {"cmd": 'd=$(mktemp -d) && cd "$d" && '
-                       "curl -fL https://github.com/Brenyd/crossbar/archive/refs/heads/main.tar.gz | tar xz && "
-                       "cd crossbar-main && sudo ./update-system.sh"}
+        # the chosen branch (main unless picked in Settings › System › Update Branch), in a fresh private folder
+        from crossbar import updater
+        if len(parts) > 1 and parts[1] == "branch":
+            return updater.choose(b.get("branch"))
+        return {"cmd": updater.command()}
     if head == "installer":
         return system.open_installer()
     if head == "power":

@@ -220,6 +220,23 @@ async function timezoneFolder() {
   }));
 }
 
+// Update Branch: main, or a test branch from GitHub; switch any time (the next update installs it)
+async function pickUpdateBranch() {
+  toast('Looking up branches…', 'download');
+  const r = await call(() => api.get('/api/update/branches'));
+  if (!r) return;
+  if (r.error) toast(r.error, 'info');
+  const pick = await choose(r.branches.map((b) => [b, `${b}${b === 'main' ? ' (stable)' : ' (testing)'}${b === r.installed ? ' · installed' : ''}`]),
+    Math.max(0, r.branches.indexOf(r.chosen)));
+  if (!pick) return;
+  if (pick !== r.chosen && !(await call(() => api.post('/api/update/branch', { branch: pick })))) return;
+  if (typeof loadState === 'function') await loadState();
+  if (pick === r.installed) { toast(`Update branch: ${pick}`, 'download'); if (S.stack.length) reloadFolder(); return; }
+  const warn = pick === 'main' ? '' : '\nTest branches can be unfinished: you can switch back to main the same way.';
+  if (await confirmBox(`Switch to ${pick}?\nCrossbar downloads that branch and restarts.${warn}`)) runInTerminal('/api/update', `Installing ${pick}…`);
+  else if (S.stack.length) reloadFolder();
+}
+
 async function runInTerminal(path, label) {
   const r = await call(() => api.post(path));
   if (r?.cmd) { toast(label, 'system'); Term.show(r.cmd); }
@@ -671,9 +688,14 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmBox('Leave Crossbar?\nOpen games and apps will be closed.')) call(() => api.post('/api/session/desktop'), 'Switching…'); } }] : []),
         { key: 'exit-cb', label: 'Exit Crossbar', icon: 'power', sub: 'Close everything and go back to the login screen / TTY',
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
-        { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
-          action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.1.4 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.1.4 Alpha', 'About') },
+        { key: 'update', label: 'Update Crossbar', icon: 'download',
+          sub: `Download the latest from the ${st.update_branch || 'main'} branch and apply it (no ISO rebuild)`,
+          action: async () => { if (await confirmBox(`Update Crossbar from the ${st.update_branch || 'main'} branch now?\nYou'll see the progress here; Crossbar restarts when it finishes.`)) runInTerminal('/api/update', 'Updating Crossbar…'); } },
+        { key: 'branch', label: 'Update Branch', icon: 'settings',
+          sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
+          action: pickUpdateBranch },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.1.5 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.1.5 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },
