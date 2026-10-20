@@ -5,8 +5,10 @@
 const IPTV_KIND = { live: 'Live TV', vod: 'Movies', series: 'TV Shows' };
 const qs = (o) => Object.entries(o).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
 
-async function iptvPlay(body, label) {
-  const r = await call(() => api.post('/api/iptv/play', body));
+// art: the poster / channel logo, remembered with what you watched (Video's and TV's big tile)
+async function iptvPlay(body, label, art) {
+  const r = await call(() => api.post('/api/iptv/play', { ...body, title: label, art: art || '' }));
+  if (r) setTimeout(loadState, 1500);
   if (r) toast(`Playing ${r.title || label}`, 'play');
 }
 
@@ -50,14 +52,14 @@ async function iptvItems(kind, cat) {
         if (!info.seasons.length) return [{ key: 'none', label: 'No episodes', icon: 'info' }];
         return info.seasons.map((se) => ({ key: `se:${se.season}`, label: `Season ${se.season}`, icon: 'folder', sub: `${se.episodes.length} episodes`,
           children: async () => se.episodes.map((e) => ({ key: `e:${e.id}`, label: `${e.num}. ${e.title}`, icon: 'play', sub: e.plot,
-            action: () => iptvPlay({ kind: 'episode', series: s.id, id: e.id }, e.title) })) }));
+            action: () => iptvPlay({ kind: 'episode', series: s.id, id: e.id }, `${s.name} · ${e.title}`, s.icon) })) }));
       } }));
   }
   const make = (it) => ({
     key: `i:${it.id}`, label: kind === 'live' && it.num ? `${it.num}  ${it.name}` : it.name,
     ...(it.icon ? { art: it.icon, artTitle: it.name, ...(kind === 'live' ? {} : { artShape: 'poster' }) } : { icon: kind === 'live' ? 'tv' : 'video' }),
     sub: kind === 'live' ? '{ok} watch · {prev}/{next} change channel' : (it.rating ? `★ ${it.rating}` : ''),
-    action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name),
+    action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name, it.icon),
     options: kind === 'live' ? [{ label: 'Watch', action: () => iptvPlay({ kind, cat: cat.id, id: it.id }, it.name) },
       { label: 'Hide This Channel', action: async () => { await call(() => api.post('/api/iptv/hide', { id: it.id, on: true }), `Hid ${it.name}`); reloadFolder(); } }] : undefined,
   });

@@ -18,7 +18,8 @@ def kind_of(app):
     return "App" if "chrom" in (app.get("app") or "").lower() else "Game"
 
 
-PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", "browser": "Browser", "tabs": "Tabs", "trophies": "Trophies"}
+PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", "browser": "Browser", "tabs": "Tabs", "trophies": "Trophies",
+               "party": "Party", "friends": "Friends"}
 # The Guide (looks whose look.json says "overlay": {"style": "guide"}, like the Dashboard): the
 # same rows, grouped into tabs walked with LB / RB; Home is where it opens. Which rows each
 # tab shows, by row key:
@@ -28,7 +29,7 @@ GUIDE_TABS = [("games", "Games & Apps", "applications-games-symbolic"), ("media"
 GUIDE_ROWS = {"main": ["resume", "close", "browser", "home", "media", "look", "power"],
               "games": ["resume", "close", "trophies", "all-trophies", "apps", "osk"],
               "media": ["media", "vol", "sound"],
-              "social": ["voice", "share", "go-social"],
+              "social": ["voice", "share", "party", "friends", "go-social"],
               "guide-settings": ["look", "perf", "settings", "power"]}
 BROWSER_SIZES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0]
 FPS_MODES = ["off", "fps", "graph", "full"]
@@ -117,6 +118,9 @@ class Model:
         if page == "trophies":
             self.trophies = None
             __import__("threading").Thread(target=self._load_trophies, daemon=True).start()
+        if page in ("party", "friends"):
+            self.soc = None
+            __import__("threading").Thread(target=self._load_social, daemon=True).start()
         self.rebuild()
 
     def _load_trophies(self):
@@ -146,16 +150,80 @@ class Model:
             return self.build_tabs(d)
         if self.page == "trophies":
             return self.build_trophies()
+        if self.page == "party":
+            return self.build_party()
+        if self.page == "friends":
+            return self.build_friends()
         rows = self.build_main(d)
         if self.guide():
             keys = GUIDE_ROWS.get(self.page, GUIDE_ROWS["main"])
             by = {r["key"]: r for r in rows}
             rows = [by[k] for k in keys if k in by]
-            if self.page == "social" and not any(r["key"] in ("voice", "share") for r in rows):
-                rows.insert(0, {"key": "no-voice", "icon": "call-start-symbolic", "label": "Not in a voice chat",
-                                "sub": "Join one from Social in the menu"})
         else:
             rows = [r for r in rows if r["key"] not in ("all-trophies", "go-social")]
+        return rows
+
+    # ---- Social: your Discord voice channels and who's online ---------------------------
+    def _load_social(self):
+        def get(path):
+            try:
+                return self.api.get(path)
+            except Exception:
+                return None
+        self.soc = {"state": get("/api/discord/state") or {}, "discord": get("/api/discord/friends"), "steam": get("/api/steam/friends")}
+        if self.page in ("party", "friends"):
+            self.rebuild()
+
+    def _discord(self, path, body, note):
+        """Discord actions can take a few seconds (joining, calling): run them off the input thread."""
+        self.notice = note
+        self.rebuild()
+
+        def run():
+            try:
+                r = self.api.post(f"/api/discord/{path}", body, timeout=40) or {}
+            except TypeError:
+                r = self.api.post(f"/api/discord/{path}", body) or {}
+            self.notice = r.get("error") or ""
+            self.refresh()
+            if self.page in ("party", "friends"):
+                self._load_social()
+        __import__("threading").Thread(target=run, daemon=True).start()
+
+    def build_party(self):
+        s = getattr(self, "soc", None)
+        if s is None:
+            return [{"key": "loading", "icon": "content-loading-symbolic", "label": "Loading…", "sub": ""}]
+        st = s.get("state") or {}
+        cur = st.get("voice") or {}
+        rows = []
+        for c in st.get("saved") or []:
+            here = cur.get("channel_id") == c.get("id")
+            rows.append({"key": f"ch{c.get('id')}", "icon": "call-start-symbolic", "label": c.get("name") or "Voice channel",
+                         "sub": " · ".join(x for x in (c.get("guild"), "Joined · {ok} leave" if here else "{ok} join") if x),
+                         "ok": (lambda c=c: self._discord("leave", {}, f"Leaving {c.get('name')}…")) if here else
+                               (lambda c=c: self._discord("join", {"guild_id": c.get("guild_id"), "channel_id": c.get("id")}, f"Joining {c.get('name')}…"))})
+        if not rows:
+            rows.append({"key": "none", "icon": "dialog-information-symbolic",
+                         "label": "Sign in to Discord" if not st.get("signed_in") else "No voice channels chosen",
+                         "sub": "Settings › Accounts › Discord"})
+        return rows
+
+    def build_friends(self):
+        s = getattr(self, "soc", None)
+        if s is None:
+            return [{"key": "loading", "icon": "content-loading-symbolic", "label": "Loading…", "sub": ""}]
+        rows = []
+        for f in s.get("discord") or []:
+            rows.append({"key": f"df{f.get('id')}", "icon": "call-start-symbolic", "label": f.get("name") or "?",
+                         "sub": f"Discord · {f.get('status') or 'Online'} · {{ok}} call",
+                         "ok": lambda f=f: self._discord("call", {"id": f.get("id")}, f"Calling {f.get('name')}…")})
+        for f in s.get("steam") or []:
+            rows.append({"key": f"sf{f.get('id')}", "icon": "applications-games-symbolic", "label": f.get("name") or "?",
+                         "sub": "Steam · " + (f"Playing {f['game']}" if f.get("game") else (f.get("status") or "Online"))})
+        if not rows:
+            rows.append({"key": "none", "icon": "dialog-information-symbolic", "label": "No friends online",
+                         "sub": "Sign in to Discord or set up Steam friends" if s.get("discord") is None and s.get("steam") is None else "Nobody's online right now"})
         return rows
 
     def build_trophies(self):
@@ -415,6 +483,10 @@ class Model:
                 self.refresh()
             rows.append({"key": "look", "icon": "view-grid-symbolic", "label": "Interface",
                          "sub": looks[i]["name"], "hint": "◀ ▶ or {ok} switch", "ok": lambda: swap(1), "adjust": swap})
+        rows.append({"key": "party", "icon": "call-start-symbolic", "label": "Party", "sub": "Join your Discord voice channels",
+                     "ok": lambda: self.go("party")})
+        rows.append({"key": "friends", "icon": "system-users-symbolic", "label": "Friends", "sub": "Who's online · call a Discord friend",
+                     "ok": lambda: self.go("friends")})
         rows.append({"key": "go-social", "icon": "system-users-symbolic", "label": "Social", "sub": "Friends, chat, voice — in the menu",
                      "ok": lambda: api.post("/api/overlay/open", {"cat": "party"})})
         rows.append({"key": "settings", "icon": "emblem-system-symbolic", "label": "Settings",

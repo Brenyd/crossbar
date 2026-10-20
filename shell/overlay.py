@@ -392,7 +392,7 @@ class Overlay(Gtk.Application):
         self.shade_l.set_visible(guide)
         (self.col.add_css_class if guide else self.col.remove_css_class)("shade")
         self.panel.set_valign(Gtk.Align.CENTER if guide else Gtk.Align.FILL)
-        self.panel.set_vexpand(not guide)
+        self.panel.set_vexpand(True)              # (with CENTER: the spare height splits above and below)
         self.panel.set_size_request(int(960 * s) if guide else self.panel_w, int(640 * s) if guide else -1)
         self.max_rows = self.guide_rows if guide else self.panel_rows
         for w in (self.g_top, self.g_tabs):
@@ -531,7 +531,10 @@ class Overlay(Gtk.Application):
                         elif ev.get("type") == "osk":
                             if ev.get("open"):
                                 try:
-                                    self.glyph_data = (self.api.get("/api/quick") or {}).get("glyphs") or {}
+                                    q = self.api.get("/api/quick") or {}
+                                    self.glyph_data = q.get("glyphs") or {}
+                                    look = q.get("look") or {}
+                                    GLib.idle_add(lambda look=look: self.osk.set_theme(self.theme, look) and False)
                                 except Exception:
                                     pass
                             GLib.idle_add(self.osk.show, bool(ev.get("open")))

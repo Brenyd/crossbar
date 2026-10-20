@@ -11,6 +11,7 @@ import inspect
 import json
 import mimetypes
 import queue
+import re
 import os
 import subprocess
 import sys
@@ -130,6 +131,7 @@ def state():
         "sounds": cfg["sounds"],
         "interface": cfg.get("interface", "xmb"),
         "recent_video": recent_video(cfg),
+        "recent_live": cfg.get("recent_live") or None,
         "look_settings": looks.settings(cfg),
         "providers": [{"id": p.id, "name": p.name, "login_fields": p.login_fields,
                        **safe(p.status, lambda e: {"linked": False, "account": "", "ready": False, "note": str(e)})}
@@ -440,7 +442,10 @@ def r_login(pid, b):
 
 
 def recent_video(cfg):
+    """The last thing you watched in Video: a local file, or an IPTV film / episode."""
     r = cfg.get("recent_video") or {}
+    if r.get("iptv"):
+        return {"iptv": r["iptv"], "title": r.get("title", ""), "art": r.get("art", ""), "at": r.get("at", 0)}
     p = r.get("path")
     if not p or not os.path.isfile(p):
         return None
@@ -1021,6 +1026,12 @@ def route_post(path, b):
             entries, idx = iptv.playlist(b["kind"], b.get("cat"), b.get("id"), b.get("series"))
             pause_spotify()
             player.play_video(None, idx, mpv_gamepad=mpv_should_read_gamepad(PADS), entries=entries, user_agent=iptv.USER_AGENT)
+            # what you watched last (the Dashboard's big tile in Video / TV, with its poster or logo)
+            art = str(b.get("art") or "")
+            rec = {"iptv": {k: b.get(k) for k in ("kind", "cat", "id", "series") if b.get(k) is not None},
+                   "title": str(b.get("title") or entries[idx][0])[:120], "art": art if re.match(r"^(https?://|/)", art) else "",
+                   "at": time.time()}
+            util.update_config(lambda c: c.__setitem__("recent_live" if b["kind"] == "live" else "recent_video", rec))
             return {"ok": True, "title": entries[idx][0]}
         return iptv.status()
     if head == "nas":

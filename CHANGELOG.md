@@ -1,6 +1,15 @@
 # Changelog
 
 ## 1.2.1 Alpha (testing branch)
+- **Friends & Party in the Quick Menu** (both looks, in-game too): your Discord voice channels
+  (the ones shown in Social) to join or leave, who's online on Discord and Steam (A calls a Discord
+  friend), and, while in voice, mute, deafen, share screen and leave. In the Guide it's the
+  Social tab
+- **Big tiles for IPTV**: the last film or episode you watched is Video's big tile with its
+  poster, and the last live channel is TV's, with the channel logo (Watch again)
+- **The system keyboard matches the Dashboard** in other apps too (it drew in the theme pack's
+  colours)
+- The in-game Guide is centred vertically as well
 - **Quick Menu › Trophies for emulated games**: RetroAchievements trophies of the game you're
   playing (unlocked count, points, the list) — the game RetroAchievements sees you playing,
   matched against its title

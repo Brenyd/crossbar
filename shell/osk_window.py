@@ -78,9 +78,14 @@ class OskWindow:
         self.win = win
         self.cells = []
 
-    def set_theme(self, theme):
-        """Colours, roundness and font from the theme pack (Settings › Theme)."""
+    def set_theme(self, theme, look=None):
+        """Colours, roundness and font from the theme pack (Settings › Theme) — or, for a look with
+        its own Quick Menu style (the Dashboard's Guide), that look's: flat dark keys, the
+        highlight in its accent colour, square corners — so the keyboard matches the menu."""
         k = {**KB_DEFAULT, **((theme or {}).get("keyboard") or {})}
+        if (look or {}).get("style") == "guide":
+            k.update(background=look.get("panel2") or "rgba(28,28,30,0.97)", key="rgba(255,255,255,0.08)", key_text="#ececec",
+                     highlight=look.get("accent") or "#107c10", highlight_text="#ffffff", radius=2)
         s = self.scale
         text = (CSS.replace("{r}", str(int((k["radius"] + 10) * s))).replace("{p}", str(int(20 * s)))
                 .replace("{kr}", str(int(k["radius"] * s))).replace("{fs}", str(int(30 * s)))

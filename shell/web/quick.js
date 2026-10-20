@@ -33,6 +33,7 @@ const QuickMenu = {
 
   async refresh() {
     try { this.data = await api.get('/api/quick'); } catch { return; }
+    if (['social', 'party', 'friends'].includes(this.page) && Date.now() - (this.soc?.at || 0) > 4000) this.loadSocial();
     if (!this.open) return;
     const key = this.rows[this.sel]?.key;
     this.rows = this.build(this.data);
@@ -50,11 +51,12 @@ const QuickMenu = {
     else this.parent = null;
     this.page = page; Sfx.ok();
     if (page === 'trophies') this.loadTrophies();
+    if (['social', 'party', 'friends'].includes(page)) this.loadSocial();
     this.rows = this.build(this.data);
     this.sel = this.isTab(page) ? Math.max(0, this.rows.findIndex((r) => r.key === this.backTo)) : 0;
     this.render();
   },
-  isTab(page) { return page === 'main' || this.tabs().some(([p]) => p === page); },
+  isTab(page) { return page === 'main' || (!!Shell.active?.quickTabs && this.tabs().some(([p]) => p === page)); },
   back() {
     const to = this.parent || 'main';
     this.parent = null;
@@ -72,11 +74,13 @@ const QuickMenu = {
       case 'trophies': return this.buildTrophies();
       case 'games': return [...this.rowsApp(d), this.rowTrophies(d), this.rowAllTrophies(), this.rowGo('game', 'Games', 'game', 'Your library')];
       case 'media': return [...this.rowsMedia(d), this.rowSound(d), this.rowGo('music', 'Music', 'music', 'Songs, Spotify'), this.rowGo('video', 'Video', 'video', 'Films, shows, IPTV')];
-      case 'social': return [...this.rowsVoice(d), this.rowGo('party', 'Social', 'party', 'Friends, chat, voice')];
+      case 'social': return this.buildSocial();
+      case 'party': return this.buildParty();
+      case 'friends': return this.buildFriends();
       case 'settings': return [this.rowLook(), this.rowPerf(d), this.rowSettings(), this.rowPower()].filter(Boolean);
       default:
         if (tabs) return [...this.rowsApp(d), this.rowHome(d), ...this.rowsMedia(d).slice(0, 1), this.rowLook(), this.rowPower()].filter(Boolean);
-        return [...this.rowsApp(d), this.rowHome(d), d.app ? this.rowTrophies(d) : null, ...this.rowsMedia(d), this.rowSound(d),
+        return [...this.rowsApp(d), this.rowHome(d), d.app ? this.rowTrophies(d) : null, ...this.rowsMedia(d), this.rowSound(d), this.rowSocial(d),
           this.rowPerf(d), this.rowTrophies(d, true), this.rowLook(), this.rowSettings(), this.rowPower()].filter(Boolean);
     }
   },
@@ -143,6 +147,73 @@ const QuickMenu = {
     const nApps = (d.apps_audio || []).length;
     return { key: 'sound', icon: 'sound', label: 'Sound ▸', sub: [d.output?.name, d.audio?.mic?.muted ? 'mic muted' : '', nApps ? `${nApps} app${nApps === 1 ? '' : 's'} playing` : ''].filter(Boolean).join(' · ') || 'Output, microphone, app volume',
       ok: () => this.go('sound') };
+  },
+  // ---- Social: who's online, calls, your Discord voice channels, screen share
+  rowSocial(d) {
+    const v = d.voice?.channel;
+    return { key: 'social', icon: 'party', label: 'Friends & Party ▸', sub: v ? `In voice: ${v.name}` : 'Who\'s online, calls, voice channels', ok: () => this.go('social') };
+  },
+  async loadSocial() {
+    this.soc = { ...(this.soc || {}), at: Date.now() };
+    const [st, df, sf] = await Promise.all([
+      api.get('/api/discord/state').catch(() => ({})),
+      api.get('/api/discord/friends').catch(() => null),
+      api.get('/api/steam/friends').catch(() => null)]);
+    this.soc = { st, discord: df, steam: sf, at: Date.now(), loaded: true };
+    if (this.open && ['social', 'party', 'friends'].includes(this.page)) { this.rows = this.build(this.data); this.render(); }
+  },
+  socialAct(path, body, msg) {
+    return async () => {
+      if (msg) toast(msg, 'voice');
+      const r = await call(() => api.post(`/api/discord/${path}`, body || {}));
+      setTimeout(() => this.loadSocial(), 400);
+      return r;
+    };
+  },
+  buildSocial() {
+    const s = this.soc, st = s?.st || {}, v = st.voice;
+    if (!s?.loaded) return [{ key: 'loading', icon: 'refresh', label: 'Loading…', sub: '' }];
+    const rows = [];
+    if (v) {
+      rows.push({ key: 'in-voice', icon: 'voice', label: `In Voice: ${v.channel}`, sub: `${v.guild || 'Discord'} · ${st.deaf ? 'Deafened' : st.mute ? 'Muted' : 'Mic on'} · {ok} leave`,
+        ok: this.socialAct('leave', {}, `Leaving ${v.channel}…`) });
+      rows.push({ key: 'mute', icon: 'mic', label: st.mute ? 'Unmute Microphone' : 'Mute Microphone', sub: '', ok: this.socialAct('mute') });
+      rows.push({ key: 'deaf', icon: 'sound', label: st.deaf ? 'Undeafen' : 'Deafen', sub: '', ok: this.socialAct('deaf') });
+      rows.push({ key: 'share', icon: 'display', label: st.sharing ? 'Stop Sharing Screen' : 'Share Screen', sub: st.sharing ? 'Live on Discord' : 'Your friends see what\'s on the TV',
+        ok: this.socialAct('share', { on: !st.sharing }, st.sharing ? 'Stopping…' : 'Starting screen share…') });
+    }
+    if (!st.signed_in) {
+      rows.push({ key: 'dc-signin', icon: 'voice', label: 'Sign In to Discord', sub: 'Settings › Accounts › Discord', ok: () => { this.close(false); openSettingsFolder('accounts'); } });
+    } else {
+      const n = (st.saved || []).length;
+      rows.push({ key: 'party', icon: 'voice', label: 'Party ▸', sub: n ? `${n} voice channel${n === 1 ? '' : 's'}` : 'Choose voice channels in Social', ok: () => this.go('party') });
+    }
+    const on = (s.discord || []).length + (s.steam || []).length;
+    rows.push({ key: 'friends', icon: 'users', label: 'Friends ▸', sub: on ? `${on} online` : 'Steam and Discord friends online', ok: () => this.go('friends') });
+    rows.push(this.rowGo('party', 'Open Social', 'party', 'Everything else, in the menu'));
+    return rows;
+  },
+  buildParty() {
+    const s = this.soc, st = s?.st || {}, cur = st.voice;
+    if (!s?.loaded) return [{ key: 'loading', icon: 'refresh', label: 'Loading…', sub: '' }];
+    const rows = (st.saved || []).map((c) => {
+      const here = cur && cur.channel_id === c.id;
+      return { key: `ch:${c.id}`, icon: 'voice', label: c.name, sub: [c.guild, here ? 'Joined · {ok} leave' : '{ok} join'].filter(Boolean).join(' · '),
+        ok: here ? this.socialAct('leave', {}, `Leaving ${c.name}…`) : this.socialAct('join', { guild_id: c.guild_id, channel_id: c.id }, `Joining ${c.name}…`) };
+    });
+    if (!rows.length) rows.push({ key: 'none', icon: 'info', label: 'No voice channels chosen', sub: 'Pick them in Settings › Accounts › Discord' });
+    return rows;
+  },
+  buildFriends() {
+    const s = this.soc;
+    if (!s?.loaded) return [{ key: 'loading', icon: 'refresh', label: 'Loading…', sub: '' }];
+    const rows = (s.discord || []).map((f) => ({ key: `df:${f.id}`, icon: 'voice', art: f.avatar || undefined, label: f.name,
+      sub: `Discord · ${f.status || 'Online'} · {ok} call`, ok: this.socialAct('call', { id: f.id }, `Calling ${f.name}…`) }));
+    for (const f of s.steam || []) {
+      rows.push({ key: `sf:${f.id}`, icon: 'game', art: f.avatar || undefined, label: f.name, sub: `Steam · ${f.game ? `Playing ${f.game}` : f.status || 'Online'}` });
+    }
+    if (!rows.length) rows.push({ key: 'none', icon: 'info', label: 'No friends online', sub: s.discord === null && s.steam === null ? 'Sign in to Discord or set up Steam friends' : 'Nobody\'s online right now' });
+    return rows;
   },
   rowsVoice(d) {
     const v = d.voice;
@@ -267,13 +338,13 @@ const QuickMenu = {
   render() {
     if (Shell.active?.renderQuick?.(this)) return;     // a look that draws its own (the 360 Guide)
     const d = this.data || {};
-    $('#quick .q-title').textContent = ({ sound: 'Sound', perf: 'Performance', trophies: 'Trophies' })[this.page] || (d.app ? d.app.title : 'Crossbar');
+    $('#quick .q-title').textContent = ({ sound: 'Sound', perf: 'Performance', trophies: 'Trophies', social: 'Friends & Party', party: 'Party', friends: 'Friends' })[this.page] || (d.app ? d.app.title : 'Crossbar');
     $('#quick .q-rows').innerHTML = this.rows.map((r, i) => `
       <div class="q-row ${i === this.sel ? 'on' : ''}">
         <div class="q-ico">${r.art ? `<div class="q-art" style="background-image:url('${esc(r.art)}')"></div>` : icon(r.icon)}</div>
         <div class="q-txt">
           <div class="q-label">${esc(r.label)}</div>
-          <div class="q-sub">${esc(r.sub || '')}</div>
+          <div class="q-sub">${esc(gl(r.sub || ''))}</div>
           ${r.bar != null ? `<div class="q-bar"><i style="width:${(r.bar * 100).toFixed(1)}%"></i></div>` : ''}
         </div>
         ${r.hint && i === this.sel ? `<div class="q-hint">${esc(gl(r.hint))}</div>` : ''}

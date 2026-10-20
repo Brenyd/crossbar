@@ -392,7 +392,7 @@ const X360 = {
     g.querySelector('.xg-tabs').innerHTML = q.tabs().map(([p, ic, label]) =>
       `<div class="xg-tab ${p === tab ? 'on' : ''}${p === 'main' ? ' home' : ''}"><div class="xg-ti">${icon(ic)}</div><div class="xg-tl">${esc(label.toLowerCase())}</div></div>`).join('');
     // a page opened from a tab (Sound, Performance, Trophies) says where you are
-    const sub = { sound: 'sound', perf: 'performance', trophies: d.app ? `trophies · ${d.app.title}` : 'trophies' }[q.page];
+    const sub = { sound: 'sound', perf: 'performance', trophies: d.app ? `trophies · ${d.app.title}` : 'trophies', party: 'party', friends: 'friends online' }[q.page];
     const head = g.querySelector('.xg-head');
     head.hidden = !sub; head.textContent = sub || '';
     g.querySelector('.xg-rows').innerHTML = q.rows.map((r, i) => `
