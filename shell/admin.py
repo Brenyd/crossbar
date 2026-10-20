@@ -447,6 +447,9 @@ def vpn_split(req):
     to = [n for n in (v4(x, "site") for x in (req.get("to") or [])[:256]) if n]
     frm = [n for n in (v4(x, "source", net=False) for x in (req.get("from") or [])[:4]) if n]
     dns = v4(req["dns"], "DNS", net=False) if req.get("dns") else None
+    relay = req.get("dns_relay")
+    if relay is not None and (not isinstance(relay, int) or not 1024 <= relay <= 65535):
+        fail("Bad DNS relay port")
     gid = req.get("gid")
     if gid is not None:
         import grp
@@ -466,16 +469,25 @@ def vpn_split(req):
         _run("ip", "-4", "rule", "add", "from", a, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
     if gid is not None:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
+        # DNS from VPN apps: to a local resolver (127.x, the usual stub) → Crossbar's relay, which asks
+        # the VPN's DNS through the tunnel; to any other server → the VPN's DNS directly
+        local = (f"""    meta mark {SPLIT_MARK} ip daddr 127.0.0.0/8 udp dport 53 dnat ip to 127.0.0.1:{relay}
+    meta mark {SPLIT_MARK} ip daddr 127.0.0.0/8 tcp dport 53 dnat ip to 127.0.0.1:{relay}
+""" if relay else "")
         dnat = (f"""  chain dns {{
     type nat hook output priority -100; policy accept;
-    meta mark {SPLIT_MARK} udp dport 53 dnat ip to {dns}
-    meta mark {SPLIT_MARK} tcp dport 53 dnat ip to {dns}
+{local}    meta mark {SPLIT_MARK} ip daddr != 127.0.0.0/8 udp dport 53 dnat ip to {dns}
+    meta mark {SPLIT_MARK} ip daddr != 127.0.0.0/8 tcp dport 53 dnat ip to {dns}
   }}
 """ if dns else "")
         rules = f"""table inet crossbar_split {{
   chain out {{
     type route hook output priority mangle; policy accept;
     meta skgid {gid} meta mark set {SPLIT_MARK} counter
+  }}
+  chain v6 {{
+    type filter hook output priority filter; policy accept;
+    meta skgid {gid} meta nfproto ipv6 ip6 daddr != ::1 reject
   }}
 {dnat}  chain post {{
     type nat hook postrouting priority srcnat; policy accept;

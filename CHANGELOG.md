@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.1.4 Alpha
+- **VPN apps' DNS**: their lookups went to the system's local resolver (127.0.0.53), which the
+  firewall tried to send out of the tunnel; the kernel refuses that, so lookups hung (test app
+  timed out, "Couldn't reach bash.ws", torrent search found nothing). Those lookups now go to a
+  small relay in Crossbar that asks the VPN's DNS server through the tunnel
+- **No IPv6 leaks for VPN apps**: the VPN carries IPv4, so VPN apps' IPv6 is refused (they fall back
+  to IPv4 through the VPN) instead of going out your own line
+- **PIA port forwarding** (WireGuard): asked the server's public address, which refuses it
+  ("Connection refused"); now asks its address inside the tunnel, as PIA's own scripts do
+- **Check Split Tunneling** tests the connection without DNS and DNS on its own, so it says which
+  one is broken
+- **Torrent search** errors no longer show Python's harmless shutdown warnings
+
 ## 1.1.3 Alpha
 - **Split tunneling on Arch**: VPN apps were started with `sg`, which Arch doesn't ship ("No such
   file or directory: 'sg'" in the DNS leak test, Check Split Tunneling and torrent search). They now

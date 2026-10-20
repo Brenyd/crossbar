@@ -651,7 +651,7 @@ const SETTINGS_FOLDERS = [
           action: async () => { if (await confirmSafe('Exit Crossbar?\nOpen games and apps will be closed.')) api.post('/api/session/exit'); } },
         { key: 'update', label: 'Update Crossbar', icon: 'download', sub: 'Download the latest version and apply it (no ISO rebuild)',
           action: async () => { if (await confirmBox('Update Crossbar now?\nYou\'ll see the progress here; Crossbar restarts when it finishes.')) runInTerminal('/api/update', 'Updating Crossbar…'); } },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.1.3 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.1.3 Alpha', 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: '1.1.4 Alpha', action: () => message('Crossbar — an Arch-based console shell.\n1.1.4 Alpha', 'About') },
       ];
     },
   },

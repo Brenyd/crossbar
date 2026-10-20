@@ -1,4 +1,4 @@
-# Crossbar — 1.1.3 Alpha
+# Crossbar — 1.1.4 Alpha
 
 **A console-style shell for Linux gaming PCs and Linux on PS5.** Crossbar boots straight into a
 cross-media bar — categories across, items down, flowing waves behind — and runs everything from a

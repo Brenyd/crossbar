@@ -366,7 +366,9 @@ def _pia_build(job, protocol, rid):
         conf = (f"[Interface]\nAddress = {j['peer_ip']}\nPrivateKey = {priv}\nDNS = {j['dns_servers'][0]}\n\n"
                 f"[Peer]\nPublicKey = {j['server_key']}\nAllowedIPs = 0.0.0.0/0, ::/0\n"
                 f"Endpoint = {srv['ip']}:{j['server_port']}\nPersistentKeepalive = 25\n")
-        pf = {"kind": "pia", "token": token, "gateway": srv["ip"], "hostname": srv["cn"]}
+        # port forwarding talks to the server's address inside the tunnel (server_vip), as PIA's
+        # manual-connections scripts do; its public address refuses port 19999
+        pf = {"kind": "pia", "token": token, "gateway": j.get("server_vip") or srv["ip"], "hostname": srv["cn"]}
         return conf, None, pf
     srv = (servers.get("ovpnudp") or [None])[0]
     if not srv:
@@ -990,12 +992,128 @@ def apply_split():
         gid = None
         _state["error"] = f"Apps can't be split off: {e}"
     addr = _vpn_addr()
+    dns = _state.get("dns") or _nm_dns()
+    relay = DNS_RELAY.start() if dns and addr else None
     req = {"enable": True, "dev": _iface(), "gateway": None, "to": _resolve(c.get("vpn_sites") or []),
-           "from": [addr] if addr else [], "gid": gid, "dns": _state.get("dns")}
+           "from": [addr] if addr else [], "gid": gid, "dns": dns, "dns_relay": relay}
     return _admin("vpn-split", req)
 
 
+class _DnsRelay:
+    """VPN apps' DNS, through the tunnel. Most systems resolve through a local stub (systemd-resolved
+    on 127.0.0.53, or dnsmasq on 127.0.0.1); a VPN app's question to it can't be redirected out of
+    the tunnel directly (the kernel won't send a loopback-addressed packet out of a real interface),
+    and the stub itself would ask your normal DNS. So the firewall hands VPN apps' local DNS
+    questions to this relay instead, which asks the VPN's DNS server from the VPN's own address
+    (routed through the tunnel). UDP and TCP, on 127.0.0.1:PORT."""
+    PORT = 53530
+
+    def __init__(self):
+        self.started = False
+        self._lock = threading.Lock()
+
+    def _upstream(self):
+        return _state.get("dns") or _nm_dns(), _vpn_addr()
+
+    def start(self):
+        with self._lock:
+            if not self.started:
+                try:
+                    u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+                    u.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    u.bind(("127.0.0.1", self.PORT))
+                    t = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    t.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    t.bind(("127.0.0.1", self.PORT))
+                    t.listen(32)
+                except OSError as e:
+                    print(f"vpn: dns relay: {e}", flush=True)
+                    return None
+                threading.Thread(target=self._udp, args=(u,), daemon=True).start()
+                threading.Thread(target=self._tcp, args=(t,), daemon=True).start()
+                self.started = True
+        return self.PORT
+
+    def _udp(self, srv):
+        while True:
+            try:
+                q, peer = srv.recvfrom(4096)
+            except OSError:
+                continue
+            threading.Thread(target=self._udp_one, args=(srv, q, peer), daemon=True).start()
+
+    def _udp_one(self, srv, q, peer):
+        dns, src = self._upstream()
+        if not dns or not src:
+            return
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+                s.bind((src, 0))
+                s.settimeout(4)
+                s.sendto(q, (dns, 53))
+                a, _ = s.recvfrom(65535)
+            srv.sendto(a, peer)
+        except OSError:
+            pass
+
+    def _tcp(self, srv):
+        while True:
+            try:
+                c, _ = srv.accept()
+            except OSError:
+                continue
+            threading.Thread(target=self._tcp_one, args=(c,), daemon=True).start()
+
+    def _tcp_one(self, c):
+        dns, src = self._upstream()
+        try:
+            with c, socket.create_connection((dns, 53), timeout=6, source_address=(src, 0)) as up:
+                c.settimeout(6)
+                for a, b in ((c, up), (up, c)):          # one question, one answer (DNS over TCP)
+                    head = _recv_exact(a, 2)
+                    b.sendall(head + _recv_exact(a, struct.unpack("!H", head)[0]))
+        except (OSError, TypeError, struct.error):
+            pass
+
+
+def _recv_exact(s, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = s.recv(n - len(buf))
+        if not chunk:
+            raise OSError("closed")
+        buf += chunk
+    return buf
+
+
+DNS_RELAY = _DnsRelay()
+
+
 _split_applied = {}
+
+SPLIT_PROBE = r'''
+import json, os, socket, ssl, time
+out = {"gid": os.getegid()}
+def trace(host, connect_to):
+    ctx = ssl.create_default_context()
+    with socket.create_connection((connect_to, 443), timeout=8) as s, ctx.wrap_socket(s, server_hostname=host) as t:
+        t.sendall(b"GET /cdn-cgi/trace HTTP/1.1\r\nHost: " + host.encode() + b"\r\nConnection: close\r\n\r\n")
+        data = b""
+        while chunk := t.recv(4096):
+            data += chunk
+    return dict(l.split("=", 1) for l in data.decode(errors="replace").splitlines() if "=" in l).get("ip")
+try:
+    out["ip"] = trace("1.1.1.1", "1.1.1.1")
+except Exception as e:
+    out["conn_error"] = str(e)[:120]
+t0 = time.time()
+try:
+    socket.getaddrinfo("speed.cloudflare.com", 443, socket.AF_INET)
+    out["dns"] = "ok (%.1f s)" % (time.time() - t0)
+except Exception as e:
+    out["dns"] = "failed after %.0f s: %s" % (time.time() - t0, str(e)[:80])
+print(json.dumps(out))
+'''
 
 
 def _rules_present(addr):
@@ -1060,16 +1178,19 @@ def split_check():
     out["rules"] = _rules_present(out["vpn_addr"]) if out["connected"] else None
     gid, member = _group()
     out["group"] = {"exists": gid is not None, "member": member}
-    argv = wrap([sys.executable, "-c", "import sys,os;sys.path.insert(0,os.getcwd());from crossbar import speedtest;"
-                 "print(speedtest._trace().get('ip',''));print(os.getgid())"], "leaktest")
+    # the test app checks the connection without DNS (Cloudflare's 1.1.1.1) and DNS on its own,
+    # so a broken one doesn't hide the other
+    argv = wrap([sys.executable, "-c", SPLIT_PROBE], "leaktest")
     try:
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=30, cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        lines = r.stdout.strip().splitlines()
-        out["app"] = lines[0] if lines else None
-        out["app_gid_ok"] = bool(gid is not None and len(lines) > 1 and lines[1].strip() == str(gid))
-        out["app_error"] = r.stderr.strip()[-200:] if r.returncode else ""
-    except (OSError, subprocess.TimeoutExpired) as e:
-        out["app"], out["app_error"] = None, str(e)
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=45, cwd="/")
+        probe = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+        out["app"] = probe.get("ip")
+        out["app_conn_error"] = probe.get("conn_error")
+        out["app_dns"] = probe.get("dns")
+        out["app_gid_ok"] = bool(gid is not None and probe.get("gid") == gid)
+        out["app_error"] = "" if probe else (r.stderr.strip()[-200:] or f"exit {r.returncode}")
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        out["app"], out["app_error"] = None, str(e)[-200:]
     src = _tunnel_source()
     if src:
         try:

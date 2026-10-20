@@ -488,8 +488,9 @@ def search_start(pattern, category="all", plugin_names=None):
     import sys
     from . import vpn
     argv = vpn.wrap([sys.executable or "python3", "nova2.py", ",".join(names), category, *pattern.split()], "torrents")
+    env = {**os.environ, "PYTHONWARNINGS": "ignore"}      # Python's own shutdown warnings aren't the plugin's problem
     p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         text=True, encoding="utf-8", errors="replace", start_new_session=True)
+                         text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
     _sid[0] += 1
     sid = _sid[0]
     st = {"proc": p, "results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern}
@@ -508,7 +509,7 @@ def search_start(pattern, category="all", plugin_names=None):
     def read_err():
         for line in p.stderr:
             line = line.strip()
-            if line:
+            if line and not re.search(r"Warning:|warnings\.warn|resource_tracker", line):
                 st["errors"] = (st["errors"] + [line])[-6:]
 
     def watchdog():
