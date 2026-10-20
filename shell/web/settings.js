@@ -429,6 +429,20 @@ const BROWSER_SETTINGS = {
 
 // Settings › Theme › Theme Packs: colours, waves, background picture, font, icons, sounds.
 // The XMB uses all of it; the Dashboard uses a pack's picture (Background › Theme picture).
+// Interface: saved, then the menu reloads into it (only one look is ever loaded, to save memory)
+async function switchInterface(id, name) {
+  if (id !== S.state.interface) {
+    try { await setSetting({ interface: id }); } catch (e) { toast(e.message, 'info'); return; }
+  }
+  if (id === Shell.id) { reloadFolder(); return; }
+  if (await confirmBox(`Reload the menu now to switch to ${name}?\nIt takes a few seconds; you come back to Settings.`)) reloadMenu();
+  else { toast(`${name} starts the next time the menu loads`, 'display'); reloadFolder(); }
+}
+function reloadMenu() {
+  $('#boot').classList.remove('done');      // the start-up splash covers the reload
+  try { sessionStorage.setItem('crossbar.reopen', 'theme'); } catch { /* fine: start at Game */ }
+  setTimeout(() => location.reload(), 250);
+}
 function themePacksFolder(cur, look) {
   return {
     key: 'packs', label: 'Theme Packs', icon: 'palette',
@@ -526,17 +540,20 @@ const SETTINGS_FOLDERS = [
     children: async () => {
       const st = S.state;
       const cur = await api.get('/api/theme');
-      const look = Shell.impls[st.interface] ? st.interface : 'xmb';
+      const look = Shell.id;                 // the one running now (a new choice takes over after a reload)
       const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
       // a one-of-several choice: ✓ on the current one, applied the moment it's picked
       const pick = (rows, k, set) => Options.show(
         rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
         Math.max(0, rows.findIndex(([v]) => v === k)));
       const items = [];
-      const looks = Looks.names();
+      const looks = await Looks.names();
       if (looks.length > 1) {
-        items.push({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, look),
-          action: () => pick(looks, look, (v) => ({ interface: v })) });
+        const chosen = st.interface || look;
+        items.push({ key: 'iface', label: 'Interface', icon: 'display',
+          sub: chosen !== look ? `${named(looks, chosen)} · reload to switch ({ok})` : `${named(looks, look)} · changing it reloads the menu`,
+          action: () => Options.show(looks.map(([v, l]) => ({ label: `${check(v === chosen)}${l}`, action: () => switchInterface(v, l) })),
+            Math.max(0, looks.findIndex(([v]) => v === chosen))) });
       }
       // the look's own settings, straight from its look.json…
       const vals = Looks.settings(look);
@@ -709,8 +726,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.3 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.3 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.4 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.4 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

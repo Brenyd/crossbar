@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.4 Alpha (testing branch)
+- **Starts in your interface from a cold boot**: the menu page now comes from the backend with the
+  chosen look built in, so the very first frame is the Dashboard (or the cross-media bar) — it no
+  longer started in the cross-media bar and waited on the backend to switch, and a slow or missed
+  answer at boot can't leave you in the wrong one
+- **Only the chosen interface is loaded**: the other look's code, styles and backdrop aren't loaded
+  at all (the cross-media bar's waves don't run under the Dashboard)
+- **Interface is a setting now, not a live switch**: Settings › Theme › Interface saves your choice
+  and reloads the menu into it (a few seconds, back to Theme). The Interface row is gone from both
+  Quick Menus; the in-game Quick Menu keeps the style of the interface that's running
+- **Now Playing ticks smoothly in the cross-media bar too**: the time and progress bar move every
+  second instead of jumping with each report from the player or Spotify (the Dashboard had this
+  already)
+
 ## 1.2.3 Alpha (testing branch)
 - **VPN apps' DNS survives restarts**: with split tunneling on, VPN apps' lookups go to a relay
   inside Crossbar, and the firewall kept sending them there after Crossbar restarted (an update,

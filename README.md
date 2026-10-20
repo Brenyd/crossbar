@@ -5,7 +5,7 @@
 **A console front end for Linux gaming PCs and Linux on PS5.**<br>
 Boot straight to the couch. Every game, app, song, show and friend — from a controller.
 
-![Version](https://img.shields.io/badge/version-1.2.3_Alpha-informational)
+![Version](https://img.shields.io/badge/version-1.2.4_Alpha-informational)
 ![Base](https://img.shields.io/badge/base-Arch_%2F_CachyOS-1793d1)
 ![PS5](https://img.shields.io/badge/runs_on-PC_%26_PS5_Linux-black)
 ![Controller](https://img.shields.io/badge/controller-first-success)
@@ -94,8 +94,9 @@ It installs next to the system you already have (CachyOS works great, including 
 
 ## Two interfaces
 
-**Settings › Theme › Interface**, or **Interface** in the Quick Menu, swaps the entire front end
-instantly. There's no restart, and you keep your place. Underneath it's one menu: the same games,
+**Settings › Theme › Interface** picks the front end. Crossbar starts in it from a cold boot,
+and switching reloads the menu (a few seconds) and brings you back to Theme. Only the chosen
+interface is ever loaded, so the other one costs no memory. Underneath it's one menu: the same games,
 folders, Options, dialogs, keyboard and controller mapping.
 
 - **Cross-media bar (PS3 style).** Categories run across, items run down, folders push a new column,
@@ -133,7 +134,7 @@ with five tabs for the Dashboard.
 - **Now Playing**, **Volume**, and **Sound ▸** (output, microphone, volume per app).
 - **Performance ▸**: the frame-rate overlay (MangoHud) and the PS5 temperature overlay. Each has its
   own corner and size, from Small to Huge for a 4K TV.
-- **Switch App**, **Keyboard**, **Interface**, **Settings**, and **Power** (Power opens on Cancel).
+- **Switch App**, **Keyboard**, **Settings**, and **Power** (Power opens on Cancel).
 
 ## Tour
 

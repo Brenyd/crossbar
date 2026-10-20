@@ -36,6 +36,11 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 ### 1.2 series: two interfaces, and staying out of the game's way
 
+**1.2.4 Alpha**
+- ✅ Cold boot starts straight in the chosen interface; only that interface is loaded
+- ✅ Interface changes in Settings with a menu reload (no live switch, not in the Quick Menu)
+- ✅ Smooth Now Playing time and bar in the cross-media bar too
+
 **1.2.3 Alpha**
 - 🧪 VPN apps' DNS kept working across Crossbar restarts, and for OpenVPN; **DNS Through the VPN** setting
 - 🧪 Port forwarding: instant on/off, retries, survives restarts, same port kept, firewall opened, Check Port Forwarding

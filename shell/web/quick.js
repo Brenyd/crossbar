@@ -77,11 +77,11 @@ const QuickMenu = {
       case 'social': return this.buildSocial();
       case 'party': return this.buildParty();
       case 'friends': return this.buildFriends();
-      case 'settings': return [this.rowLook(), this.rowPerf(d), this.rowSettings(), this.rowPower()].filter(Boolean);
+      case 'settings': return [this.rowPerf(d), this.rowSettings(), this.rowPower()].filter(Boolean);
       default:
-        if (tabs) return [...this.rowsApp(d), this.rowHome(d), ...this.rowsMedia(d).slice(0, 1), this.rowLook(), this.rowPower()].filter(Boolean);
+        if (tabs) return [...this.rowsApp(d), this.rowHome(d), ...this.rowsMedia(d).slice(0, 1), this.rowPower()].filter(Boolean);
         return [...this.rowsApp(d), this.rowHome(d), d.app ? this.rowTrophies(d) : null, ...this.rowsMedia(d), this.rowSound(d), this.rowSocial(d),
-          this.rowPerf(d), this.rowTrophies(d, true), this.rowLook(), this.rowSettings(), this.rowPower()].filter(Boolean);
+          this.rowPerf(d), this.rowTrophies(d, true), this.rowSettings(), this.rowPower()].filter(Boolean);
     }
   },
   after() { setTimeout(() => this.refresh(), 300); },
@@ -224,14 +224,6 @@ const QuickMenu = {
   rowPerf(d) {
     if (!(d.perf?.available || d.ps5?.available)) return null;
     return { key: 'perf', icon: 'display', label: 'Performance ▸', sub: 'Frame rate and temperature overlays', ok: () => this.go('perf') };
-  },
-  // swap the whole look from here: same menu, same everything, different console
-  rowLook() {
-    const looks = typeof Looks !== 'undefined' ? Looks.names() : [];
-    if (looks.length < 2) return null;
-    const cur = Math.max(0, looks.findIndex(([v]) => v === Shell.id));
-    const swap = (dir) => setSetting({ interface: looks[(cur + dir + looks.length) % looks.length][0] });
-    return { key: 'look', icon: 'palette', label: 'Interface', sub: looks[cur][1], hint: '◀ ▶ or {ok} switch', ok: () => swap(1), adjust: (dir) => swap(dir) };
   },
   rowSettings() { return { key: 'settings', icon: 'settings', label: 'Settings', sub: 'Controller, network, everything else', ok: () => { this.close(false); goCat('settings'); } }; },
   rowPower() {

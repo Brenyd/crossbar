@@ -26,11 +26,11 @@ PAGE_TITLES = {"sound": "Sound", "perf": "Performance", "settings": "Settings", 
 GUIDE_TABS = [("games", "Games & Apps", "applications-games-symbolic"), ("media", "Media", "media-playback-start-symbolic"),
               ("main", "Home", "go-home-symbolic"), ("social", "Social", "system-users-symbolic"),
               ("guide-settings", "Settings", "emblem-system-symbolic")]
-GUIDE_ROWS = {"main": ["resume", "close", "browser", "home", "media", "look", "power"],
+GUIDE_ROWS = {"main": ["resume", "close", "browser", "home", "media", "power"],
               "games": ["resume", "close", "trophies", "all-trophies", "apps", "osk"],
               "media": ["media", "vol", "sound"],
               "social": ["voice", "share", "party", "friends", "go-social"],
-              "guide-settings": ["look", "perf", "settings", "power"]}
+              "guide-settings": ["perf", "settings", "power"]}
 BROWSER_SIZES = [1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0, 3.5, 4.0]
 FPS_MODES = ["off", "fps", "graph", "full"]
 FPS_NAMES = {"off": "Off", "fps": "FPS", "graph": "FPS + frame time", "full": "FPS, frame time, CPU/GPU"}
@@ -472,17 +472,6 @@ class Model:
                      "sub": f"{len(wins)} open" if wins else "Nothing else open", "ok": lambda: self.go("apps")})
         rows.append({"key": "osk", "icon": "input-keyboard-symbolic", "label": "Keyboard",
                      "sub": "Type into the app with the controller", "ok": self._keyboard})
-        looks = d.get("looks") or []
-        if len(looks) > 1:
-            cur = (d.get("look") or {}).get("id")
-            ids = [x["id"] for x in looks]
-            i = ids.index(cur) if cur in ids else 0
-
-            def swap(dd):
-                api.post("/api/settings", {"interface": ids[(i + (1 if dd > 0 else -1)) % len(ids)]})
-                self.refresh()
-            rows.append({"key": "look", "icon": "view-grid-symbolic", "label": "Interface",
-                         "sub": looks[i]["name"], "hint": "◀ ▶ or {ok} switch", "ok": lambda: swap(1), "adjust": swap})
         rows.append({"key": "party", "icon": "call-start-symbolic", "label": "Party", "sub": "Join your Discord voice channels",
                      "ok": lambda: self.go("party")})
         rows.append({"key": "friends", "icon": "system-users-symbolic", "label": "Friends", "sub": "Who's online · call a Discord friend",

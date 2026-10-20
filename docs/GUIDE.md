@@ -81,8 +81,8 @@ Thanks to [syrufex/PS5-Temperature-Control-Panel-Linux](https://github.com/syruf
 
 ## Interfaces
 
-**Settings › Theme & Time › Theme › Interface** (or **Interface** in the Quick Menu) swaps the whole
-front end live: the **cross-media bar (PS3 style)** or the **Dashboard (Xbox 360 style)**. See the
+**Settings › Theme & Time › Theme › Interface** picks the whole front end (switching reloads the menu; Crossbar
+starts in your choice from a cold boot): the **cross-media bar (PS3 style)** or the **Dashboard (Xbox 360 style)**. See the
 [README](../README.md#two-interfaces) for what each looks like, [THEMES.md](THEMES.md) to restyle
 one, and [LOOKS.md](LOOKS.md) to build a new console skin.
 
@@ -126,7 +126,7 @@ What's in it (in both):
   for a 4K TV across the room), and on a PS5 the **Temperature Overlay** (its own position and
   size, so the two never cover each other) and **Fan Target**
 - **Switch App** — every open app and game, plus Crossbar; Y gives **Switch To / Close / Force Close**
-- **Keyboard**, **Interface** (swap looks right there), **Settings ▸** and **Power…** (opens with
+- **Keyboard**, **Settings ▸** and **Power…** (opens with
   Cancel selected, so a stray A can't turn the console off)
 
 | Trophies | Friends & Party |

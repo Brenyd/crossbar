@@ -454,6 +454,35 @@ def recent_video(cfg):
     return {"path": p, "title": os.path.splitext(os.path.basename(p))[0], "at": r.get("at", 0)}
 
 
+def index_html():
+    """The menu page, with the chosen interface (look) built in: only that look's script and styles
+    load, and the very first frame is drawn in it — no waiting on /api/looks or /api/state, and no
+    flash of another look. Changing Interface in Settings takes effect when the menu reloads."""
+    with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    try:
+        cfg = util.load_config()
+        m = looks.get(cfg.get("interface") or "xmb") or looks.get("xmb")
+    except Exception as e:
+        print(f"index: looks: {e!r}", flush=True)
+        m, cfg = None, {}
+    if not m or not m.get("script"):
+        return html.encode()
+    looks.RUNNING["id"] = m["id"]
+    pub = {k: v for k, v in m.items() if not k.startswith("_")}
+    try:
+        ls = looks.settings(cfg)
+    except Exception:
+        ls = {}
+    boot = json.dumps({"interface": m["id"], "look": pub, "look_settings": ls}).replace("</", "<\\/")
+    lid = re.sub(r"[^a-z0-9_-]", "", m["id"])
+    html = html.replace("<body>", f'<body data-shell="{lid}">', 1)
+    if m.get("css"):
+        html = html.replace("</head>", f'<link rel="stylesheet" href="{m["css"]}" data-look="{lid}">\n</head>', 1)
+    html = html.replace("</body>", f'<script>window.CROSSBAR_BOOT = {boot};</script>\n<script src="{m["script"]}"></script>\n</body>', 1)
+    return html.encode()
+
+
 def r_settings(b):
     allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
                "glyphs", "interface", "memory_guard"}
@@ -1275,6 +1304,8 @@ class Handler(BaseHTTPRequestHandler):
                     traceback.print_exc()
                 return self._send(500, {"error": str(e)})
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
+        if rel == "index.html":
+            return self._send(200, index_html(), "text/html; charset=utf-8")
         full = os.path.realpath(os.path.join(WEB, rel))
         if not full.startswith(os.path.realpath(WEB)) or not os.path.isfile(full):
             return self._send(404, b"not found", "text/plain")
