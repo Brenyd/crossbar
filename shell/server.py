@@ -27,7 +27,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import looks, memguard, jackett, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import looks, memguard, jackett, lutris, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -240,7 +240,7 @@ def _safe_gr(g):
 
 
 BROWSE_EXT = {".zip": ".zip", ".appimage": ".appimage", "image": (".png", ".jpg", ".jpeg", ".webp", ".gif"),
-              "vpn": (".conf", ".ovpn", ".zip"), "torrent": (".torrent",)}
+              "vpn": (".conf", ".ovpn", ".zip"), "torrent": (".torrent",), "any": ("",), "lutris": (".yml", ".yaml", ".json")}
 
 
 def r_apps(what, b):
@@ -600,6 +600,10 @@ GET = {
     "/api/vpn/pfcheck": lambda q: vpn.pf_check(),
     "/api/torrent": lambda q: torrent.summary(),
     "/api/jackett": lambda q: jackett.status(),
+    "/api/lutris": lambda q: lutris.status(),
+    "/api/lutris/search": lambda q: lutris.search(q.get("q", ""), int(q.get("page") or 1)),
+    "/api/lutris/installers": lambda q: lutris.installers(q["slug"]),
+    "/api/lutris/script": lambda q: lutris.script_info(q["path"]),
     "/api/jackett/indexers": lambda q: jackett.indexers(None if q.get("configured") in (None, "") else q.get("configured") == "1"),
     "/api/jackett/config": lambda q: jackett.config(q["id"]),
     "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
@@ -735,6 +739,18 @@ def route_post(path, b):
             return torrent.search_stop(b["id"])
         if what == "search/download":
             return torrent.download_result(b["url"], b.get("engine"), b.get("save_path"))
+        raise KeyError(what)
+    if head == "lutris":
+        what = "/".join(parts[1:])
+        if what == "install":
+            title = f"{b.get('name') or b.get('slug') or 'Game'} (Lutris)"
+            return JOBS.start("install", title, lambda j: lutris.install(j, b.get("slug"), b.get("version"), b.get("target"),
+                                                                       b.get("files") or {}, b.get("script_path")),
+                              "lutris", b.get("slug") or b.get("script_path")).as_dict()
+        if what == "answer":
+            return lutris.answer(b)
+        if what == "setup":
+            return JOBS.start("install", "Lutris", lutris.install_lutris, "lutris", "lutris").as_dict()
         raise KeyError(what)
     if head == "jackett":
         what = "/".join(parts[1:])
@@ -1358,6 +1374,7 @@ def main():
     os.makedirs(util.GAMES_DIR, exist_ok=True)
     session.watchdog()
     memguard.start(lambda text: HUB.publish({"type": "notice", "text": text, "icon": "info"}))
+    lutris.on_event(HUB.publish)
     if vpn.split_on():
         vpn.DNS_RELAY.start()        # first thing: VPN apps' lookups are sent to it while the VPN is up
     PADS.start()

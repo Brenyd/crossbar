@@ -333,6 +333,17 @@ Uninstall). Emulators installed from Game › Emulation stay there.
 - **AppImage** — browse to an `.AppImage` (Downloads, a USB stick, a network drive). It's moved to
   `~/Applications`, made runnable, and its name and icon are read from inside it. Pick a category
   the same way.
+- **Lutris** — the community install scripts from [lutris.net](https://lutris.net) (thousands of games
+  and apps). **Search Lutris…**, pick a game, then one of its installers: it lists what it downloads
+  itself and what **you provide** (a setup file you bought from GOG or another store, a disc image…).
+  Point each one to your file with the file browser, choose the **Install Folder** (Lutris's own
+  default), and **Install**. Lutris's own installer engine runs the script — the same code as its
+  install window — and anything it asks on the way (download a Wine version?, which language or
+  edition, insert / point to a disc, a file) comes up on the screen. Progress is in Downloads; the
+  game appears in **Game** and starts through Lutris. **Install from a Script File…** runs a `.yml`
+  script you have. Needs Lutris: the Arch package (**Install Lutris** here; it refuses if pacman
+  would also change graphics drivers or the kernel) or the Flatpak. Installers that need Steam's own
+  files are pointed back to Lutris itself.
 
 ## Torrents
 
@@ -354,6 +365,18 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
   public and private sites). Plugins for private sites ask for your account when they're installed
   (Y › Sign In… later); it's written into the plugin's own settings. Community plugins are code
   written by other people: only install ones you trust.
+- **Jackett** (Torrents › Jackett): hundreds of torrent sites in one search through
+  [Jackett](https://github.com/Jackett/Jackett). **Install Jackett** downloads the official Linux
+  build from its GitHub (Crossbar doesn't ship it) and runs it on this console only (127.0.0.1:9117;
+  through the VPN when Torrents uses it). **Add a Tracker** lists every site Jackett supports —
+  **Find by Name…**, or Public / Semi-Private / Private — and each one's own settings form is right
+  there: username, password, cookie or API key, choices, categories, on/off options, info text, even
+  a captcha picture. **Add & Test** has Jackett sign in / check the site and shows its exact error if
+  something's wrong. **Your Trackers**: test, change or remove. Jackett is then one more source in
+  Search (on / off in Search's Options), each tracker's results and problems shown as
+  "Jackett › name"; downloads go through Jackett, so private sites' sign-ins work. **Settings**:
+  FlareSolverr's address (for sites behind Cloudflare's browser check), Jackett's admin password if
+  you set one, start with Crossbar, Update Jackett, Jackett's own web page, Stop.
 - **Downloading / Finished & Seeding / All**: live progress, speed and time left. A or Y on one:
   pause, files (skip or prioritise), download in order (watch while it downloads), force start,
   speed limit, recheck, remove (with or without the files).

@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.2.7 Alpha (testing branch)
+- **Jackett in Torrents** (Torrents › Jackett): install the official Jackett build from its GitHub,
+  then add any tracker it supports — public, semi-private, private with your account — and fill in
+  each tracker's own settings form with the controller (text, password, choices, categories, options,
+  captcha picture). Add & Test shows Jackett's exact answer. Jackett then searches alongside your
+  plugins (each tracker's results and errors shown), and its downloads go through Jackett so private
+  sites' sign-ins work. Settings: FlareSolverr, admin password, start with Crossbar, update, stop
+- **Lutris installers in Install Apps**: search lutris.net, pick a game's installer, see what it
+  downloads and what you provide (your own setup files, disc images), choose them and the install
+  folder, Install. Lutris's own installer engine runs the script; its questions (Wine download, a
+  language / edition menu, a disc, a file) come up on the screen; progress in Downloads; the game
+  lands in Game. Local .yml scripts too. Install Lutris installs the Arch package (refusing if
+  pacman would touch graphics drivers or the kernel), or use the Flatpak
+
 ## 1.2.6 Alpha (testing branch)
 - **VPN apps time out — the cause**: WireGuard encrypts a packet in place, so the encrypted copy can
   still look like it came from the VPN app that sent it. The split-tunneling rule marked it too and

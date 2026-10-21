@@ -36,6 +36,10 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 ### 1.2 series: two interfaces, and staying out of the game's way
 
+**1.2.7 Alpha**
+- 🧪 **Jackett** in Torrents: install, add / configure any tracker from the controller, search through it
+- 🧪 **Lutris installers** in Install Apps: community scripts, your own files and discs, every prompt on the TV
+
 **1.2.6 Alpha**
 - 🧪 Split tunneling: WireGuard's own packets no longer looped back into the tunnel (VPN apps timed out)
 - 🧪 Torrents bound to the VPN (not run as a VPN app); search and leak tests sent from the VPN's address

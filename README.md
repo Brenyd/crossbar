@@ -5,7 +5,7 @@
 **A console front end for Linux gaming PCs and Linux on PS5.**<br>
 Boot straight to the couch. Every game, app, song, show and friend — from a controller.
 
-![Version](https://img.shields.io/badge/version-1.2.6_Alpha-informational)
+![Version](https://img.shields.io/badge/version-1.2.7_Alpha-informational)
 ![Base](https://img.shields.io/badge/base-Arch_%2F_CachyOS-1793d1)
 ![PS5](https://img.shields.io/badge/runs_on-PC_%26_PS5_Linux-black)
 ![Controller](https://img.shields.io/badge/controller-first-success)
@@ -80,13 +80,16 @@ It installs next to the system you already have (CachyOS works great, including 
 - **A VPN set up from the controller:** WireGuard or OpenVPN; PIA, Mullvad, NordVPN, Proton and more.
 - **Port forwarding**, and **split tunnelling** (only the apps you choose use the VPN).
 - **Leak tests** and a **speed test**.
-- **A torrent client** on qBittorrent's engine, with search plugins and VPN binding.
+- **A torrent client** on qBittorrent's engine, with search plugins, **Jackett** (hundreds of public
+  and private trackers, set up from the controller) and VPN binding.
 
 **Yours**
 - **Two complete interfaces** that switch live, plus theme packs and a starter kit for making
   [your own console skin](docs/LOOKS.md).
 - **Remappable buttons**, and Xbox / PlayStation / Nintendo button glyphs.
 - **Your own folders** in any category.
+- **Lutris installers** in Install Apps: the community scripts for thousands of games, including ones
+  where you point it to your own setup files or disc images.
 
 **PS5**
 - Temperatures, a temperature overlay, fan target, front light and boost.

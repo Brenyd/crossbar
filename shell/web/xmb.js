@@ -828,10 +828,13 @@ addEventListener('focus', async () => {
 });
 
 // Event stream from the backend: controller input and Quick Menu requests.
+// modules can handle their own events (Lutris installer questions…): a hook returns true when it did
+const EventHooks = [];
 function connectEvents() {
   const es = new EventSource('/api/events');
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
+    for (const h of EventHooks) { try { if (h(ev)) return; } catch (e) { console.error(e); } }
     if (ev.type === 'launching') {
       $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
       clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; syncAway(); }, 320000); syncAway(); return;

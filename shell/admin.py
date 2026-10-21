@@ -531,6 +531,29 @@ def vpn_split(req):
     print(json.dumps({"ok": True, "sites": len(to), "apps": gid is not None, "dns": bool(dns)}))
 
 
+# Never pulled in by a package Crossbar installs: the kernel, graphics drivers and the GL/Vulkan stack
+# stay exactly as you (or your PS5 setup) installed them.
+PROTECTED_PKGS = re.compile(r"^(linux(-[\w.-]+)?|mesa(-[\w.-]+)?|lib32-mesa(-[\w.-]+)?|vulkan-[\w.-]+|lib32-vulkan-[\w.-]+|"
+                            r"nvidia(-[\w.-]+)?|xf86-video-[\w.-]+|amdvlk|lib32-amdvlk|opencl-[\w.-]+|libva-mesa-driver|"
+                            r"mesa-vdpau|vulkan-icd-loader|lib32-vulkan-icd-loader)$")
+
+
+def install_lutris(req):
+    """pacman -S lutris, after a dry run shows it won't bring in anything protected."""
+    plan = _run("pacman", "-Sp", "--needed", "--print-format", "%n", "lutris")
+    if plan.returncode:
+        fail(f"pacman can't install Lutris: {(plan.stderr or plan.stdout).strip()[-200:]}")
+    pkgs = [ln.strip() for ln in plan.stdout.splitlines() if ln.strip() and not ln.startswith(("::", " "))]
+    bad = [p for p in pkgs if PROTECTED_PKGS.match(p) and p != "linux-api-headers"]
+    if bad:
+        fail("Installing Lutris would also install " + ", ".join(bad[:6]) + " (graphics / kernel packages Crossbar never "
+             "changes): install Lutris yourself, or the Flatpak (Store › Install Apps › Flatpak: Lutris)")
+    r = _run("pacman", "-S", "--needed", "--noconfirm", "lutris")
+    if r.returncode:
+        fail(f"pacman: {(r.stderr or r.stdout).strip()[-300:]}")
+    print(json.dumps({"ok": True, "installed": pkgs}))
+
+
 VPN_GROUP = "crossbar-vpn"
 PORT_STATE = "/var/lib/crossbar/vpn-port.json"
 
@@ -609,7 +632,8 @@ if __name__ == "__main__":
         fail("crossbar-admin must run as root (via pkexec)")
     actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
                "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control,
-               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status, "vpn-port": vpn_port}
+               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status, "vpn-port": vpn_port,
+               "install-lutris": install_lutris}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

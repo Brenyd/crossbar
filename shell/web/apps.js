@@ -167,7 +167,7 @@ CATS.push({
       items.push(torrentsItem());
     }
     items.push(...appsIn('apps'));
-    items.push({ key: 'install-apps', label: 'Install Apps', icon: 'download', sub: 'Flatpaks from Flathub, or an AppImage you have', children: async () => INSTALL_APPS.children() });
+    items.push({ key: 'install-apps', label: 'Install Apps', icon: 'download', sub: 'Flatpaks, AppImages, and games and apps through Lutris', children: async () => INSTALL_APPS.children() });
     return items;
   },
 });
@@ -273,11 +273,12 @@ async function appimageBrowse(path) {
 }
 
 const INSTALL_APPS = {
-  key: 'install-apps', label: 'Install Apps', icon: 'download', sub: 'Flatpaks from Flathub, or an AppImage you have',
+  key: 'install-apps', label: 'Install Apps', icon: 'download', sub: 'Flatpaks, AppImages, and games and apps through Lutris',
   children: async () => [
     FLATHUB_FOLDER,
     { key: 'appimage', label: 'AppImage', icon: 'folder', sub: 'Pick an .AppImage file (Downloads, USB stick…): it moves to ~/Applications',
       appimageBrowse: true, children: () => appimageBrowse(null) },
+    LUTRIS_FOLDER,
   ],
 };
 
