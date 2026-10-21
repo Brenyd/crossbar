@@ -70,6 +70,10 @@ install -Dm644 "$HERE/iso/airootfs/etc/polkit-1/rules.d/50-crossbar.rules" /etc/
 install -Dm644 "$HERE/iso/airootfs/usr/share/polkit-1/actions/org.crossbar.admin.policy" /usr/share/polkit-1/actions/org.crossbar.admin.policy
 install -Dm644 "$HERE/iso/airootfs/usr/share/wayland-sessions/crossbar.desktop" /usr/share/wayland-sessions/crossbar.desktop
 install -Dm644 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.desktop" /usr/share/applications/crossbar-return.desktop
+# PS5 setup: refresh Crossbar's blocks in its session switcher (e.g. the "Return to Crossbar" hook)
+if [[ -x "$HERE/ps5-session.sh" ]] && "$HERE/ps5-session.sh" detect 2>/dev/null; then
+  "$HERE/ps5-session.sh" repatch "$U" || echo "warning: couldn't update the PS5 session switcher"
+fi
 # screen capture (Discord's Share Screen) in the Crossbar session only
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal/sway-portals.conf" /etc/xdg/xdg-desktop-portal/sway-portals.conf
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal-wlr/sway" /etc/xdg/xdg-desktop-portal-wlr/sway

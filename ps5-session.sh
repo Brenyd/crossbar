@@ -12,6 +12,7 @@
 #
 #   ps5-session.sh detect            exit 0 if this is that PS5 setup
 #   ps5-session.sh install USER      (root)
+#   ps5-session.sh repatch USER      (root) re-apply only the script blocks (updates; no token / default change)
 #   ps5-session.sh uninstall USER    (root) back to gaming mode as the default
 set -euo pipefail
 SCRIPT=${PS5_TTY_SCRIPT:-/etc/profile.d/ps5-tty-session.sh}
@@ -25,8 +26,8 @@ detect() { [[ -f "$SCRIPT" ]] && grep -q 'ps5-next-session' "$SCRIPT"; }
 
 case "${1:-}" in
   detect) detect; exit $? ;;
-  install|uninstall) ;;
-  *) echo "usage: $0 detect | install USER | uninstall USER"; exit 2 ;;
+  install|uninstall|repatch) ;;
+  *) echo "usage: $0 detect | install USER | repatch USER | uninstall USER"; exit 2 ;;
 esac
 [[ $EUID -eq 0 ]] || { echo "run as root"; exit 1; }
 U="${2:?user}"
@@ -45,6 +46,9 @@ if [[ "$1" == uninstall ]]; then
   exit 0
 fi
 
+if [[ "$1" == repatch ]] && ! grep -q "$BEGIN" "$SCRIPT"; then
+  echo "Crossbar isn't in the PS5 session switcher (nothing to update)"; exit 0
+fi
 mkdir -p "$(dirname "$BACKUP")"
 [[ -f "$BACKUP" ]] || cp -a "$SCRIPT" "$BACKUP"
 strip_blocks       # re-running the installer replaces the blocks, never duplicates them
@@ -80,21 +84,35 @@ block1 = (f"{begin}\n"
           f"{end}\n")
 s = s[:i] + block1 + s[i:]
 
-# 2) after Plasma exits: if "Return to Crossbar" chose it, start Crossbar instead of gaming mode
-anchor2 = '    [ "$rv" = 0 ] || echo "$(date) plasma session exited rv=$rv" >>"$LOG"\n'
-j = s.find(anchor2)
-if j >= 0:
-    j += len(anchor2)
-    block2 = (f"    {begin}\n"
-              "    # \"Return to Crossbar\" from Plasma: log in again, which starts Crossbar\n"
-              "    if [ \"$(cat \"$SESSION_FILE\" 2>/dev/null)\" = crossbar ]; then unset PS5_TTY_SESSION_INIT; exit 0; fi\n"
-              f"    {end}\n")
-    s = s[:j] + block2 + s[j:]
+# 2) after Plasma exits: if "Return to Crossbar" chose it, start Crossbar instead of gaming mode.
+# The hook goes right before the desktop branch hands over to gaming mode (the first line after
+# Plasma's start that writes gamescope into the token, or failing that the one that starts gaming
+# mode), so it doesn't depend on how the rest of that branch is worded.
+import re
+k = -1
+for m in re.finditer(r"startplasma", s):
+    k = m.end()
+spot = -1
+if k >= 0:
+    first = s.find("startplasma")
+    w = re.search(r'^[ \t]*echo[ \t]+gamescope[ \t]*>[ \t]*"?\$\{?SESSION_FILE\}?"?[ \t]*$', s[first:], re.M)
+    if not w:
+        w = re.search(r'^[ \t]*exec[ \t]+\S*gamescope-session', s[first:], re.M)
+    if w:
+        spot = first + w.start()
+if spot >= 0:
+    indent = re.match(r"[ \t]*", s[spot:]).group(0)
+    block2 = (f"{indent}{begin}\n"
+              f"{indent}# \"Return to Crossbar\" from Plasma: log in again, which starts Crossbar\n"
+              f"{indent}if [ \"$(cat \"$SESSION_FILE\" 2>/dev/null | tr -d '\\r\\n\\t ')\" = crossbar ]; then unset PS5_TTY_SESSION_INIT; exit 0; fi\n"
+              f"{indent}{end}\n")
+    s = s[:spot] + block2 + s[spot:]
 else:
-    print("note: Plasma exit hook not added (script layout differs); Return to Crossbar from Plasma goes via gaming mode")
+    print("note: Plasma exit hook not added (script layout differs); Return to Crossbar ends the desktop session instead")
 open(path, "w").write(s)
 PY
 bash -n "$SCRIPT" || { echo "patched script failed a syntax check; restoring the original"; cp -a "$BACKUP" "$SCRIPT"; exit 1; }
+if [[ "$1" == repatch ]]; then echo "PS5 session switcher blocks updated"; exit 0; fi
 
 mkdir -p "$(dirname "$DROPIN")"
 cat >"$DROPIN" <<EOF2
