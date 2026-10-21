@@ -106,13 +106,22 @@ def start():
     if _version_tuple(_nox_version()) >= (5, 0):
         argv.append("--confirm-legal-notice")
     from . import vpn
-    argv = vpn.wrap(argv, "torrents")                     # in the VPN's group when torrents use the VPN
+    if not prefs_local().get("vpn_only"):
+        argv = vpn.wrap(argv, "torrents")                 # chosen as a VPN app: in the VPN's group
+    # "Only Use the VPN": bound to the VPN's interface and address instead (no group needed: traffic
+    # from the VPN's address takes the tunnel directly, and with the VPN down there's no traffic at all)
     _cache.pop("sid", None)
     _proc["p"] = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
     for _ in range(60):
         time.sleep(0.25)
         if running():
-            _apply_vpn_binding()
+            _apply_vpn_binding(rebind=True)
+            try:                                          # a port the VPN already forwards
+                from . import vpn as _v
+                if _v._state.get("pf_port"):
+                    on_vpn_port(_v._state["pf_port"])
+            except Exception:
+                pass
             return True
         if _proc["p"].poll() is not None:
             raise TorrentError("The torrent engine stopped right away (see ~/.cache/crossbar-torrent.log)")
@@ -386,15 +395,28 @@ def toggle_alt_speed():
     return summary()
 
 
-def _apply_vpn_binding():
-    """"Only use the VPN": bound to the VPN's interface (WireGuard cbvpn / OpenVPN cbtun)."""
+def _apply_vpn_binding(rebind=False):
+    """"Only use the VPN": bound to the VPN's interface (WireGuard cbvpn / OpenVPN cbtun) and its
+    current address. Each connection gets a new address (PIA hands one out per connection), and
+    the engine doesn't always notice, so on (re)connect it's given the new one explicitly: the
+    changed setting makes it reopen its connections there."""
     if not prefs_local().get("vpn_only"):
         return
     from . import vpn
     iface = vpn.TUN if vpn.cfg().get("protocol") == "openvpn" else vpn.CONN
+    addr = ""
+    if rebind and vpn.nm_state() == "activated":
+        addr = vpn._vpn_addr() or ""
     try:
+        if not running():
+            return
+        cur = _req("GET", "/api/v2/app/preferences") or {}
+        if cur.get("current_network_interface") == iface and cur.get("current_interface_address", "") == addr and not rebind:
+            return
         _req("POST", "/api/v2/app/setPreferences", data={"json": json.dumps({"current_network_interface": iface,
-                                                                             "current_interface_address": ""})})
+                                                                             "current_interface_address": addr})})
+        if rebind:
+            _req("POST", "/api/v2/torrents/reannounce", data={"hashes": "all"})
     except (OSError, TorrentError):
         pass
 
@@ -418,8 +440,27 @@ def plugins():
                     "url": p.get("url", ""), "categories": [c.get("id") if isinstance(c, dict) else c for c in p.get("supportedCategories") or []],
                     "login": bool(plugin_fields(name))})
     out = sorted(out, key=lambda p: p["full_name"].lower())
+    jk = _jackett_entry()
+    if jk:
+        out.insert(0, jk)
     _cache["plugins_list"] = out
     return out
+
+
+def _jackett_entry():
+    """Jackett, when it's set up, is one more search source (on / off like a plugin)."""
+    from . import jackett
+    if not jackett.binary():
+        return None
+    n = None
+    if jackett.running():
+        try:
+            n = len(jackett.indexers(True))
+        except Exception:
+            n = None
+    return {"name": jackett.NAME, "full_name": f"Jackett ({n} tracker{'' if n == 1 else 's'})" if n is not None else "Jackett",
+            "version": jackett.version() or "", "enabled": bool(jackett.prefs().get("search", True)) and n != 0, "url": jackett.BASE,
+            "categories": list(jackett.CATS), "login": False, "virtual": True, "trackers": n}
 
 
 def install_plugin(url):
@@ -438,6 +479,11 @@ def install_plugin(url):
 def plugin_action(name, what, enable=True):
     if not re.fullmatch(r"[\w.\-]{1,80}", name or ""):
         raise ValueError("plugin")
+    from . import jackett
+    if name == jackett.NAME:
+        if what == "enable":
+            jackett.set_settings(search=enable)
+        return plugins()
     if what == "enable":
         api("POST", "/api/v2/search/enablePlugin", data={"names": name, "enable": "true" if enable else "false"})
     elif what == "remove":
@@ -483,45 +529,135 @@ def search_start(pattern, category="all", plugin_names=None):
             raise TorrentError(f"None of your search plugins have a “{category}” category: search Everything instead")
         names = fit
     nova = _nova_dir()
-    if not nova:
-        raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
-    import sys
+    from . import jackett
+    if not nova and any(n != jackett.NAME for n in names):
+        names = [n for n in names if n == jackett.NAME]       # Jackett alone can still search
+        if not names:
+            raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
     from . import vpn
-    argv = vpn.wrap([sys.executable or "python3", "nova2.py", ",".join(names), category, *pattern.split()], "torrents")
-    env = {**os.environ, "PYTHONWARNINGS": "ignore"}      # Python's own shutdown warnings aren't the plugin's problem
-    p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                         text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
     _sid[0] += 1
     sid = _sid[0]
-    st = {"proc": p, "results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern}
+    probe = vpn.wrap(["x"], "torrents")
+    st = {"results": [], "running": True, "errors": [], "started": time.time(), "engines": names, "pattern": pattern,
+          "per": {n: {"count": 0, "running": True, "error": ""} for n in names}, "procs": [],
+          "via_vpn": probe[1:2] == [vpn.VPNRUN]}
     _searches[sid] = st
     for old in [k for k, v in _searches.items() if k < sid - 8]:      # keep the last few
         _searches.pop(old, None)
+    # Each plugin runs on its own (a few at a time): one slow or broken site can't hold up or hide the
+    # others, every result is credited to the plugin that found it, and each plugin's own error is
+    # kept. The small runner below does what qBittorrent's nova2.py does for one engine — without
+    # nova2's lower-casing of names, which left plugins whose file names have capitals unmatched.
+    words = pattern.split()
 
-    def read_out():
+    def run_jackett():
+        from . import jackett
+        per = st["per"].pop(jackett.NAME, None) or {}
+        try:
+            res, tracker_status = jackett.search(pattern, category)
+        except Exception as e:
+            st["per"]["Jackett"] = {"count": 0, "running": False, "error": str(e)[:200]}
+            st["errors"] = (st["errors"] + [f"Jackett: {str(e)[:200]}"])[-8:]
+            return
+        st["results"].extend(res)
+        for tname, v in tracker_status.items():
+            st["per"][f"Jackett › {tname}"] = v
+            if v.get("error"):
+                st["errors"] = (st["errors"] + [f"Jackett › {tname}: {v['error'][:200]}"])[-8:]
+        if not tracker_status:
+            st["per"]["Jackett"] = {"count": len(res), "running": False, "error": "" if res else "no trackers answered"}
+
+    def run_one(name):
+        import sys
+        from . import jackett
+        if name == jackett.NAME:
+            return run_jackett()
+        per = st["per"][name]
+        argv = vpn.wrap([sys.executable or "python3", "-c", RUNNER, name, category, *words], "torrents")
+        env = vpn.app_env("torrents", {**os.environ, "PYTHONWARNINGS": "ignore", "PYTHONDONTWRITEBYTECODE": "1"})
+        try:
+            p = subprocess.Popen(argv, cwd=nova, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                 text=True, encoding="utf-8", errors="replace", start_new_session=True, env=env)
+        except OSError as e:
+            per.update(running=False, error=str(e)[:160])
+            return
+        st["procs"].append(p)
+        errs = []
+
+        def read_err():
+            for line in p.stderr:
+                line = line.strip()
+                if line and not re.search(r"Warning:|warnings\.warn|resource_tracker", line):
+                    errs.append(line)
+        t = threading.Thread(target=read_err, daemon=True)
+        t.start()
+        deadline = threading.Timer(PLUGIN_TIMEOUT, lambda: _kill(p))     # a plugin that hangs doesn't keep it "searching"
+        deadline.start()
         for line in p.stdout:
-            r = parse_result(line, names)
+            r = parse_result(line, [name])
             if r:
                 st["results"].append(r)
+                per["count"] += 1
         p.wait()
+        deadline.cancel()
+        t.join(2)
+        mine = [e[6:] for e in errs if e.startswith("CBERR ")]
+        last = mine[-1] if mine else next((e for e in reversed(errs) if not e.startswith(("Traceback", "File ", "^", "~"))), "")
+        if p.returncode in (-15, -9) and not per["count"]:
+            last = f"took too long ({PLUGIN_TIMEOUT} s)"
+        per.update(running=False, error="" if per["count"] else last[:200])
+        if last and not per["count"]:
+            st["errors"] = (st["errors"] + [f"{name}: {last[:200]}"])[-8:]
+
+    def run_all():
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(6, len(names))) as ex:
+            list(ex.map(run_one, names))
+        if not st["results"]:
+            st["net"] = net_check(pl, names, st["via_vpn"])      # no results: is it the plugins or the network?
         st["running"] = False
-
-    def read_err():
-        for line in p.stderr:
-            line = line.strip()
-            if line and not re.search(r"Warning:|warnings\.warn|resource_tracker", line):
-                st["errors"] = (st["errors"] + [line])[-6:]
-
-    def watchdog():
-        time.sleep(90)                                   # plugins that hang don't keep it "searching" forever
-        if p.poll() is None:
-            try:
-                os.killpg(p.pid, 15)
-            except OSError:
-                pass
-    for fn in (read_out, read_err, watchdog):
-        threading.Thread(target=fn, daemon=True).start()
+    threading.Thread(target=run_all, daemon=True).start()
     return {"id": sid, "engines": names}
+
+
+PLUGIN_TIMEOUT = 60
+
+
+def _kill(p):
+    try:
+        os.killpg(p.pid, 15)
+    except OSError:
+        pass
+
+
+RUNNER = r"""
+import importlib, sys, traceback, urllib.parse
+sys.path.insert(0, ".")
+name, cat = sys.argv[1], sys.argv[2]
+what = urllib.parse.quote(" ".join(sys.argv[3:]))
+try:
+    mod = importlib.import_module("engines." + name)
+    cls = getattr(mod, name, None) or next((v for k, v in vars(mod).items()          # class named differently
+                                             if isinstance(v, type) and hasattr(v, "search") and hasattr(v, "url")), None)
+    if cls is None:
+        raise ImportError("no search class in it")
+    eng = cls()
+except Exception as e:
+    print("CBERR couldn't load the plugin: %s: %s" % (type(e).__name__, str(e)[:160]), file=sys.stderr)
+    sys.exit(3)
+cats = getattr(eng, "supported_categories", {"all": ""}) or {"all": ""}
+if cat != "all" and cat not in cats:
+    print("CBERR no %s category" % cat, file=sys.stderr)
+    sys.exit(4)
+try:
+    eng.search(what, cat)
+except Exception as e:
+    msg = str(e)[:160]
+    if "403" in msg or "Forbidden" in msg:
+        msg += " (the site blocks it: often Cloudflare)"
+    print("CBERR %s: %s" % (type(e).__name__, msg), file=sys.stderr)
+    sys.exit(5)
+"""
 
 
 def parse_result(line, engines=None):
@@ -535,8 +671,11 @@ def parse_result(line, engines=None):
             return int(float(x))
         except ValueError:
             return -1
+    date = num(parts[7]) if len(parts) > 7 else -1
+    if date > 10 ** 11:                                  # milliseconds from some plugins
+        date //= 1000
     return {"url": parts[0], "name": urllib.parse.unquote(parts[1]), "size": num(parts[2]), "seeds": num(parts[3]),
-            "peers": num(parts[4]), "site": parts[5], "page": parts[6] if len(parts) > 6 else "",
+            "peers": num(parts[4]), "site": parts[5], "page": parts[6] if len(parts) > 6 else "", "date": date if date > 0 else -1,
             "engine": engines[0] if engines and len(engines) == 1 else _engine_for_site(parts[5])}
 
 
@@ -551,40 +690,122 @@ def _engine_for_site(site):
     return urllib.parse.urlparse(site).netloc
 
 
-def search_results(sid, offset=0, limit=200):
+SORTS = {  # key: (label, field, biggest first by default)
+    "seeds": ("Seeds", "seeds", True), "peers": ("Leechers", "peers", True), "size": ("File Size", "size", True),
+    "date": ("Upload Date", "date", True), "name": ("Name", "name", False), "site": ("Site", "engine", False),
+}
+
+
+def sort_results(res, sort="seeds", desc=None):
+    label, field, big_first = SORTS.get(sort, SORTS["seeds"])
+    desc = big_first if desc is None else bool(desc)
+    if field in ("name", "engine"):
+        key = lambda x: (str(x.get(field) or "").lower(), -(x["seeds"] if x["seeds"] >= 0 else 0))
+        return sorted(res, key=key, reverse=desc)
+    known = [x for x in res if isinstance(x.get(field), int) and x[field] >= 0]
+    unknown = [x for x in res if not (isinstance(x.get(field), int) and x[field] >= 0)]
+    # ties: more seeds first; results without that number (a plugin that doesn't give dates) go last
+    known.sort(key=lambda x: (x[field], x["seeds"]), reverse=desc)
+    return known + sorted(unknown, key=lambda x: -(x["seeds"] if x["seeds"] >= 0 else 0))
+
+
+def search_results(sid, offset=0, limit=200, sort="seeds", desc=None):
     st = _searches.get(int(sid))
     if not st:
         return {"running": False, "total": 0, "results": [], "expired": True, "errors": []}
-    res = sorted(st["results"], key=lambda x: -(x["seeds"] if isinstance(x["seeds"], int) else 0))
+    res = sort_results(list(st["results"]), sort, desc)
     errs = []
     if not st["running"] and not res and st["errors"]:
         errs = [e for e in st["errors"] if not e.startswith(("Traceback", "File ", "^"))][-2:] or st["errors"][-1:]
+    label, _f, big_first = SORTS.get(sort, SORTS["seeds"])
     return {"running": st["running"], "total": len(res), "results": res[int(offset):int(offset) + limit], "errors": errs,
-            "engines": st["engines"]}
+            "engines": st["engines"], "sort": sort if sort in SORTS else "seeds", "sort_label": label,
+            "desc": big_first if desc is None else bool(desc), "has_dates": any(x.get("date", -1) > 0 for x in res),
+            "net": st.get("net"), "via_vpn": st.get("via_vpn"), "elapsed": round(time.time() - st["started"]),
+            "per": st.get("per") or {}}
+
+
+NET_PROBE = r'''
+import json, socket, sys, time
+out = {}
+for host in sys.argv[1:4]:
+    t = time.time()
+    try:
+        ip = socket.getaddrinfo(host, 443, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        out[host] = {"dns": "ok", "ip": ip}
+        try:
+            socket.create_connection((ip, 443), timeout=8).close()
+            out[host]["connect"] = "ok"
+        except OSError as e:
+            out[host]["connect"] = str(e)[:80]
+    except OSError as e:
+        out[host] = {"dns": f"failed ({time.time() - t:.0f} s): {str(e)[:60]}"}
+print(json.dumps(out))
+'''
+
+
+def net_check(pl, names, via_vpn):
+    """Can the search reach the plugins' sites from where it runs (through the VPN, when it does)?
+    {"ok": bool, "summary": "...", "hosts": {...}}"""
+    import sys
+    from . import vpn
+    hosts = []
+    for p in pl:
+        if p["name"] in names:
+            h = urllib.parse.urlparse(p.get("url") or "").hostname
+            if h and h not in hosts:
+                hosts.append(h)
+    hosts = (hosts or ["www.google.com"])[:3]
+    argv = [sys.executable or "python3", "-c", NET_PROBE, *hosts]
+    if via_vpn:
+        argv = vpn.wrap(argv, "torrents")
+    try:
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=40, cwd="/", env=vpn.app_env("torrents") if via_vpn else None)
+        res = json.loads((r.stdout.strip().splitlines() or ["{}"])[-1])
+    except (OSError, subprocess.TimeoutExpired, ValueError) as e:
+        return {"ok": False, "summary": f"Couldn't test the connection: {e}", "hosts": {}}
+    dns_bad = [h for h, v in res.items() if v.get("dns") != "ok"]
+    conn_bad = [h for h, v in res.items() if v.get("dns") == "ok" and v.get("connect") != "ok"]
+    where = "through the VPN" if via_vpn else "from this console"
+    if res and len(dns_bad) == len(res):
+        summary = f"Site names can't be looked up {where} (DNS isn't working): " + ("check VPN › Leak Tests › Check Split Tunneling" if via_vpn else "check the network")
+    elif res and len(conn_bad) + len(dns_bad) == len(res):
+        summary = f"The plugins' sites can't be reached {where}" + (" (the VPN may be blocking them, or the tunnel is down)" if via_vpn else "")
+    else:
+        summary = f"The connection {where} works: the plugins found nothing, or their sites changed (Search Plugins › Update All)"
+    return {"ok": not (dns_bad or conn_bad), "summary": summary, "hosts": res}
 
 
 def search_stop(sid):
     st = _searches.get(int(sid))
-    if st and st["proc"].poll() is None:
-        try:
-            os.killpg(st["proc"].pid, 15)
-        except OSError:
-            pass
+    for p in (st or {}).get("procs", []):
+        if p.poll() is None:
+            _kill(p)
     return {"ok": True}
 
 
 def download_result(url, engine=None, save_path=None):
     """A search result: a magnet link is added as it is; a .torrent link is fetched by its plugin
-    (nova2dl.py, as qBittorrent does), so private sites' sign-ins and cookies are used."""
+    (nova2dl.py, as qBittorrent does), so private sites' sign-ins and cookies are used; a Jackett
+    result through Jackett (it holds the tracker's sign-in)."""
     if url.lower().startswith("magnet:"):
         return add(urls=[url], save_path=save_path)
+    if (engine or "").startswith("jackett"):
+        from . import jackett
+        kind, data = jackett.fetch(url)
+        if kind == "magnet":
+            return add(urls=[data], save_path=save_path)
+        out = api("POST", "/api/v2/torrents/add", data={"savepath": save_path or ""}, files={"torrents": ("jackett.torrent", data)})
+        if isinstance(out, str) and out.strip().lower().startswith("fail"):
+            raise TorrentError("The torrent engine didn't accept it (already added?)")
+        return {"ok": True}
     nova = _nova_dir()
     if nova and engine and re.fullmatch(r"[\w.\-]{1,80}", engine) and os.path.isfile(os.path.join(nova, "nova2dl.py")):
         import sys
         from . import vpn
         try:
             r = subprocess.run(vpn.wrap([sys.executable or "python3", "nova2dl.py", engine, url], "torrents"), cwd=nova,
-                               capture_output=True, text=True, timeout=60)
+                               capture_output=True, text=True, timeout=60, env=vpn.app_env("torrents"))
             first = (r.stdout.strip().splitlines() or [""])[0]
             path = first.split(" ", 1)[0]
             if r.returncode == 0 and path and os.path.isfile(path):
@@ -766,6 +987,35 @@ def set_plugin_login(name, values):
             f.write(src)
         os.replace(py + ".tmp", py)
     return plugin_fields(name)
+
+
+def fix_engine_group():
+    """1.2.6: with "Only Use the VPN", the engine runs bound to the VPN rather than in the VPN apps'
+    group. An engine still running in the group from before (it outlives Crossbar restarts) is
+    restarted once, the new way."""
+    if not prefs_local().get("vpn_only") or not running():
+        return False
+    try:
+        import grp
+        gid = grp.getgrnam("crossbar-vpn").gr_gid
+    except (KeyError, ImportError):
+        return False
+    pids = subprocess.run(["pgrep", "-u", str(os.getuid()), "-x", "qbittorrent-nox"], capture_output=True, text=True).stdout.split()
+    for pid in pids:
+        try:
+            gids = next(ln for ln in open(f"/proc/{pid}/status") if ln.startswith("Gid:")).split()[1:]
+        except (OSError, StopIteration):
+            continue
+        if str(gid) in gids[:2]:
+            print("torrent: restarting the engine outside the VPN apps' group (bound to the VPN instead)", flush=True)
+            stop()
+            for _ in range(40):
+                time.sleep(0.25)
+                if not running():
+                    break
+            start()
+            return True
+    return False
 
 
 def autostart():

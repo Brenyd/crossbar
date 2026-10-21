@@ -102,6 +102,72 @@ async function capturePad(a, add, c, combo = false) {
   if (res) savedControls(res, `${a.name}: ${res.labels[r.tok] || r.tok}`);
 }
 
+async function captureRemote(a, add, c) {
+  if (!c.pads.remotes?.length) return message('No TV remote found yet. Choose Set Up a Remote first, then press a button on it.', 'TV Remote');
+  const cap = api.post('/api/controls/capture', { timeout: 10, kind: 'remote' }).then((x) => x.token);
+  const dlg = Dialog.ask({ title: 'TV Remote Buttons', body: `Press the remote button for “${a.name}”`, buttons: ['Cancel'], timeout: 10000, timeoutButton: null });
+  const r = await Promise.race([cap.then((t) => ({ tok: t })), dlg.then((x) => ({ dlg: x }))]);
+  if (r.dlg) { api.post('/api/controls/cancel'); return; }
+  Dialog.close(0);
+  if (!r.tok) return toast('No button pressed', 'info');
+  const tokens = add ? [...c.remote[a.id], r.tok] : [r.tok];
+  const res = await call(() => api.post('/api/controls', { kind: 'remote', action: a.id, tokens }));
+  if (res) savedControls(res, `${a.name}: ${res.remote_labels[r.tok] || r.tok}`);
+}
+
+async function learnRemote() {
+  const got = api.post('/api/controls/learn-remote', { timeout: 15 }).catch((e) => ({ error: e.message || String(e) }));
+  const dlg = Dialog.ask({ title: 'Set Up a Remote', body: 'Press any button on your TV remote (OK or Back is best).\n\nFor a SofaBaton or other universal remote: pair it with this console as an Android TV device first (Settings › Bluetooth).',
+    buttons: ['Cancel'], timeout: 15000, timeoutButton: null });
+  const r = await Promise.race([got.then((x) => ({ res: x })), dlg.then((x) => ({ dlg: x }))]);
+  if (r.dlg) { api.post('/api/controls/cancel'); return; }
+  Dialog.close(0);
+  if (r.res.error) return message(r.res.error, 'TV Remote');
+  if (!r.res.name) return toast('No button pressed', 'info');
+  toast(`${r.res.name} is now a TV remote`, 'game');
+  reloadFolder();
+}
+
+const REMOTE_FOLDER = {
+  key: 'remote', label: 'TV Remote', icon: 'tv', sub: 'Android TV, SofaBaton, Fire TV and other remotes',
+  children: async () => {
+    const c = await api.get('/api/controls');
+    const found = c.pads.remotes || [];
+    const forced = c.remote_devices || {};
+    const items = [
+      { key: 'learn', label: 'Set Up a Remote…', icon: 'add', sub: found.length ? `Using: ${found.join(', ')}` : 'Press a button on it so Crossbar knows which device it is',
+        action: learnRemote },
+    ];
+    for (const name of [...new Set([...found, ...Object.keys(forced)])]) {
+      const on = found.includes(name);
+      items.push({ key: `dev:${name}`, label: name, icon: on ? 'check' : 'tv',
+        sub: forced[name] === false ? 'Not used as a remote (your choice)' : on ? (forced[name] ? 'Used as a TV remote (set up by you)' : 'Used as a TV remote (found automatically)') : 'Set up, not connected right now',
+        action: async () => savedControls(await api.post('/api/controls/remote-device', { name, on: forced[name] === false ? null : false }),
+          forced[name] === false ? `${name}: automatic` : `${name} isn't used as a remote`),
+        options: [
+          { label: 'Use as a TV Remote', action: async () => savedControls(await api.post('/api/controls/remote-device', { name, on: true }), `${name} is a TV remote`) },
+          { label: 'Not a Remote', action: async () => savedControls(await api.post('/api/controls/remote-device', { name, on: false }), `${name} isn't used as a remote`) },
+          { label: 'Automatic', action: async () => savedControls(await api.post('/api/controls/remote-device', { name, on: null }), `${name}: automatic`) },
+        ] });
+    }
+    items.push(
+      { key: 'buttons', label: 'Remote Buttons', icon: 'tv', sub: 'Choose what each remote button does', children: bindingItems('remote') },
+      { key: 'test', label: 'Test the Remote', icon: 'info', sub: 'Press buttons, then open this to see what Crossbar got', action: showDiagnostics },
+      { key: 'how', label: 'How It Works', icon: 'info', sub: 'What each button does',
+        action: () => message([
+          'Arrows move, OK selects, Back goes back, Home opens the Quick Menu, Menu / Info / Yellow open Options.',
+          'Media keys work on whatever is playing: music, Spotify, a video, live TV, YouTube and other web apps — even behind a game. Play, Pause and Stop do just that; Rewind / Fast Forward skip songs in music and seek in videos.',
+          'Live TV: Channel ± changes channel, number keys type a channel number (OK enters it at once), Record jumps back to the last channel, Red is subtitles, Green the audio track, and Blue (or Guide) opens Live TV.',
+          'Volume ± and Mute change the console\'s volume. Power opens the Quick Menu, so a stray press never shuts the console down.',
+          'In a game or another app the remote types the matching keys, and Home still opens the Quick Menu. Any button can be changed in Remote Buttons.',
+].join('\n\n'), 'TV Remote') },
+      { key: 'reset', label: 'Reset Remote Buttons', icon: 'refresh', sub: 'Back to the Android TV layout',
+        action: async () => { if (await confirmBox('Reset all remote buttons to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'remote' }), 'Remote buttons reset'); } },
+    );
+    return items;
+  },
+};
+
 async function captureKey(a, add, c) {
   const got = new Promise((res) => { KeyCapture.active = (k) => { KeyCapture.active = null; res(k); }; });
   const dlg = Dialog.ask({ title: 'Keyboard Keys', body: `Press the key for “${a.name}”\n(wait to cancel)`, buttons: ['Cancel'],
@@ -118,17 +184,17 @@ async function captureKey(a, add, c) {
 function bindingItems(kind) {
   return async () => {
     const c = await api.get('/api/controls');
-    return c.actions.map((a) => {
+    return (kind === 'remote' ? c.remote_actions : c.actions).map((a) => {
       const toks = c[kind][a.id];
-      const label = (t) => (kind === 'gamepad' ? c.labels[t] || t : keyLabel(t));
-      const capture = (add, combo) => () => (kind === 'gamepad' ? capturePad(a, add, c, combo) : captureKey(a, add, c));
+      const label = (t) => (kind === 'gamepad' ? c.labels[t] || t : kind === 'remote' ? c.remote_labels[t] || t : keyLabel(t));
+      const capture = (add, combo) => () => (kind === 'gamepad' ? capturePad(a, add, c, combo) : kind === 'remote' ? captureRemote(a, add, c) : captureKey(a, add, c));
       return {
-        key: `${kind}:${a.id}`, label: a.name, icon: kind === 'gamepad' ? 'game' : 'browser',
+        key: `${kind}:${a.id}`, label: a.name, icon: kind === 'gamepad' ? 'game' : kind === 'remote' ? 'tv' : 'browser',
         sub: toks.length ? [...new Set(toks.map(label))].join(' · ') : 'Not set',
         action: capture(false),
         options: [
           { label: 'Change…', action: capture(false) },
-          { label: `Add Another ${kind === 'gamepad' ? 'Button' : 'Key'}…`, action: capture(true) },
+          { label: `Add Another ${kind === 'keyboard' ? 'Key' : 'Button'}…`, action: capture(true) },
           ...(kind === 'gamepad' ? [{ label: 'Use a Button Combo…', action: capture(false, true) },
                                     { label: 'Add a Button Combo…', action: capture(true, true) }] : []),
           { label: 'Reset to Default', action: async () => savedControls(await api.post('/api/controls', { reset: kind, action: a.id }), `${a.name} reset`) },
@@ -146,6 +212,7 @@ async function showDiagnostics() {
     `Controller service: ${p.mode === 'inputd' ? 'running' : p.mode === 'direct' ? 'NOT running — reading controllers directly' : p.mode}${p.inputd_error ? ' (' + p.inputd_error + ')' : ''}`,
     `Controllers Crossbar reads: ${p.devices.length ? p.devices.join(', ') : 'none'}`,
     p.virtual?.length ? `Steam virtual pads (held, not read): ${p.virtual.join(', ')}` : '',
+    `TV remotes: ${p.remotes?.length ? p.remotes.join(', ') : 'none'}`,
     `Controllers the menu's browser sees: ${p.browser_pads?.length ? p.browser_pads.join(', ') : 'none'}`,
     p.unreadable.length ? `Found but NOT readable: ${p.unreadable.join(', ')}` : '',
     !p.available ? 'python-evdev missing — controllers only work in the menu' : '',
@@ -163,7 +230,7 @@ async function showDiagnostics() {
 }
 
 const CONTROLS_FOLDER = {
-  key: 'controls', label: 'Controller & Keyboard', icon: 'game', sub: 'Button and key mapping',
+  key: 'controls', label: 'Controller, Remote & Keyboard', icon: 'game', sub: 'Button and key mapping, TV remotes',
   children: async () => {
     const c = await api.get('/api/controls');
     const pads = c.pads.devices;
@@ -183,6 +250,7 @@ const CONTROLS_FOLDER = {
         } },
       { key: 'pad', label: 'Controller Buttons', icon: 'game', sub: 'Choose what each button does', children: bindingItems('gamepad') },
       { key: 'diag', label: 'Controller Diagnostics', icon: 'info', sub: 'What Crossbar sees, and the last buttons pressed', action: showDiagnostics },
+      { key: 'remote', label: 'TV Remote', icon: 'tv', sub: c.pads.remotes?.length ? c.pads.remotes.join(', ') : 'Android TV, SofaBaton, Fire TV and other remotes', children: REMOTE_FOLDER.children },
       { key: 'kbd', label: 'Keyboard Keys', icon: 'browser', sub: 'Choose what each key does', children: bindingItems('keyboard') },
       { key: 'guide', label: 'Guide / PS Button Opens Quick Menu', icon: 'game',
         sub: c.guide_home ? 'On — Steam\'s overlay won\'t get that button' : 'Off — left free for Steam (Quick Menu: Select + Start)',
@@ -190,7 +258,7 @@ const CONTROLS_FOLDER = {
           c.guide_home ? 'Guide/PS left to Steam' : 'Guide/PS opens the Quick Menu') },
       { key: 'swap', label: 'Swap Select and Back', icon: 'refresh', sub: 'Confirm with the right face button instead of the bottom one (or back again)',
         action: async () => savedControls(await api.post('/api/controls', { swap: true }), 'Select and Back swapped') },
-      { key: 'reset', label: 'Reset All to Defaults', icon: 'refresh', sub: 'Controller and keyboard',
+      { key: 'reset', label: 'Reset All to Defaults', icon: 'refresh', sub: 'Controller, remote and keyboard',
         action: async () => { if (await confirmBox('Reset all buttons and keys to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'all' }), 'Controls reset'); } },
     ];
   },
@@ -429,6 +497,20 @@ const BROWSER_SETTINGS = {
 
 // Settings › Theme › Theme Packs: colours, waves, background picture, font, icons, sounds.
 // The XMB uses all of it; the Dashboard uses a pack's picture (Background › Theme picture).
+// Interface: saved, then the menu reloads into it (only one look is ever loaded, to save memory)
+async function switchInterface(id, name) {
+  if (id !== S.state.interface) {
+    try { await setSetting({ interface: id }); } catch (e) { toast(e.message, 'info'); return; }
+  }
+  if (id === Shell.id) { reloadFolder(); return; }
+  if (await confirmBox(`Reload the menu now to switch to ${name}?\nIt takes a few seconds; you come back to Settings.`)) reloadMenu();
+  else { toast(`${name} starts the next time the menu loads`, 'display'); reloadFolder(); }
+}
+function reloadMenu() {
+  $('#boot').classList.remove('done');      // the start-up splash covers the reload
+  try { sessionStorage.setItem('crossbar.reopen', 'theme'); } catch { /* fine: start at Game */ }
+  setTimeout(() => location.reload(), 250);
+}
 function themePacksFolder(cur, look) {
   return {
     key: 'packs', label: 'Theme Packs', icon: 'palette',
@@ -526,17 +608,20 @@ const SETTINGS_FOLDERS = [
     children: async () => {
       const st = S.state;
       const cur = await api.get('/api/theme');
-      const look = Shell.impls[st.interface] ? st.interface : 'xmb';
+      const look = Shell.id;                 // the one running now (a new choice takes over after a reload)
       const named = (rows, k) => (rows.find(([v]) => v === k) || rows[0])[1];
       // a one-of-several choice: ✓ on the current one, applied the moment it's picked
       const pick = (rows, k, set) => Options.show(
         rows.map(([v, l]) => ({ label: `${check(v === k)}${l}`, action: () => setSetting(set(v)).then(reloadFolder) })),
         Math.max(0, rows.findIndex(([v]) => v === k)));
       const items = [];
-      const looks = Looks.names();
+      const looks = await Looks.names();
       if (looks.length > 1) {
-        items.push({ key: 'iface', label: 'Interface', icon: 'display', sub: named(looks, look),
-          action: () => pick(looks, look, (v) => ({ interface: v })) });
+        const chosen = st.interface || look;
+        items.push({ key: 'iface', label: 'Interface', icon: 'display',
+          sub: chosen !== look ? `${named(looks, chosen)} · reload to switch ({ok})` : `${named(looks, look)} · changing it reloads the menu`,
+          action: () => Options.show(looks.map(([v, l]) => ({ label: `${check(v === chosen)}${l}`, action: () => switchInterface(v, l) })),
+            Math.max(0, looks.findIndex(([v]) => v === chosen))) });
       }
       // the look's own settings, straight from its look.json…
       const vals = Looks.settings(look);
@@ -611,7 +696,7 @@ const SETTINGS_FOLDERS = [
     },
   },
   {
-    key: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth', sub: 'Controllers, headsets, keyboards',
+    key: 'bluetooth', label: 'Bluetooth', icon: 'bluetooth', sub: 'Controllers, TV remotes, headsets, keyboards',
     children: async () => {
       const bt = await api.get('/api/bluetooth').catch(() => ({ available: false }));
       if (!bt.available) return [{ key: 'na', label: bt.note || 'Bluetooth isn\'t available', icon: 'info', sub: 'No adapter found, or bluez isn\'t installed' }];
@@ -623,10 +708,13 @@ const SETTINGS_FOLDERS = [
       for (const d of bt.devices) {
         const act = (a, ok) => async () => { await call(() => api.post(`/api/bluetooth/${a}`, { mac: d.mac }), ok); reloadFolder(); };
         items.push({ key: `bt:${d.mac}`, label: d.name, icon: d.connected ? 'check' : d.kind,
-          sub: d.connected ? 'Connected' : d.paired ? 'Paired — {ok} to connect' : 'Not paired — {ok} to pair',
-          action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? act('connect', `Connected ${d.name}`)
+          sub: d.connected ? 'Connected' : d.paired ? (d.kind === 'game' ? 'Paired — press its PS button, or {ok} to connect' : 'Paired — {ok} to connect') : 'Not paired — {ok} to pair',
+          action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? (() => { toast(`Connecting ${d.name}…`, d.kind); return act('connect', `Connected ${d.name}`)(); })
             : async () => { toast(`Pairing ${d.name}…`, 'game'); await call(() => api.post('/api/bluetooth/pair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 3000); },
           options: [{ label: d.connected ? 'Disconnect' : 'Connect', action: d.connected ? act('disconnect') : act('connect') },
+                    ...(d.paired ? [{ label: 'Pair Again', action: async () => {
+                      if (!(await confirmBox(d.kind === 'game' ? `Hold Create + PS on ${d.name} until its light flashes fast, then choose OK.` : `Put ${d.name} in pairing mode, then choose OK.`))) return;
+                      toast(`Pairing ${d.name} again…`, d.kind); await call(() => api.post('/api/bluetooth/repair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 15000); } }] : []),
                     { label: 'Forget Device', action: async () => { if (await confirmBox(`Forget ${d.name}?`)) act('remove', `Forgot ${d.name}`)(); } }] });
       }
       return items;
@@ -709,8 +797,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.2 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.2 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.9 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.9 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

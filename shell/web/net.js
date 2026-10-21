@@ -110,7 +110,7 @@ function vpnSplitFolder() {
       const st = await vpnStatus();
       const setOpt = async (body, msg) => {
         const r = await call(() => api.post('/api/vpn/options', body), msg);
-        if (r && 'split' in body && r.connected && await confirmBox('Reconnect the VPN now so this takes effect?')) { vpnConnect(); return; }
+        if (r && ('split' in body || 'dns_all' in body) && r.connected && await confirmBox('Reconnect the VPN now so this takes effect?')) { vpnConnect(); return; }
         if (r) reloadFolder();
       };
       const appImages = (S.apps || []).filter((a) => a.kind === 'appimage').map((a) => [`app:${a.key}`, a.name]);
@@ -129,6 +129,13 @@ function vpnSplitFolder() {
           list.push({ key: 'note', label: 'How This Works', icon: 'info', sub: 'Changes apply when an app next starts',
             action: () => message('Apps chosen here start in their own group, and only that group\'s traffic (and its DNS) goes through the VPN.\nTorrents with "Only Use the VPN" on always use it.\nFlatpak apps put themselves in a group of their own when they start, so they can\'t be chosen.\nChanges apply the next time an app starts.', 'Split Tunneling') });
           return list;
+        } });
+      rows.push({ key: 'dns', label: 'DNS Through the VPN', icon: 'network',
+        sub: `${st.dns_all_setting == null ? 'Automatic' : st.dns_all_setting ? 'For everything' : 'For VPN apps only'} · ${st.dns_all ? 'every lookup goes to the VPN\'s DNS' : 'only VPN apps\' lookups do'}${st.resolved ? ' (this system uses systemd-resolved)' : ''}`,
+        action: async () => {
+          const v = await choose([['auto', 'Automatic (for everything when systemd-resolved does the lookups)'], ['all', 'For Everything (no DNS leaks, any app)'],
+            ['apps', 'For VPN Apps Only (others use your normal DNS)']], st.dns_all_setting == null ? 0 : st.dns_all_setting ? 1 : 2);
+          if (v) setOpt({ dns_all: v === 'auto' ? 'auto' : v === 'all' }, 'DNS setting saved: reconnect the VPN to use it');
         } });
       rows.push({ key: 'sites', label: 'Sites That Use the VPN', icon: 'network', sub: st.vpn_sites.length ? st.vpn_sites.join(', ') : 'None',
         children: async () => {
@@ -162,29 +169,33 @@ async function jobDialog(path, title, render) {
   }
   if (S.stack.length) reloadFolder();
 }
-const LEAK_MARK = { leak: '⚠ ', protected: '✓ ', exposed: '⚠ ', 'not-vpn': '⚠ ', 'not-chosen': '⚠ ' };
+const LEAK_MARK = { leak: '⚠ ', protected: '✓ ', blocked: '✓ ', exposed: '⚠ ', 'not-vpn': '⚠ ', 'not-chosen': '⚠ ' };
 function torrentLeakTest() {
   return jobDialog('/api/leaktest/torrent', 'Torrent IP Leak Test', (cur) => {
     const r = cur.result;
-    if (!r) return [cur.message, '', 'The torrent engine announces a made-up torrent to WhatIsMyIP.net\'s tracker,', 'which records the address it came from.'];
+    if (!r) return [cur.message, '', 'Checks the address peers see: a connection made exactly the way the torrent engine', 'makes them, and the address the BitTorrent network reports back to it.'];
     return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
-      r.seen.length ? 'Trackers saw:' : 'Nothing reached the tracker (blocked, or "Only Use the VPN" with the VPN off).',
-      ...r.seen.map((x) => `   ${x.ip}${x.ip === r.isp_ip ? '  ← your real address' : ''}${x.agent ? `   (${x.agent})` : ''}`),
+      ...(r.seen.length ? ['Seen as:', ...r.seen.map((x) => `   ${x.ip}${x.ip === r.isp_ip ? '  ← your real address' : ''}   (${x.agent})`)] : []),
+      ...(r.notes || []),
       r.verdict === 'not-chosen' ? 'Split tunneling is on and Torrents isn\'t one of the VPN apps. Turn on Torrents › Settings ›\nNetwork & VPN › Only Use the VPN (or add Torrents in VPN › Split Tunneling).' : '',
-      r.isp_ip ? `Your address without the VPN: ${r.isp_ip}` : 'Your address without the VPN isn\'t known yet: check it once with the VPN off (Check My Address).',
-      `VPN: ${r.vpn ? 'on' : 'off'}${r.bound ? ` · torrents bound to ${r.bound}` : ''}`];
+      r.isp_ip ? `Your own address (without the VPN): ${r.isp_ip}` : '',
+      `VPN: ${r.vpn ? 'on' : 'off'} · ${r.vpn_only ? `only uses the VPN${r.bound ? ` (bound to ${r.bound})` : ''}` : 'not limited to the VPN'}`,
+      r.vpn ? `Listening on port ${r.listen_port || '?'}${r.forwarded_port ? (r.forwarded_port === r.listen_port ? ' · the VPN\'s forwarded port ✓' : ` · the VPN forwards ${r.forwarded_port}`) : ''}` : ''];
   });
 }
 function dnsLeakTest() {
   return jobDialog('/api/leaktest/dns', 'DNS Leak Test', (cur) => {
     const r = cur.result;
     if (!r) return [cur.message, '', 'Made-up names are looked up, then bash.ws reports which DNS servers did it.'];
+    const hint = r.verdict === 'leak' && r.split && r.resolved && !r.dns_all
+      ? 'This system looks names up through systemd-resolved, which asks your normal DNS for every app.\nTurn on VPN › Split Tunneling › DNS Through the VPN › For Everything, then reconnect.' : '';
     return [`${LEAK_MARK[r.verdict] || ''}${cur.message}`, '',
       `DNS servers used (${r.servers.length}):`, ...r.servers.slice(0, 8).map((x) => `   ${x.ip}  ${x.country}${x.asn ? ` · ${x.asn}` : ''}`),
       `Seen as: ${r.ip || '?'}${r.ip_country ? `  ${r.ip_country}` : ''}${r.ip_asn ? ` · ${r.ip_asn}` : ''}${r.ip === r.isp_ip ? '  ← your real address' : ''}`,
       r.split ? 'Tested as an app that uses the VPN (split tunneling is on).' : '',
       r.verdict === 'not-vpn' && r.split ? 'VPN apps aren\'t going through the VPN: see Leak Tests › Check Split Tunneling.' : '',
-      r.verdict !== 'not-vpn' && r.conclusion ? `bash.ws: ${r.conclusion}` : ''];
+      r.verdict !== 'not-vpn' && r.conclusion ? `bash.ws: ${r.conclusion}` : '',
+      r.vpn ? `VPN's DNS server: ${r.vpn_dns || '?'} · ${r.dns_all ? 'used for every lookup' : 'used by VPN apps'}` : '', hint];
   });
 }
 async function checkMyAddress() {
@@ -199,6 +210,25 @@ async function checkMyAddress() {
     lines.push('', 'Split tunneling is on, so only the apps and sites you chose use the VPN —', 'the rest (and this menu) use your normal connection, as intended.');
   }
   message(lines.join('\n'), 'Your Address');
+}
+async function checkPortForward() {
+  toast('Checking port forwarding…', 'network');
+  const r = await call(() => api.get('/api/vpn/pfcheck'));
+  if (!r) return;
+  const lines = [!r.on ? 'Port forwarding is off.' : !r.connected ? 'The VPN is off: port forwarding starts when it connects.'
+    : r.port ? `✓ Forwarded port: ${r.port}` : '⚠ No port yet.', ''];
+  if (r.region_ok === false) lines.push('This location doesn\'t offer port forwarding (PIA\'s US ones don\'t): VPN › Location, pick one marked PORT FWD.');
+  if (r.state) lines.push(`Now: ${r.state}`);
+  if (r.error) lines.push(`Last problem: ${r.error}`);
+  if (r.region) lines.push(`Location: ${r.region}${r.region_ok === true ? ' · offers port forwarding ✓' : r.region_ok === false ? ' · no port forwarding here ⚠' : ''}`);
+  if (r.tries?.length) {
+    lines.push(`PIA's port forwarding asked from ${r.source || 'the VPN'}:`);
+    for (const t of r.tries) lines.push(`   ${t.address}:19999 · ${t.result === 'ok' ? 'answers ✓' : t.result}`);
+    if (r.tries.every((t) => t.result !== 'ok') && r.tries.some((t) => /refused/i.test(t.result)))
+      lines.push('Refused means the server isn\'t offering port forwarding: try another location marked PORT FWD.');
+  } else if (r.gateway) lines.push(`Asks ${r.gateway}${r.source ? ` from ${r.source}` : ''}`);
+  if (r.torrent_port != null) lines.push(`Torrents listens on port ${r.torrent_port}${r.port && r.torrent_port === r.port ? ' ✓' : r.port ? ' (will switch to the forwarded port)' : ''}`);
+  message(lines.join('\n'), 'Port Forwarding');
 }
 async function checkSplit() {
   toast('Checking split tunneling…', 'network');
@@ -253,12 +283,15 @@ const VPN_ITEM = {
         }
       } });
     if (st.pf_supported) items.push({ key: 'pf', label: 'Port Forwarding', icon: 'network',
-      sub: !st.port_forward ? 'Off' : st.forwarded_port ? `On · port ${st.forwarded_port} (the torrent client uses it)` : st.pf_error || (st.connected ? 'On · waiting for a port…' : 'On · when connected'),
+      sub: !st.port_forward ? 'Off · {ok} turn on'
+        : st.pf_region_ok === false ? 'On · this location has no port forwarding: pick one marked PORT FWD'
+        : st.forwarded_port ? `On · port ${st.forwarded_port} (Torrents listens on it)`
+        : st.pf_error || (st.connected ? `On · ${st.pf_state || 'waiting for a port…'}` : 'On · starts when connected'),
       action: async () => {
-        if (await call(() => api.post('/api/vpn/options', { port_forward: !st.port_forward }), `Port forwarding ${st.port_forward ? 'off' : 'on'}`)) {
-          if (st.connected && await confirmBox('Reconnect now so it takes effect?')) vpnConnect(); else vpnRefresh();
-        }
-      } });
+        if (await call(() => api.post('/api/vpn/options', { port_forward: !st.port_forward }), `Port forwarding ${st.port_forward ? 'off' : 'on'}`)) vpnRefresh();
+      },
+      options: [{ label: st.port_forward ? 'Turn Off' : 'Turn On', action: async () => { if (await call(() => api.post('/api/vpn/options', { port_forward: !st.port_forward }))) vpnRefresh(); } },
+        { label: 'Check Port Forwarding', action: checkPortForward }] });
     items.push({ ...vpnSplitFolder(), sub: !st.split ? 'Off · everything uses the VPN' : (() => {
       const n = st.vpn_apps.length + st.vpn_sites.length;
       const what = [st.vpn_apps.length ? `${st.vpn_apps.length} app${st.vpn_apps.length === 1 ? '' : 's'}` : '', st.vpn_sites.length ? `${st.vpn_sites.length} site${st.vpn_sites.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');

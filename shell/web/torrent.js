@@ -82,6 +82,25 @@ async function torrentFileBrowse(path) {
 // ---- search ---------------------------------------------------------------------------------------
 const T_CATS = [['all', 'Everything'], ['movies', 'Movies'], ['tv', 'TV'], ['music', 'Music'], ['games', 'Games'], ['anime', 'Anime'],
   ['software', 'Software'], ['books', 'Books']];
+// How results are sorted (kept for the next search too)
+const T_SORTS = [
+  ['seeds:1', 'Seeds (most first)'], ['seeds:0', 'Seeds (fewest first)'], ['peers:1', 'Leechers (most first)'],
+  ['size:1', 'File Size (largest first)'], ['size:0', 'File Size (smallest first)'],
+  ['date:1', 'Upload Date (newest first)'], ['date:0', 'Upload Date (oldest first)'],
+  ['name:0', 'Name (A to Z)'], ['name:1', 'Name (Z to A)'], ['site:0', 'Site (A to Z)'],
+];
+const tSort = {
+  get() { try { return localStorage.getItem('crossbar.torrentSort') || 'seeds:1'; } catch { return 'seeds:1'; } },
+  set(v) { try { localStorage.setItem('crossbar.torrentSort', v); } catch { /* private window: just this time */ } this.cur = v; },
+  cur: null,
+};
+const tAge = (ts) => {
+  if (!ts || ts < 0) return '';
+  const d = (Date.now() / 1000 - ts) / 86400;
+  return d < 1 ? 'today' : d < 2 ? 'yesterday' : d < 31 ? `${Math.floor(d)} days ago` : d < 365 ? `${Math.floor(d / 30.4)} mo ago`
+    : new Date(ts * 1000).getFullYear().toString();
+};
+
 async function torrentSearch() {
   const r = await Dialog.ask({ title: 'Search Torrents', buttons: ['Search', 'Cancel'], fields: [{ key: 'q', label: 'What are you looking for?' }] });
   const q = r.button === 0 ? r.values.q.trim() : '';
@@ -90,22 +109,50 @@ async function torrentSearch() {
   if (!cat) return;
   const s = await tPost('search/start', { pattern: q, category: cat });
   if (!s) return;
+  tSort.cur = tSort.get();
   openFolder({ key: `ts:${s.id}`, label: `“${q}”`, icon: 'search', live: true,
     children: async () => {
-      const res = await api.get(`/api/torrent/search?id=${s.id}`);
+      const [field, dir] = (tSort.cur || 'seeds:1').split(':');
+      const res = await api.get(`/api/torrent/search?id=${s.id}&sort=${field}&desc=${dir}`);
       const rows = res.results.slice(0, 150).map((x, i) => ({ key: `sr:${i}:${x.url.slice(-40)}`, label: x.name, icon: 'download',
-        badge: (x.engine || '').toUpperCase().slice(0, 14), sub: `${tSize(x.size)} · ${x.seeds >= 0 ? x.seeds : '?'} seeds · ${x.peers >= 0 ? x.peers : '?'} peers`,
+        badge: (x.engine || '').toUpperCase().slice(0, 14),
+        sub: [tSize(x.size), `${x.seeds >= 0 ? x.seeds : '?'} seeds`, `${x.peers >= 0 ? x.peers : '?'} leechers`, tAge(x.date)].filter(Boolean).join(' · '),
         action: async () => { if (await tPost('search/download', { url: x.url, engine: x.engine }, `Downloading ${x.name}`)) pollJobs(); },
         options: [{ label: 'Download', action: () => tPost('search/download', { url: x.url, engine: x.engine }, `Downloading ${x.name}`) },
+          { label: 'Sort Results…', action: () => pickSort(res) },
           ...(x.page ? [{ label: 'Open Its Page', action: () => (typeof openBrowser === 'function' ? openBrowser(x.page) : message(x.page, 'Page')) }] : [])] }));
-      const errs = (res.errors || []).join(' · ').slice(0, 160);
-      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far` : (res.expired ? 'This search has ended' : `${res.total} found`),
-        icon: res.running ? 'refresh' : (errs && !res.total ? 'info' : 'search'),
-        sub: errs && !res.total ? `A plugin had a problem: ${errs}` : `With ${(res.engines || s.engines || []).join(', ')} · most seeds first`,
+      const net = res.net;
+      const empty = !res.running && !res.total;
+      const per = Object.entries(res.per || {});
+      const done = per.filter(([, v]) => !v.running).length;
+      // each plugin: how many it found, or what went wrong
+      const perLine = per.map(([n, v]) => (v.running ? `${n} …` : v.count ? `${n} ${v.count}` : v.error ? `${n} ✕` : `${n} 0`)).join(' · ');
+      const perDetail = per.map(([n, v]) => `${n}: ${v.running ? 'still searching' : v.count ? `${v.count} found` : v.error || 'nothing found'}`);
+      const why = empty && net && !net.ok ? net.summary : empty && net ? net.summary : '';
+      rows.unshift({ key: 'state', label: res.running ? `Searching… ${res.total} found so far${per.length ? ` (${done} of ${per.length} plugins done)` : ''}`
+          : (res.expired ? 'This search has ended' : res.total ? `${res.total} found` : 'Nothing found'),
+        icon: res.running ? 'refresh' : (empty ? 'info' : 'search'),
+        sub: `${why ? `${why} · ` : ''}${perLine || `With ${(res.engines || s.engines || []).join(', ')}`}${res.via_vpn ? ' · through the VPN' : ''} · {ok} details`,
         action: () => (res.running ? tPost('search/stop', { id: s.id }, 'Search stopped')
-          : errs ? message(`The plugins said:\n${(res.errors || []).join('\n')}\n\nSites change: try Search Plugins › Update All, or turn that plugin off.`, 'Search') : null) });
+          : message([why, why ? '' : null, 'Each plugin:', ...perDetail.map((x) => `   ${x}`),
+            ...(net && !net.ok ? ['', ...Object.entries(net.hosts || {}).map(([h, v]) => `${h}: DNS ${v.dns}${v.connect ? ` · connect ${v.connect}` : ''}`)] : []),
+            '', 'A plugin that fails every time: Search Plugins › Update All, or turn it off (Y on Search).',
+            'Sites behind Cloudflare often block plugins: that\'s the site, not Crossbar.'].filter((x) => x !== null).join('\n'), 'Search')) });
+      if (res.total > 1) {
+        const label = (T_SORTS.find(([k]) => k === tSort.cur) || T_SORTS[0])[1];
+        rows.splice(1, 0, { key: 'sort', label: `Sort: ${label}`, icon: 'shuffle',
+          sub: `{ok} change${res.has_dates ? '' : ' · these sites don\'t give upload dates'}`, action: () => pickSort(res) });
+      }
       return rows;
     } });
+}
+async function pickSort(res) {
+  const opts = T_SORTS.filter(([k]) => res.has_dates || !k.startsWith('date'));
+  const v = await choose(opts, Math.max(0, opts.findIndex(([k]) => k === tSort.cur)));
+  if (!v) return;
+  tSort.set(v);
+  await reloadFolder();
+  if (S.stack.at(-1)?.items?.length) { setSel(0); position(); hint(); }   // back to the top of the newly sorted list
 }
 // Search: {ok} starts a search; {menu} (Options) turns each installed plugin on or off for searches.
 function searchPluginOptions(list) {
@@ -169,13 +216,14 @@ const PLUGINS_FOLDER = {
   key: 'tplugins', label: 'Search Plugins', icon: 'search', sub: 'The sites Search looks through',
   children: async () => {
     const have = await api.get('/api/torrent/plugins');
-    const rows = have.map((p) => ({ key: `ip:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power',
+    const rows = have.filter((p) => !p.virtual).map((p) => ({ key: `ip:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power',
       badge: p.login ? 'LOGIN' : '', sub: `${p.enabled ? 'On' : 'Off'} · v${p.version}`,
       action: async () => { if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }, `${p.full_name} ${p.enabled ? 'off' : 'on'}`)) reloadFolder(); },
       options: [{ label: p.enabled ? 'Turn Off' : 'Turn On', action: async () => { await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }); reloadFolder(); } },
         ...(p.login ? [{ label: 'Sign In…', action: () => pluginSignIn(p.name) }] : []),
         { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${p.full_name}?`)) { await tPost('plugin/action', { name: p.name, what: 'remove' }, 'Removed'); reloadFolder(); } } }] }));
     return [
+      { ...JACKETT_FOLDER, sub: 'Hundreds of sites through Jackett, public and private: Torrents › Jackett' },
       pluginListFolder('tp-off', 'Get Official Plugins', 'Maintained by the qBittorrent project', () => api.get('/api/torrent/plugins/official')),
       { key: 'tp-un', label: 'Get Community Plugins', icon: 'folder', sub: 'From the qBittorrent wiki list (use at your own risk)',
         children: async () => {
@@ -295,10 +343,16 @@ function torrentsItem() {
       const st = await call(() => api.post('/api/torrent/start'));
       if (!st) return [{ key: 'na', label: 'The torrent engine isn\'t running', icon: 'info', sub: 'Needs qbittorrent-nox: Settings › System › Update Crossbar' }];
       S.torrent = st;
+      S.vpnPort = (await api.get('/api/vpn').catch(() => null))?.forwarded_port || null;
       const plugins = await api.get('/api/torrent/plugins').catch(() => []);
       return [
         { key: 'speed', label: `↓ ${tRate(st.dl)}   ↑ ${tRate(st.up)}`, icon: st.status === 'connected' ? 'network' : 'info',
-          sub: `${st.count} torrents · ${st.status === 'connected' ? 'reachable' : st.status === 'firewalled' ? 'firewalled (port not open)' : 'offline'}${st.vpn_bound ? ` · bound to ${st.interface}` : ''}${st.alt_speed ? ' · slow mode' : ''}`,
+          sub: `${st.count} torrents · ${st.status === 'connected' ? 'reachable' : st.status === 'firewalled'
+            ? `firewalled: peers can't connect in${st.vpn_bound ? (S.vpnPort ? ` (VPN port ${S.vpnPort})` : ' — needs the VPN\'s forwarded port (VPN › Port Forwarding); downloads still work, just slower') : ''}`
+            : 'offline'}${st.vpn_bound ? ` · bound to ${st.interface}` : ''}${st.alt_speed ? ' · slow mode' : ''}`,
+          action: () => message([st.status === 'firewalled' ? 'Firewalled means other peers can\'t start connections to you. You can still download from peers you connect to.' : st.status === 'connected' ? 'Peers can reach you.' : 'The engine has no connection right now.',
+            st.vpn_bound ? 'Behind the VPN, peers can only reach you through a port the VPN forwards: turn on VPN › Port Forwarding\n(a PIA location marked PORT FWD) and Torrents uses that port automatically.' : '',
+            `Listening port: ${st.listen_port || '?'}`].filter(Boolean).join('\n\n'), 'Connection'),
           options: [{ label: 'Pause Everything', action: () => tPost('action', { hashes: ['all'], what: 'pause' }, 'Everything paused') },
             { label: 'Resume Everything', action: () => tPost('action', { hashes: ['all'], what: 'resume' }, 'Everything resumed') },
             { label: st.alt_speed ? 'Normal Speed' : 'Slow Mode (limits in Settings)', action: () => tPost('altspeed', {}, st.alt_speed ? 'Normal speed' : 'Slow mode') }] },
@@ -310,6 +364,7 @@ function torrentsItem() {
           { key: 'magnet', label: 'Magnet Link…', icon: 'link', action: torrentAddMagnet },
           { key: 'file', label: '.torrent File…', icon: 'folder', torrentBrowse: true, children: () => torrentFileBrowse(null) }] },
         PLUGINS_FOLDER,
+        JACKETT_FOLDER,
         TSET_FOLDER,
         { key: 'tleak', label: 'Leak Tests', icon: 'search', sub: 'What address trackers see, and where DNS goes', children: LEAK_FOLDER.children },
         { key: 'quit', label: 'Stop the Torrent Engine', icon: 'power', sub: 'Stops downloading and seeding until you open Torrents again',

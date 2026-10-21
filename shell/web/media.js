@@ -106,11 +106,12 @@ function musicNowItem(m) {
     if (['toggle', 'next', 'prev'].includes(action)) nowToast(r?.title, r && !r.paused, r?.artist);
     refresh('music');
   };
+  const pos = NowClock.sample(m.title, m.position, m.duration, m.paused);    // smooth, not each report
   return {
     key: 'now', label: m.title, art: thumb(m.path), artTitle: m.title, badge: m.paused ? 'PAUSED' : 'NOW PLAYING', recent: Date.now() / 1000,
     nowPlaying: true,
-    sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(m.position)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
-    progress: m.duration ? m.position / m.duration : null,
+    sub: `${m.artist ? m.artist + ' · ' : ''}${fmtTime(pos)} / ${fmtTime(m.duration)}  ·  ${m.index + 1} of ${m.count}`,
+    progress: m.duration ? Math.min(1, pos / m.duration) : null,
     action: ctl('toggle'),
     options: [
       { label: m.paused ? 'Play' : 'Pause', action: ctl('toggle') },
@@ -139,10 +140,11 @@ function spotifyNowItem(n, key = 'sp-now') {
   ];
   if (!n.here) opts.unshift({ label: 'Play on Crossbar', action: spotifyTransfer });
   if (n.lost) opts.splice(0, opts.length, { label: 'Stop', action: ctl('toggle') }, { label: 'Reconnect (keeps playing)', action: spotifyTransfer });
+  const pos = NowClock.sample(n.name, n.position, n.duration, !n.playing);
   return { key, label: n.name, art: n.art || '', artTitle: n.name, badge: 'SPOTIFY', recent: n.playing ? Date.now() / 1000 : 0,
     nowPlaying: true,
-    sub: `${n.artist} · ${fmtTime(n.position)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.lost ? ' · Spotify lost the speaker: {menu} to reconnect' : n.playing ? '' : ' · Paused'}`,
-    progress: n.duration ? n.position / n.duration : null, action: ctl('toggle'), options: opts };
+    sub: `${n.artist} · ${fmtTime(pos)} / ${fmtTime(n.duration)}${n.here ? '' : ` · on ${n.device}`}${n.lost ? ' · Spotify lost the speaker: {menu} to reconnect' : n.playing ? '' : ' · Paused'}`,
+    progress: n.duration ? Math.min(1, pos / n.duration) : null, action: ctl('toggle'), options: opts };
 }
 function reloadOrRefresh() { if (S.stack.length) reloadFolder(); else refresh('music'); }
 async function spotifyTransfer() { if (await call(() => api.post('/api/spotify/transfer'))) toast('Playing on Crossbar', 'spotify'); }

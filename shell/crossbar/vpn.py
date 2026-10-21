@@ -236,12 +236,33 @@ class _PinnedHTTPS(http.client.HTTPSConnection):
         self._ip, self._name = ip, name
 
     def connect(self):
-        raw = socket.create_connection((self._ip, self.port), self.timeout, source_address=_tunnel_source())
+        raw = _tunnel_socket((self._ip, self.port), self.timeout)
         self.sock = self._context.wrap_socket(raw, server_hostname=self._name)
         cn = dict(x[0] for x in self.sock.getpeercert().get("subject", ()))
         if cn.get("commonName") != self._name:
             self.sock.close()
             raise ssl.SSLError(f"PIA server is {cn.get('commonName')}, expected {self._name}")
+
+
+def _tunnel_socket(addr, timeout):
+    """A TCP connection made through the tunnel the way `curl --interface <vpn>` does (PIA's own
+    scripts): bound to the VPN's device as well as its address, when split tunneling is on."""
+    src = _tunnel_source()
+    if not src:
+        return socket.create_connection(addr, timeout)
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(timeout)
+    try:
+        s.setsockopt(socket.SOL_SOCKET, getattr(socket, "SO_BINDTODEVICE", 25), _iface().encode() + b"\0")
+    except OSError:
+        pass                                              # older kernels: the address alone routes it
+    try:
+        s.bind(src)
+        s.connect(addr)
+    except OSError:
+        s.close()
+        raise
+    return s
 
 
 def _pia_get(ip, port, name, path, params):
@@ -368,7 +389,9 @@ def _pia_build(job, protocol, rid):
                 f"Endpoint = {srv['ip']}:{j['server_port']}\nPersistentKeepalive = 25\n")
         # port forwarding talks to the server's address inside the tunnel (server_vip), as PIA's
         # manual-connections scripts do; its public address refuses port 19999
-        pf = {"kind": "pia", "token": token, "gateway": j.get("server_vip") or srv["ip"], "hostname": srv["cn"]}
+        pf = {"kind": "pia", "gateway": j.get("server_vip") or srv["ip"], "server_ip": j.get("server_ip") or srv["ip"],
+              "hostname": srv["cn"], "region": rid, "region_name": region.get("name"), "region_pf": bool(region.get("port_forward"))}
+        _state["pia_token"] = (time.time(), token)
         return conf, None, pf
     srv = (servers.get("ovpnudp") or [None])[0]
     if not srv:
@@ -376,7 +399,9 @@ def _pia_build(job, protocol, rid):
     with open(PIA_CA) as f:
         ca = f.read()
     conf = PIA_OVPN.format(tun=TUN, proto="udp", ip=srv["ip"], port=8080, ca=ca if ca.endswith("\n") else ca + "\n")
-    pf = {"kind": "pia", "token": token, "gateway": None, "hostname": srv["cn"]}      # gateway: the tunnel's, once up
+    pf = {"kind": "pia", "gateway": None, "server_ip": srv["ip"], "hostname": srv["cn"], "region": rid,   # gateway: the tunnel's, once up
+          "region_name": region.get("name"), "region_pf": bool(region.get("port_forward"))}
+    _state["pia_token"] = (time.time(), token)
     return conf, (token[:62], token[62:]), pf
 
 
@@ -601,7 +626,7 @@ def setup(provider, protocol=None, fields=None):
 
 
 def set_options(**kw):
-    allowed = {"region", "protocol", "port_forward", "autoconnect", "split", "vpn_sites", "vpn_apps"}
+    allowed = {"region", "protocol", "port_forward", "autoconnect", "split", "vpn_sites", "vpn_apps", "dns_all"}
     kw = {k: v for k, v in kw.items() if k in allowed}
     if "protocol" in kw and kw["protocol"] not in PROVIDER.get(cfg().get("provider"), {}).get("protocols", []):
         raise ValueError("That provider doesn't offer that protocol")
@@ -612,10 +637,20 @@ def set_options(**kw):
     if "vpn_apps" in kw:
         kw["vpn_apps"] = [a for a in kw["vpn_apps"] if isinstance(a, str) and re.fullmatch(r"[\w:.\-]{1,120}", a)][:64]
     was_split = split_on()
+    if "dns_all" in kw:
+        kw["dns_all"] = None if kw["dns_all"] in (None, "auto") else bool(kw["dns_all"])
+    if "port_forward" in kw:
+        kw["port_forward"] = bool(kw["port_forward"])
     _set(**kw)
+    if "port_forward" in kw:
+        if not kw["port_forward"]:
+            stop_port_forward()
+            _state["pf_error"] = None
+        elif nm_state() == "activated":
+            resume_port_forward()                  # no reconnect needed
     if nm_state() == "activated":
-        if "split" in kw and kw["split"] != was_split:
-            _state["error"] = "Reconnect the VPN for the split tunneling change"
+        if ("split" in kw and kw["split"] != was_split) or "dns_all" in kw:
+            _state["error"] = "Reconnect the VPN for this change"
         elif split_on() and ({"vpn_sites", "vpn_apps"} & set(kw)):
             apply_split()
     return status()
@@ -646,6 +681,9 @@ def status():
             "iface": _iface() if st == "activated" else None, "error": _state["error"],
             "port_forward": bool(c.get("port_forward")), "pf_supported": bool(p and p.get("port_forward")),
             "forwarded_port": _state["pf_port"] if st == "activated" else None, "pf_error": _state["pf_error"],
+            "pf_state": _state.get("pf_msg") if st == "activated" else None, "pf_since": _state.get("pf_since"),
+            "pf_region_ok": _pf_region_ok(c), "dns": vpn_dns() if st == "activated" else None,
+            "dns_all": dns_all(), "dns_all_setting": c.get("dns_all"), "resolved": uses_resolved(),
             "autoconnect": bool(c.get("autoconnect")), "split": split_on(), "vpn_sites": c.get("vpn_sites") or [],
             "vpn_apps": c.get("vpn_apps") or [], "isp_ip": c.get("isp_ip"), "signed_in": bool(p and (_secret(p["id"]) or p["kind"] == "import")),
             "username": _secret(p["id"]).get("username", "") if p else ""}
@@ -694,13 +732,21 @@ def connect(job=None):
                 _nmcli("connection", "modify", CONN, "+vpn.data", "password-flags=0", "vpn.user-name", creds[0],
                        "vpn.secrets", f"password={creds[1]}")
         os.remove(path)
-        vpn_dns = _conf_dns(conf)
+        dns = _conf_dns(conf) or DEFAULT_DNS.get(provider) or FALLBACK_DNS
+        _state["dns"] = dns
+        _set(dns=dns, pf_params=pf or None, endpoints=_conf_endpoints(conf))
         if split_on():
             # Split tunneling: the VPN is only a road some traffic takes (chosen apps and sites),
-            # not the default route; its DNS server is only used by that traffic (see apply_split).
+            # not the default route. Its DNS server is used by the VPN apps (see apply_split), and,
+            # with "DNS through the VPN for everything", by the whole system: a fixed server, reached
+            # through the tunnel (apply_split routes it there), so no lookup goes to your provider.
+            everyone = dns_all()
             _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.never-default", "yes",
                    "ipv6.never-default", "yes", "ipv4.ignore-auto-dns", "yes", "ipv6.ignore-auto-dns", "yes",
-                   "ipv4.dns", "", "ipv6.dns", "", "ipv6.method", "disabled" if protocol == "openvpn" else "ignore", check=False)
+                   "ipv4.dns", dns if everyone else "", "ipv4.dns-priority", "-50" if everyone else "100",
+                   "ipv6.dns", "", "ipv6.method", "disabled" if protocol == "openvpn" else "ignore", check=False)
+            if protocol == "wireguard":         # WireGuard's own (encrypted) packets carry this mark: never re-routed
+                _nmcli("connection", "modify", CONN, "wireguard.fwmark", str(WG_FWMARK), check=False)
         else:
             _nmcli("connection", "modify", CONN, "connection.autoconnect", "no", "ipv4.dns-priority", "-50",
                    "ipv6.dns-priority", "-50", check=False)
@@ -712,12 +758,7 @@ def connect(job=None):
             time.sleep(0.5)
         else:
             raise RuntimeError("The VPN didn't come up")
-        try:                                     # the torrent client, if it only uses the VPN: bind again
-            from . import torrent
-            torrent._apply_vpn_binding()
-        except Exception:
-            pass
-        _state["dns"] = vpn_dns or _nm_dns()
+        _up_cache.clear()
         if split_on():
             try:
                 ensure_split(force=True)
@@ -725,6 +766,11 @@ def connect(job=None):
                 _state["error"] = f"Split tunneling: {e}"
         else:
             clear_split()
+        try:                                     # the torrent client, if it only uses the VPN: bind to the new address
+            from . import torrent
+            torrent._apply_vpn_binding(rebind=True)
+        except Exception:
+            pass
         if c.get("port_forward") and pf:
             start_port_forward(pf)
         job.set(1.0, "Connected")
@@ -777,53 +823,158 @@ def public_ip():
 
 
 # ---- port forwarding ------------------------------------------------------------------------------------
+# PIA (pia-foss/manual-connections): getSignature once (its payload carries the port and lasts about two
+# months, so it's kept and reused: the same port after a restart), then bindPort every 15 minutes. Both
+# go to the server's address inside the tunnel. Proton: NAT-PMP to 10.2.0.1 every 45 s. Failures retry
+# (the tunnel may still be settling, PIA may be busy) instead of giving up; the reason is shown.
+PF_RETRY = (10, 20, 30, 60, 120, 300)
+
+
+def _pf_region_ok(c=None):
+    """None when unknown; False for a PIA location without port forwarding (PIA's US ones)."""
+    c = c or cfg()
+    if c.get("provider") != "pia" or not c.get("region") or not _cache.get("pia"):
+        return None                                  # (only from the list already fetched: never waits on the network)
+    r = next((x for x in _cache["pia"][1].get("regions", []) if x["id"] == c["region"]), None)
+    return bool(r.get("port_forward")) if r else None
+
+
 def _tunnel_gateway():
+    """OpenVPN's end of the tunnel (PIA's port forwarding talks to it)."""
     out = _nmcli("-g", "IP4.GATEWAY", "device", "show", TUN, timeout=10, check=False).strip()
-    if out:
+    if re.fullmatch(r"\d+\.\d+\.\d+\.\d+", out or ""):
         return out
     try:
-        r = subprocess.run(["ip", "-4", "route", "show", "dev", TUN], capture_output=True, text=True, timeout=10)
+        route = subprocess.run(["ip", "-4", "route", "show", "dev", TUN], capture_output=True, text=True, timeout=10).stdout
+        route += subprocess.run(["ip", "-4", "route", "show", "table", "all", "dev", TUN], capture_output=True, text=True, timeout=10).stdout
+        addr = subprocess.run(["ip", "-4", "-o", "addr", "show", "dev", TUN], capture_output=True, text=True, timeout=10).stdout
     except (OSError, subprocess.TimeoutExpired):
         return None
-    m = re.search(r"via (\d+\.\d+\.\d+\.\d+)", r.stdout)
-    return m.group(1) if m else None
+    m = re.search(r"via (\d+\.\d+\.\d+\.\d+)", route) or re.search(r"peer (\d+\.\d+\.\d+\.\d+)", addr)
+    if m:
+        return m.group(1)
+    m = re.search(r"inet (\d+)\.(\d+)\.(\d+)\.\d+/(\d+)", addr)      # a subnet: the server is .1 (PIA)
+    if m and int(m.group(4)) <= 30:
+        return f"{m.group(1)}.{m.group(2)}.{m.group(3)}.1"
+    return None
 
 
-def _set_port(port, err=None):
+def _set_port(port, err=None, msg=None):
     changed = port != _state["pf_port"]
-    _state.update(pf_port=port, pf_error=err)
-    if changed:
-        for fn in list(_listeners):
+    _state.update(pf_port=port, pf_error=err, pf_msg=msg if msg is not None else (None if port else _state.get("pf_msg")))
+    if port and changed:
+        _state["pf_since"] = time.time()
+    if changed or err:
+        for fn in list(_listeners) if changed else []:
             try:
                 fn(port)
             except Exception as e:
                 print(f"vpn: port listener: {e}", flush=True)
         _publish()
+    if changed and port:
+        _open_port(port)
+
+
+def _open_port(port):
+    """Let the forwarded port in through this computer's own firewall (ufw / firewalld), on the VPN only."""
+    try:
+        _admin("vpn-port", {"port": int(port), "dev": _iface()})
+    except Exception as e:
+        print(f"vpn: firewall: {e}", flush=True)
+
+
+def _pia_fresh_token():
+    t = _state.get("pia_token")
+    if t and time.time() - t[0] < 6 * 3600:            # PIA tokens last a day
+        return t[1]
+    tok = pia_token()
+    _state["pia_token"] = (time.time(), tok)
+    return tok
+
+
+def _pia_signature(pf, stop):
+    """A saved signature for this server that hasn't expired, else a new one."""
+    s = _secrets()
+    saved = (s.get("pia_pf") or {})
+    if saved.get("hostname") == pf["hostname"] and saved.get("expires", 0) > time.time() + 3600:
+        return saved
+    _state["pf_msg"] = "Asking PIA for a port…"
+    _publish()
+    sig, errs = None, []
+    for gw in _pf_addresses(pf):
+        try:
+            sig = _pia_get(gw, 19999, pf["hostname"], "/getSignature", {"token": _pia_fresh_token()})
+            pf["api"] = gw                                  # bindPort goes to the same place
+            break
+        except (ssl.SSLError, OSError) as e:
+            errs.append(f"{gw}: {e.__class__.__name__.replace('Error', '')} {getattr(e, 'strerror', '') or e}".strip())
+    if sig is None:
+        raise RuntimeError("couldn't reach PIA's port forwarding through the VPN (" + "; ".join(errs) + ")")
+    if sig.get("status") != "OK":
+        _state.pop("pia_token", None)                    # an old token is the usual reason: get a new one next time
+        raise RuntimeError(sig.get("message") or "PIA refused (is this a location with port forwarding?)")
+    payload = json.loads(base64.b64decode(sig["payload"]))
+    exp = payload.get("expires_at") or ""
+    try:
+        import datetime
+        expires = datetime.datetime.fromisoformat(exp.replace("Z", "+00:00")[:32]).timestamp() if exp else time.time() + 86400 * 30
+    except ValueError:
+        expires = time.time() + 86400 * 30
+    saved = {"hostname": pf["hostname"], "payload": sig["payload"], "signature": sig["signature"], "port": int(payload["port"]),
+             "expires": expires, "api": pf.get("api")}
+    s = _secrets()
+    s["pia_pf"] = saved
+    _save_secrets(s)
+    return saved
+
+
+def _pf_addresses(pf):
+    """Where PIA's port forwarding API may answer, through the tunnel: the server's address inside the
+    tunnel (server_vip, as pia-foss/manual-connections uses), then its public address (which some
+    servers answer on instead), then OpenVPN's gateway."""
+    out = []
+    if not pf.get("server_ip") and pf.get("hostname"):      # saved by an older version: find it by the server's name
+        try:
+            for r in pia_servers().get("regions", []):
+                for kind in ("wg", "ovpnudp", "ovpntcp"):
+                    for srv in (r.get("servers") or {}).get(kind) or []:
+                        if srv.get("cn") == pf["hostname"]:
+                            pf["server_ip"] = pf.get("server_ip") or srv.get("ip")
+        except Exception:
+            pass
+    for a in (pf.get("api"), pf.get("gateway"), pf.get("server_ip"), _tunnel_gateway() if cfg().get("protocol") == "openvpn" else None):
+        if a and a not in out:
+            out.append(a)
+    return out
 
 
 def _pia_pf_loop(pf, stop):
-    gw = pf.get("gateway") or _tunnel_gateway()
-    if not gw:
-        _set_port(None, "Couldn't find the VPN gateway for port forwarding")
-        return
-    try:
-        sig = _pia_get(gw, 19999, pf["hostname"], "/getSignature", {"token": pf["token"]})
-        if sig.get("status") != "OK":
-            raise RuntimeError(sig.get("message") or "PIA refused (is this region one with port forwarding?)")
-        payload = json.loads(base64.b64decode(sig["payload"]))
-        port = int(payload["port"])
-    except Exception as e:
-        _set_port(None, f"Port forwarding: {e}")
-        return
+    fails = 0
     while not stop.is_set():
         try:
-            r = _pia_get(gw, 19999, pf["hostname"], "/bindPort", {"payload": sig["payload"], "signature": sig["signature"]})
+            if not pf.get("gateway") and not pf.get("server_ip"):
+                pf = {**pf, "gateway": _tunnel_gateway()}
+                if not pf["gateway"]:
+                    raise RuntimeError("couldn't find the VPN's gateway yet")
+            sig = _pia_signature(pf, stop)
+            api_at = pf.get("api") or sig.get("api") or pf["gateway"]
+            r = _pia_get(api_at, 19999, pf["hostname"], "/bindPort", {"payload": sig["payload"], "signature": sig["signature"]})
             if r.get("status") != "OK":
-                raise RuntimeError(r.get("message") or "bindPort failed")
-            _set_port(port)
+                msg = r.get("message") or "bindPort failed"
+                if re.search(r"expired|invalid|signature", msg, re.I):    # start over with a new signature
+                    s = _secrets()
+                    s.pop("pia_pf", None)
+                    _save_secrets(s)
+                raise RuntimeError(msg)
+            fails = 0
+            _set_port(sig["port"], msg=f"Port {sig['port']} · kept open every 15 minutes")
+            stop.wait(900)                                   # every 15 minutes, as PIA asks
         except Exception as e:
-            _set_port(None, f"Port forwarding: {e}")
-        stop.wait(900)                                          # every 15 minutes, as PIA asks
+            wait = PF_RETRY[min(fails, len(PF_RETRY) - 1)]
+            fails += 1
+            _set_port(None, f"Port forwarding: {e} · trying again in {wait} s", msg="Retrying…")
+            print(f"vpn: port forwarding: {e}", flush=True)
+            stop.wait(wait)
 
 
 def natpmp_map(gateway, proto, lifetime=60, timeout=3.0):
@@ -844,31 +995,89 @@ def natpmp_map(gateway, proto, lifetime=60, timeout=3.0):
 
 
 def _natpmp_loop(pf, stop):
+    fails = 0
     while not stop.is_set():
         try:
             natpmp_map(pf["gateway"], "udp")
             port = natpmp_map(pf["gateway"], "tcp")
-            _set_port(port)
+            fails = 0
+            _set_port(port, msg=f"Port {port} · renewed every 45 s")
+            stop.wait(45)
         except (OSError, RuntimeError) as e:
-            _set_port(None, f"Port forwarding: {e} (is this a P2P server with NAT-PMP on?)")
-        stop.wait(45)
+            wait = PF_RETRY[min(fails, len(PF_RETRY) - 1)]
+            fails += 1
+            _set_port(None, f"Port forwarding: {e} (is this a P2P server with NAT-PMP on?) · trying again in {wait} s", msg="Retrying…")
+            stop.wait(wait)
 
 
 def start_port_forward(pf):
     stop_port_forward()
+    if pf.get("kind") == "pia" and pf.get("region_pf") is False:
+        _state.update(pf_error="This location doesn't offer port forwarding (PIA's US locations don't): "
+                               "pick one marked PORT FWD in Location", pf_msg=None)
+        _publish()
+        return
     stop = threading.Event()
     fn = _pia_pf_loop if pf["kind"] == "pia" else _natpmp_loop
-    t = threading.Thread(target=fn, args=(pf, stop), daemon=True)
-    _state.update(pf_thread=t, pf_stop=stop)
+    t = threading.Thread(target=fn, args=(pf, stop), daemon=True, name="vpn-pf")
+    _state.update(pf_thread=t, pf_stop=stop, pf_error=None, pf_msg="Starting…")
     t.start()
+
+
+def resume_port_forward():
+    """Port forwarding switched on while connected, or Crossbar restarted with the VPN up."""
+    pf = cfg().get("pf_params")
+    if not pf or nm_state() != "activated":
+        _state.update(pf_error="Reconnect the VPN once so port forwarding can start" if not pf else None)
+        _publish()
+        return False
+    if pf.get("kind") == "pia" and pf.get("region_pf") is None:
+        pf = {**pf, "region_pf": _pf_region_ok()}
+    start_port_forward(pf)
+    return True
 
 
 def stop_port_forward():
     if _state.get("pf_stop"):
         _state["pf_stop"].set()
-    _state.update(pf_thread=None, pf_stop=None)
+    _state.update(pf_thread=None, pf_stop=None, pf_msg=None)
     if _state["pf_port"] is not None:
         _set_port(None)
+
+
+def pf_check():
+    """Port forwarding, step by step (VPN › Port Forwarding › Check)."""
+    c, out = cfg(), {}
+    out["connected"] = nm_state() == "activated"
+    out["on"] = bool(c.get("port_forward"))
+    out["provider"] = c.get("provider")
+    out["region_ok"] = _pf_region_ok(c)
+    pf = c.get("pf_params") or {}
+    out["gateway"] = pf.get("gateway") or (_tunnel_gateway() if out["connected"] and c.get("protocol") == "openvpn" else None)
+    out["source"] = (_tunnel_source() or [None])[0]
+    out["port"], out["error"], out["state"] = _state["pf_port"], _state["pf_error"], _state.get("pf_msg")
+    out["region"] = pf.get("region_name") or c.get("region_name") or c.get("region")
+    if c.get("provider") == "pia" and c.get("region"):
+        try:
+            out["region_ok"] = bool(_pia_region(c["region"]).get("port_forward"))      # fresh from PIA's list
+        except Exception:
+            pass
+    if out["connected"] and c.get("provider") == "pia":
+        out["tries"] = []
+        for gw in _pf_addresses(pf):
+            try:
+                _tunnel_socket((gw, 19999), 6).close()
+                out["tries"].append({"address": gw, "result": "ok"})
+            except OSError as e:
+                out["tries"].append({"address": gw, "result": getattr(e, "strerror", None) or str(e)})
+        out["reach"] = "ok" if any(t["result"] == "ok" for t in out["tries"]) else (out["tries"][0]["result"] if out["tries"] else None)
+    try:
+        from . import torrent
+        if torrent.running():
+            out["torrent_port"] = torrent.api("GET", "/api/v2/app/preferences").get("listen_port")
+    except Exception:
+        pass
+    return out
 
 
 # ---- split tunneling -----------------------------------------------------------------------------------
@@ -947,6 +1156,21 @@ def wrap(argv, app_id):
     return [sys.executable or "python3", VPNRUN, "--", *argv]
 
 
+VPNBIND = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vpnbind")
+
+
+def app_env(app_id, env=None):
+    """Environment for one of Crossbar's own Python helpers that uses the VPN: its connections leave
+    from the VPN's address (the route that works whatever the app-group marking does)."""
+    env = dict(env if env is not None else os.environ)
+    if uses_vpn(app_id) and nm_state() == "activated":
+        addr = _vpn_addr()
+        if addr:
+            env["CROSSBAR_VPN_SRC"] = addr
+            env["PYTHONPATH"] = VPNBIND + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
+    return env
+
+
 def _resolve(targets):
     out = []
     for t in targets:
@@ -959,6 +1183,65 @@ def _resolve(targets):
         except OSError:
             pass
     return sorted(set(out))[:256]
+
+
+DEFAULT_DNS = {"mullvad": "10.64.0.1", "nord": "103.86.96.100"}
+FALLBACK_DNS = "1.1.1.1"           # through the tunnel (split rules route it there): never your provider's
+
+
+def vpn_dns():
+    """The DNS server VPN traffic uses: from this connection, else saved, else Cloudflare (via the tunnel)."""
+    return _state.get("dns") or cfg().get("dns") or FALLBACK_DNS
+
+
+def uses_resolved():
+    """Does this system resolve names through systemd-resolved (nss-resolve / 127.0.0.53)? Then lookups
+    are made by resolved itself, not the app, so an app's VPN group can't steer its DNS."""
+    hit = _cache.get("resolved")
+    if hit and time.time() - hit[0] < 120:
+        return hit[1]
+    v = _uses_resolved()
+    _cache["resolved"] = (time.time(), v)
+    return v
+
+
+def _uses_resolved():
+    try:
+        ns = open("/etc/nsswitch.conf").read()
+        line = next((ln for ln in ns.splitlines() if ln.strip().startswith("hosts:")), "")
+        rc = open("/etc/resolv.conf").read() if os.path.exists("/etc/resolv.conf") else ""
+        active = subprocess.run(["systemctl", "is-active", "--quiet", "systemd-resolved"], timeout=5).returncode == 0
+        return active and (" resolve" in line or "127.0.0.53" in rc)
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+def dns_all():
+    """Split tunneling on: send every lookup (not just VPN apps') to the VPN's DNS through the tunnel?
+    Automatic: yes when systemd-resolved does the lookups (otherwise VPN apps' lookups would leak)."""
+    v = cfg().get("dns_all")
+    if v is None:
+        return uses_resolved()
+    return bool(v)
+
+
+WG_FWMARK = 0xCA6C                 # on WireGuard's encrypted packets (split tunneling leaves them alone)
+
+
+def _conf_endpoints(conf):
+    """The VPN server's own address(es): the tunnel's encrypted packets go there, and must never be
+    sent into the tunnel themselves."""
+    out = re.findall(r"^\s*Endpoint\s*=\s*\[?([\d.]+)\]?:\d+", conf or "", re.M | re.I)
+    out += re.findall(r"^\s*remote\s+([\d.]+)\b", conf or "", re.M | re.I)
+    return sorted(set(out))[:8]
+
+
+def _live_endpoints():
+    """The server address of the connection that's up (made before Crossbar saved it)."""
+    out = _nmcli("connection", "show", CONN, timeout=10, check=False)
+    eps = re.findall(r"endpoint:\s*\[?(\d+\.\d+\.\d+\.\d+)\]?:\d+", out, re.I)
+    eps += re.findall(r"remote\s*=\s*(\d+\.\d+\.\d+\.\d+)", out, re.I)
+    return sorted(set(eps))[:8]
 
 
 def _conf_dns(conf):
@@ -992,10 +1275,15 @@ def apply_split():
         gid = None
         _state["error"] = f"Apps can't be split off: {e}"
     addr = _vpn_addr()
-    dns = _state.get("dns") or _nm_dns()
-    relay = DNS_RELAY.start() if dns and addr else None
-    req = {"enable": True, "dev": _iface(), "gateway": None, "to": _resolve(c.get("vpn_sites") or []),
-           "from": [addr] if addr else [], "gid": gid, "dns": dns, "dns_relay": relay}
+    dns = vpn_dns()
+    _up_cache.clear()
+    relay = DNS_RELAY.start() if addr else None
+    to = _resolve(c.get("vpn_sites") or [])
+    if dns:
+        to = sorted(set(to + [f"{dns}/32"]))      # the VPN's DNS server is always reached through the tunnel
+    req = {"enable": True, "dev": _iface(), "gateway": None, "to": to,
+           "from": [addr] if addr else [], "gid": gid, "dns": dns, "dns_relay": relay,
+           "exempt": c.get("endpoints") or [], "exempt_mark": WG_FWMARK}
     return _admin("vpn-split", req)
 
 
@@ -1016,7 +1304,11 @@ class _DnsRelay:
         self._pool = ThreadPoolExecutor(max_workers=12, thread_name_prefix="dnsrelay")
 
     def _upstream(self):
-        return _state.get("dns") or _nm_dns(), _vpn_addr()
+        # cached: asking NetworkManager on every lookup made each one slow
+        now = time.time()
+        if now - _up_cache.get("at", 0) > 15 or not _up_cache.get("src"):
+            _up_cache.update(at=now, dns=vpn_dns(), src=_vpn_addr())
+        return _up_cache["dns"], _up_cache["src"]
 
     def start(self):
         with self._lock:
@@ -1092,6 +1384,7 @@ def _recv_exact(s, n):
 
 
 DNS_RELAY = _DnsRelay()
+_up_cache = {}
 
 
 _split_applied = {}
@@ -1154,9 +1447,40 @@ def ensure_split(force=False):
     return True
 
 
+def resume():
+    """Crossbar (re)started while the VPN is up: the DNS relay that VPN apps' lookups go to lives in
+    this process, so it must be running again straight away (the firewall still sends lookups to
+    it), and port forwarding has to carry on."""
+    if nm_state() != "activated":
+        return
+    if split_on():
+        DNS_RELAY.start()
+        if not cfg().get("endpoints"):
+            try:
+                _set(endpoints=_live_endpoints())
+            except Exception as e:
+                print(f"vpn: endpoints: {e}", flush=True)
+        if cfg().get("protocol") != "openvpn":     # mark WireGuard's own packets on the live connection too
+            _nmcli("connection", "modify", CONN, "wireguard.fwmark", str(WG_FWMARK), check=False)
+            _nmcli("device", "reapply", CONN, check=False, timeout=20)
+        try:
+            ensure_split(force=True)           # once per start: an update may bring new rules (1.2.5: MSS clamping)
+        except Exception as e:
+            print(f"vpn: split rules: {e}", flush=True)
+    try:
+        from . import torrent
+        torrent._apply_vpn_binding(rebind=True)
+    except Exception:
+        pass
+    if cfg().get("port_forward"):
+        resume_port_forward()
+
+
 def split_watch():
     """Background: keep the split rules in step with the connection."""
     def run():
+        if split_on():
+            DNS_RELAY.start()                  # before anything else: lookups may already be on their way
         time.sleep(15)
         fails = 0
         while True:

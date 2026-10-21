@@ -242,6 +242,8 @@ const Options = {
     const el = $('.opt-list');
     el.innerHTML = (this.parent ? `<div class="opt-head">${esc(this.parent.list[this.parent.sel].label.replace(/…$/, ''))}</div>` : '') +
       this.list.map((o, i) => `<div class="opt ${i === this.sel ? 'on' : ''}${o.group ? ' grp' : ''}">${esc(gl(o.label))}</div>`).join('');
+    clearTimeout(this.mq);
+    this.mq = setTimeout(() => Marquee.set(el.querySelector('.opt.on')), 400);
     // Keep the highlighted entry on screen: the list starts at y=380 on the
     // 1080px stage and slides up/down once the selection nears an edge.
     const { TOP, MIN, MAX } = Shell.active?.optionsGeom || { TOP: 380, MIN: 140, MAX: 960 };
@@ -567,32 +569,60 @@ const Shell = {
   artWindow: 8,                             // rows either side of the cursor that load artwork
   register(id, impl) { this.impls[id] = impl; },
   get active() { return this.impls[this.id]; },
-  // Called from applyState, so on every /api/state: rebuilds only when the look changed;
-  // configure() (background, accent…) runs every time and must be cheap.
+  // The look is chosen once, at start-up (Looks.load: the one built into the page). Settings ›
+  // Interface saves another one, which takes over when the menu reloads.
+  start(id) {
+    this.id = this.impls[id] ? id : 'xmb';
+    document.body.dataset.shell = this.id;
+    columnEls = [];
+    this.active?.setup?.();
+    this.started = true;
+  },
+  // Called from applyState, so on every /api/state: configure() (background, accent…) runs every
+  // time and must be cheap. A different Interface in the settings waits for the reload.
   apply(iface) {
-    const id = this.impls[iface] ? iface : 'xmb';     // unknown look (old config, new backend): XMB
-    document.body.dataset.shell = id;        // set before the early return, so a theme reload can never lose the CSS scope
-    if (id === this.id) { this.active?.configure?.(S.state); return; }
-    this.active?.teardown?.();
-    if (Options.open) Options.hide();
-    this.id = id; columnEls = [];
-    this.active.setup?.();
-    this.active.configure?.(S.state);
-    // only the DOM is rebuilt: S.stack/S.ci/S.catSel/S.items survive, so you keep your place
-    if (S.state) render();
-    if (QuickMenu.open) QuickMenu.render();
+    document.body.dataset.shell = this.id;   // a theme reload can never lose the CSS scope
+    this.pending = iface && iface !== this.id ? iface : null;
+    this.active?.configure?.(S.state);
   },
   resetCats() { this.active?.resetCats?.(); },
 };
 
 
 
+// Long text on the highlighted line (an Options entry, an item's name or description) that doesn't
+// fit scrolls slowly across, pauses at the end and comes back, so all of it can be read.
+const Marquee = {
+  set(el) {
+    if (!el) return;
+    el.classList.remove('mq');
+    const over = el.scrollWidth - el.clientWidth;
+    if (over <= 4) return;
+    const dist = over + 30;
+    el.style.setProperty('--mq-dist', `-${dist}px`);
+    el.style.setProperty('--mq-dur', `${Math.max(5, dist / 40 / 0.6).toFixed(1)}s`);    // ~40 px a second
+    void el.offsetWidth;                                                              // restart from the start
+    el.classList.add('mq');
+  },
+  clear(root) { (root || document).querySelectorAll('.mq').forEach((e) => e.classList.remove('mq')); },
+  // the highlighted item in the menu (after it has settled into place)
+  items() {
+    clearTimeout(this.t);
+    this.t = setTimeout(() => {
+      this.clear($('#stage'));
+      const on = document.querySelector('#column .item.on');
+      if (on) on.querySelectorAll('.label, .sub').forEach((e) => this.set(e));
+      if (Options.open) this.set(document.querySelector('#options .opt.on'));
+    }, 450);
+  },
+};
+
 // The rest of the shell (and every module) calls these by name; they follow whichever
 // look is active. Declarations, not arrow consts, so they hoist like the functions they replace.
 function itemEl(it)              { return Shell.active.itemEl(it); }
 function renderCats()            { Shell.active?.renderCats(); }
 function renderColumn(r = true)  { Shell.active?.renderColumn(r); }
-function position()              { Shell.active?.position(); }
+function position()              { Shell.active?.position(); Marquee.items(); }
 function render()                { Shell.active?.render(); }
 function hint()                  { Shell.active?.hint(); }
 function moveV(d)                { Shell.active?.moveV(d); }
@@ -798,10 +828,13 @@ addEventListener('focus', async () => {
 });
 
 // Event stream from the backend: controller input and Quick Menu requests.
+// modules can handle their own events (Lutris installer questions…): a hook returns true when it did
+const EventHooks = [];
 function connectEvents() {
   const es = new EventSource('/api/events');
   es.onmessage = (m) => {
     const ev = JSON.parse(m.data);
+    for (const h of EventHooks) { try { if (h(ev)) return; } catch (e) { console.error(e); } }
     if (ev.type === 'launching') {
       $('#launch .l-title').textContent = ev.title; $('#launch .l-sub').textContent = ev.sub || 'Starting…'; $('#launch').hidden = false;
       clearTimeout(S.launchT); S.launchT = setTimeout(() => { $('#launch').hidden = true; syncAway(); }, 320000); syncAway(); return;
@@ -810,7 +843,7 @@ function connectEvents() {
     if (ev.type === 'notice') { toast(ev.text, ev.icon || 'info'); return; }        // backend notices (torrent finished…)
     if (ev.type === 'vpn') { const f = S.stack.at(-1); if (f && /^(vpn|network)/.test(f.source.key)) reloadFolder(); return; }
     if (ev.type === 'theme') { Theme.load(); return; }
-    if (ev.type === 'interface') { loadState(); return; }   // Interface / Dashboard Era changed
+    if (ev.type === 'interface') { loadState(); return; }   // Interface changed: used after a reload
     if (ev.type === 'apps') { loadApps().then(refreshAll); return; }
     if (ev.type === 'launched') { $('#launch').hidden = true; syncAway(); return; }
     if (ev.type === 'launch-timeout') { clearTimeout(S.launchT); $('#launch').hidden = true; syncAway(); toast(ev.error ? `Couldn't start ${ev.title}: ${ev.error}` : `${ev.title} didn't open a window — check Steam`, 'info'); return; }
@@ -822,6 +855,7 @@ function connectEvents() {
       if (QuickMenu.open) QuickMenu.close(false);
       if (CATS.some((c) => c.id === ev.cat)) goCat(ev.cat);
       if (ev.folder === 'trophies' && typeof TROPHIES_FOLDER !== 'undefined') openFolder(TROPHIES_FOLDER);
+      if (ev.folder === 'live-tv' && typeof iptvTopFolder === 'function' && S.state.iptv?.linked) openFolder(iptvTopFolder('live'));   // a remote's Live TV / Guide button
       return;
     }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }
@@ -937,6 +971,40 @@ function patchJobRows(jobs) {
   });
   Shell.active?.patched?.();                // a look with a detail panel refreshes it
 }
+// Now Playing (music or Spotify), ticking smoothly in every look. The player and Spotify report the
+// position every couple of seconds, rounded and a little late; showing each report made the seconds
+// jump and the bar step. A report only resets this clock on a new track, play / pause, or when it's
+// more than 2 s out; in between, the row's time and bar move on by themselves each second.
+const NowClock = {
+  c: null,
+  sample(title, pos, dur, paused) {
+    pos = Number(pos) || 0; paused = !!paused;
+    const c = this.c;
+    if (c && c.title === title && c.paused === paused && Math.abs(this.pos() - pos) < 2) { c.dur = dur || c.dur; return this.pos(); }
+    this.c = { title, pos, dur: Number(dur) || 0, paused, at: Date.now() };
+    return pos;
+  },
+  pos() {
+    const c = this.c; if (!c) return 0;
+    return Math.min(c.dur || Infinity, c.pos + (c.paused ? 0 : (Date.now() - c.at) / 1000));
+  },
+};
+setInterval(() => {
+  const c = NowClock.c;
+  if (!c || c.paused || isAway() || Shell.active?.ownsNowClock) return;   // the Dashboard runs its own (same rules)
+  const pos = NowClock.pos();
+  list().forEach((it, i) => {
+    if (!it.nowPlaying || it.label !== c.title) return;
+    const el = columnEls[i]; if (!el) return;
+    const sub = el.querySelector('.sub');
+    if (sub) sub.textContent = sub.textContent.replace(/\d+:\d\d(:\d\d)? \/ /, `${fmtTime(pos)} / `);
+    if (c.dur) {
+      it.progress = Math.min(1, pos / c.dur);
+      const bar = el.querySelector('.bar i'); if (bar) bar.style.width = `${(it.progress * 100).toFixed(1)}%`;
+    }
+  });
+}, 1000);
+
 let jobTicks = 0;
 setInterval(() => { if (!syncAway() || ++jobTicks % 10 === 0) pollJobs(); }, 1000);   // every 10 s while away
 // Now Playing items (music, Spotify, video) refresh themselves while visible.
@@ -982,5 +1050,8 @@ async function boot() {
   render();
   setTimeout(reveal, 300);
   others.then(() => render());
+  let reopen = null;                          // back where you were after Settings › Interface reloaded the menu
+  try { reopen = sessionStorage.getItem('crossbar.reopen'); sessionStorage.removeItem('crossbar.reopen'); } catch { /* none */ }
+  if (reopen && typeof openSettingsFolder === 'function') setTimeout(() => openSettingsFolder(reopen), 400);
   if (S.state.pads?.error) setTimeout(() => toast(S.state.pads.error, 'game'), 2500);
 }

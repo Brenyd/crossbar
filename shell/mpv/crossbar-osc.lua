@@ -2,6 +2,8 @@
 -- Console-style: works with a d-pad and four buttons. Input arrives either as
 -- keys (keyboard) or as `script-message crossbar-input <action>` from crossbard
 -- (gamepads). Actions: up down left right ok back menu prev next toggle
+-- TV remotes add: play pause stop rewind fast_forward channel_up channel_down
+-- last_channel subtitles audio_track digit:N (type a channel number, OK or a pause enters it)
 --
 -- Panel hidden:  A = play/pause, Left/Right = seek -10s/+30s, Up/Down = volume,
 --                B = open panel on "Stop", Y = open panel, L1/R1 = prev/next
@@ -34,6 +36,7 @@ local ICON = {
 }
 
 local visible, focus, hide_at, vol_until = false, 3, 0, 0
+local note_text, note_until = "", 0       -- a short message drawn even with the panel hidden
 local TIMEOUT = 4
 
 local function esc(s)
@@ -83,12 +86,26 @@ local function glyph(action)
   return GLYPHS[action] or action
 end
 
+local function note_event()
+  if mp.get_time() >= note_until or note_text == "" then return nil end
+  return rect(80, 60, 900, 110, "000000", "50") ..
+    "\n{\\an4\\pos(120,115)\\fnNoto Sans\\fs52\\bord0\\shad2\\1c&HFFFFFF&}" .. esc(note_text)
+end
+
 local function draw()
   if not visible then
-    ov:remove()
+    local n = note_event()
+    if n then
+      ov.data = n
+      ov:update()
+    else
+      ov:remove()
+    end
     return
   end
   local ev = {}
+  local n = note_event()
+  if n then ev[#ev + 1] = n end
   local paused = mp.get_property_native("pause")
   local pos = mp.get_property_native("time-pos") or 0
   local dur = mp.get_property_native("duration") or 0
@@ -169,8 +186,13 @@ local function hide()
   draw()
 end
 
+local function is_live()
+  local d = mp.get_property_native("duration")
+  return not d or d <= 0
+end
+
 local function prev_item()
-  if (mp.get_property_native("time-pos") or 0) > 5 then
+  if not is_live() and (mp.get_property_native("time-pos") or 0) > 5 then
     mp.commandv("seek", 0, "absolute")
   else
     mp.command("playlist-prev")
@@ -190,7 +212,64 @@ local function press(id)
   end
 end
 
+local function note(text, secs)
+  note_text, note_until = text, mp.get_time() + (secs or 2.5)
+  draw()
+end
+
+-- channel numbers and the last channel (a live TV list plays as a playlist: channel N = item N)
+local cur_pos, last_pos = nil, nil
+mp.observe_property("playlist-pos", "number", function(_, p)
+  if p and p >= 0 and p ~= cur_pos then last_pos, cur_pos = cur_pos, p end
+end)
+local digits, digits_timer = "", nil
+
+local function go_channel(n)
+  local count = mp.get_property_native("playlist-count") or 0
+  if n >= 1 and n <= count then
+    mp.set_property_native("playlist-pos", n - 1)
+    note(string.format("%d", n), 2)
+  else
+    note(string.format("No channel %d (1 – %d)", n, count), 2.5)
+  end
+end
+
+local function commit_digits()
+  if digits_timer then digits_timer:kill(); digits_timer = nil end
+  local n = tonumber(digits)
+  digits = ""
+  if n then go_channel(n) end
+end
+
+local function remote_act(a)
+  local d = a:match("^digit:(%d)$")
+  if d then
+    digits = (digits .. d):sub(-4)
+    note(digits .. "_", 3)
+    if digits_timer then digits_timer:kill() end
+    digits_timer = mp.add_timeout(1.8, commit_digits)
+    return true
+  end
+  if a == "ok" and digits ~= "" then commit_digits(); return true end
+  if a == "play" then mp.set_property_native("pause", false); show(); return true end
+  if a == "pause" then mp.set_property_native("pause", true); show(); return true end
+  if a == "stop" then press("stop"); return true end
+  if a == "rewind" then mp.commandv("seek", -10); show(); return true end
+  if a == "fast_forward" then mp.commandv("seek", 30); show(); return true end
+  if a == "channel_up" or a == "channel_down" then
+    mp.command(a == "channel_up" and "playlist-next" or "playlist-prev"); show(); return true
+  end
+  if a == "last_channel" then
+    if last_pos then mp.set_property_native("playlist-pos", last_pos); show() else note("No previous channel") end
+    return true
+  end
+  if a == "subtitles" then mp.command("cycle sub"); note("Subtitles: " .. track_label("sub")); return true end
+  if a == "audio_track" then mp.command("cycle audio"); note("Audio: " .. track_label("audio")); return true end
+  return false
+end
+
 local function act(a)
+  if remote_act(a) then return end
   if a == "up" or a == "down" then
     mp.commandv("add", "volume", a == "up" and 5 or -5)
     vol_until = mp.get_time() + 1.5
@@ -296,5 +375,6 @@ mp.add_periodic_timer(0.25, function()
   if visible and mp.get_time() > hide_at then
     visible = false
   end
+  if mp.get_time() >= note_until then note_text = "" end
   draw()
 end)

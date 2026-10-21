@@ -30,10 +30,48 @@ resolution, and the controller works in them too: Crossbar types arrow keys, Ent
 Esc (B), Tab (Y) and media keys on a virtual keyboard. YouTube opens in its TV interface,
 which is built for exactly this.
 
-Every button and key above can be changed in **Settings › Controller & Keyboard**: pick an
+Every button and key above can be changed in **Settings › Controller, Remote & Keyboard**: pick an
 action, press the new button (or key), done. There's also *Swap Select and Back* and
 *Reset All to Defaults*. Controllers are read by Crossbar itself and input only goes to
 whatever is on screen — the menu, the video player, or nothing (games read the pad directly).
+
+### TV remotes (Android TV, SofaBaton, Fire TV…)
+
+A Bluetooth TV remote works as a full console remote. That includes an Android TV remote, a
+universal remote such as a **SofaBaton** set up as an Android TV device, a Fire TV / Google TV
+remote, an air mouse's buttons, an IR receiver or HDMI-CEC.
+
+1. Pair it in **Settings › Bluetooth** (for a SofaBaton, add the console in its app as an
+   *Android TV* device, then pair).
+2. Most remotes are found automatically. If yours isn't, open **Settings › Controller, Remote &
+   Keyboard › TV Remote › Set Up a Remote…** and press any button on it.
+
+| Remote button | What it does |
+|---|---|
+| Arrows / OK | Move / select (OK also enters a typed channel number) |
+| Back | Back |
+| Home | Quick Menu, over anything |
+| Menu, Info, Yellow | Options for the highlighted item |
+| Play, Pause, Play/Pause, Stop | Whatever is playing: music, Spotify, a video, live TV, a web app — even behind a game |
+| Rewind / Fast Forward | Previous / next song in music and Spotify; back 10 s / forward 30 s in videos (hold to keep going) |
+| Channel + / − | Live TV: next / previous channel. In the menu: next / previous category |
+| Numbers | Live TV: type a channel number (it switches after a moment, or press OK). Elsewhere they type |
+| Record | Live TV: back to the last channel |
+| Red / Green | Subtitles / audio track in videos and live TV |
+| Blue (or Guide, TV) | Opens Live TV |
+| Volume + / −, Mute | The console's volume (shows the level) |
+| Power | Opens the Quick Menu: Turn Off is there, so a stray press never shuts the console down |
+
+The channel number is the channel's place in the list you started watching from (the category in Live TV).
+
+In a game or another app, the remote types the matching keys (arrows, Enter, Esc, Tab, media
+keys) into it, and Home still opens the Quick Menu. Every button can be changed in **TV Remote ›
+Remote Buttons**: pick an action, press the remote button. **Test the Remote** shows what
+Crossbar received. **Not a Remote** (in a device's Options) hands a device back if it was
+picked up by mistake.
+
+Crossbar holds the remote while it runs, so its keys only do what's mapped, and Linux never
+sees its Power key. When Crossbar isn't running, the remote acts like a keyboard again.
 
 ### How controllers work
 
@@ -52,7 +90,7 @@ short link — paste that link when asking for help.
 
 Check `systemctl status crossbar-inputd` (it should be *active*). Without it Crossbar falls
 back to reading the controller directly, which needs permissions.
-**Settings › Controller & Keyboard › Controller Diagnostics** shows what Crossbar sees and
+**Settings › Controller, Remote & Keyboard › Controller Diagnostics** shows what Crossbar sees and
 the last buttons it received. For a full report press Ctrl+Alt+T and run `crossbar-doctor`.
 The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that gives the
 console user access to controllers and `/dev/uinput`. On an existing install, copy that rule
@@ -81,14 +119,14 @@ Thanks to [syrufex/PS5-Temperature-Control-Panel-Linux](https://github.com/syruf
 
 ## Interfaces
 
-**Settings › Theme & Time › Theme › Interface** (or **Interface** in the Quick Menu) swaps the whole
-front end live: the **cross-media bar (PS3 style)** or the **Dashboard (Xbox 360 style)**. See the
+**Settings › Theme & Time › Theme › Interface** picks the whole front end (switching reloads the menu; Crossbar
+starts in your choice from a cold boot): the **cross-media bar (PS3 style)** or the **Dashboard (Xbox 360 style)**. See the
 [README](../README.md#two-interfaces) for what each looks like, [THEMES.md](THEMES.md) to restyle
 one, and [LOOKS.md](LOOKS.md) to build a new console skin.
 
 ## Button glyphs
 
-**Settings › Controller & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
+**Settings › Controller, Remote & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
 Xbox (A B X Y), PlayStation (✕ ○ □ △) or Nintendo (B A Y X). Every hint uses them — the menu, the
 Quick Menu, the video player's panel and the remapping screen — and they follow your button mapping,
 so a remapped action shows the button you actually press. Glyphs follow the button's *position*
@@ -100,7 +138,7 @@ so a remapped action shows the button you actually press. Glyphs follow the butt
 Press **Select + Start** (or **Home**) during a game, video or app. The Quick Menu opens **on top
 of** whatever is running — a native window on the Wayland overlay layer, like the Steam or Discord
 overlay — and takes the controller and keyboard while it's open, so the game underneath doesn't
-react. Guide/PS is left to Steam by default (Settings › Controller & Keyboard can give it to
+react. Guide/PS is left to Steam by default (Settings › Controller, Remote & Keyboard can give it to
 Crossbar instead). It follows your Interface:
 
 | Cross-media bar | Dashboard |
@@ -126,7 +164,7 @@ What's in it (in both):
   for a 4K TV across the room), and on a PS5 the **Temperature Overlay** (its own position and
   size, so the two never cover each other) and **Fan Target**
 - **Switch App** — every open app and game, plus Crossbar; Y gives **Switch To / Close / Force Close**
-- **Keyboard**, **Interface** (swap looks right there), **Settings ▸** and **Power…** (opens with
+- **Keyboard**, **Settings ▸** and **Power…** (opens with
   Cancel selected, so a stray A can't turn the console off)
 
 | Trophies | Friends & Party |
@@ -333,6 +371,17 @@ Uninstall). Emulators installed from Game › Emulation stay there.
 - **AppImage** — browse to an `.AppImage` (Downloads, a USB stick, a network drive). It's moved to
   `~/Applications`, made runnable, and its name and icon are read from inside it. Pick a category
   the same way.
+- **Lutris** — the community install scripts from [lutris.net](https://lutris.net) (thousands of games
+  and apps). **Search Lutris…**, pick a game, then one of its installers: it lists what it downloads
+  itself and what **you provide** (a setup file you bought from GOG or another store, a disc image…).
+  Point each one to your file with the file browser, choose the **Install Folder** (Lutris's own
+  default), and **Install**. Lutris's own installer engine runs the script — the same code as its
+  install window — and anything it asks on the way (download a Wine version?, which language or
+  edition, insert / point to a disc, a file) comes up on the screen. Progress is in Downloads; the
+  game appears in **Game** and starts through Lutris. **Install from a Script File…** runs a `.yml`
+  script you have. Needs Lutris: the Arch package (**Install Lutris** here; it refuses if pacman
+  would also change graphics drivers or the kernel) or the Flatpak. Installers that need Steam's own
+  files are pointed back to Lutris itself.
 
 ## Torrents
 
@@ -340,11 +389,32 @@ Uninstall). Emulators installed from Game › Emulation stay there.
 engine (qbittorrent-nox) in the background, reachable only from this machine.
 - **Search**: press to search; **Options** (Y / △) on it turns each installed plugin on or off for
   searches. Categories other than Everything only use the plugins that have them.
+- **Sort** (the row under the result count, or Y on any result): Seeds, Leechers, File Size, Upload
+  Date (newest or oldest first — for sites that give dates), Name or Site. Your choice is kept for
+  the next search. Each result shows its size, seeds, leechers and age.
+- **Each plugin runs on its own**: the first row shows how many each found (✕ for one that failed);
+  A on it lists every plugin's result or error (a site that blocks plugins, usually with Cloudflare,
+  is called out). A plugin that hangs is stopped after a minute.
+- **Nothing found?** The first row says why: Crossbar tests the plugins' sites from where the search
+  runs (through the VPN, when Torrents uses it) and tells you whether DNS, the connection, or the
+  plugins themselves are the problem (A on that row shows the details).
 - Search goes through your **search plugins**: Search Plugins › Get Official Plugins, or
   **Get Community Plugins** (the list on the [qBittorrent wiki](https://github.com/qbittorrent/search-plugins/wiki/Unofficial-search-plugins),
   public and private sites). Plugins for private sites ask for your account when they're installed
   (Y › Sign In… later); it's written into the plugin's own settings. Community plugins are code
   written by other people: only install ones you trust.
+- **Jackett** (Torrents › Jackett): hundreds of torrent sites in one search through
+  [Jackett](https://github.com/Jackett/Jackett). **Install Jackett** downloads the official Linux
+  build from its GitHub (Crossbar doesn't ship it) and runs it on this console only (127.0.0.1:9117;
+  through the VPN when Torrents uses it). **Add a Tracker** lists every site Jackett supports —
+  **Find by Name…**, or Public / Semi-Private / Private — and each one's own settings form is right
+  there: username, password, cookie or API key, choices, categories, on/off options, info text, even
+  a captcha picture. **Add & Test** has Jackett sign in / check the site and shows its exact error if
+  something's wrong. **Your Trackers**: test, change or remove. Jackett is then one more source in
+  Search (on / off in Search's Options), each tracker's results and problems shown as
+  "Jackett › name"; downloads go through Jackett, so private sites' sign-ins work. **Settings**:
+  FlareSolverr's address (for sites behind Cloudflare's browser check), Jackett's admin password if
+  you set one, start with Crossbar, Update Jackett, Jackett's own web page, Stop.
 - **Downloading / Finished & Seeding / All**: live progress, speed and time left. A or Y on one:
   pause, files (skip or prioritise), download in order (watch while it downloads), force start,
   speed limit, recheck, remove (with or without the files).
@@ -359,8 +429,12 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
 **Settings › Network & Bluetooth › Network › VPN** connects with WireGuard or OpenVPN itself
 (through NetworkManager) — no VPN company's app.
 - **Private Internet Access**: sign in with your username and password; every region with its
-  latency; WireGuard or OpenVPN; **port forwarding** (kept alive every 15 minutes, and handed to
-  the torrent client). Follows PIA's own [manual-connections](https://github.com/pia-foss/manual-connections) scripts.
+  latency; WireGuard or OpenVPN; **port forwarding**: switch it on any time (no reconnect), pick a
+  location marked PORT FWD (PIA's US locations don't forward). The port is kept open every 15
+  minutes, kept across restarts (the same port while PIA's signature lasts, about two months),
+  opened in this computer's firewall (ufw / firewalld) on the VPN only, and used by Torrents as its
+  listening port. If PIA doesn't answer it retries and shows why; Y › **Check Port Forwarding**
+  goes through it step by step. Follows PIA's own [manual-connections](https://github.com/pia-foss/manual-connections) scripts.
 - **Mullvad** (account number) and **NordVPN** (access token): sign in, pick a city or country.
 - **Proton VPN, Surfshark, Windscribe, IVPN, AirVPN, ExpressVPN, your own server**: import the
   WireGuard `.conf` / OpenVPN `.ovpn` files from your account page (a folder or `.zip` of them gives
@@ -370,10 +444,16 @@ engine (qbittorrent-nox) in the background, reachable only from this machine.
   through the VPN too. Turn it off and everything uses the VPN. Apps that use the VPN are started
   (through util-linux's `newgrp`) in a `crossbar-vpn` group which the firewall routes through the VPN (created once, with your
   password); Crossbar's own checks use your normal line. **Check Split Tunneling** shows whether
-  it's working.
-- **Leak Tests**: a torrent IP leak test (your torrent engine announces a made-up torrent to
-  [WhatIsMyIP.net's tracker checker](https://www.whatismyip.net/tools/torrent-ip-checker/); Crossbar shows the address it saw
-  next to yours without the VPN) and a DNS leak test ([bash.ws](https://bash.ws/dnsleak)).
+  it's working. VPN apps' lookups go to the VPN's DNS server through the tunnel (Crossbar keeps that
+  working across restarts). **DNS Through the VPN**: *Automatic* (the default) sends every lookup on
+  the system there when systemd-resolved does the lookups — it asks on every app's behalf, so a VPN
+  app's lookups could otherwise go to your normal DNS — *For Everything*, or *For VPN Apps Only*.
+- **Leak Tests**: a **torrent IP leak test** — what peers see from your torrent engine, checked two
+  ways with nothing third-party in between: a connection made exactly the way the engine makes them
+  (its bound address, its VPN group), and the address the BitTorrent network reports back to the
+  engine (qBittorrent 5); either one matching your own address is a leak, and with "Only Use the
+  VPN" and the VPN off it confirms there's no torrent traffic at all — and a **DNS leak test**
+  ([bash.ws](https://bash.ws/dnsleak)), run as a VPN app.
 - **Connect at Startup**, **Check My Address** (what VPN apps and everything else are seen as). Passwords, tokens and keys stay in a file only you
   can read.
 
@@ -461,7 +541,7 @@ When a game closes you're back in the menu.
 ## Settings
 
 The Settings column groups related sections: **Display & Sound**, **Network & Bluetooth**,
-**Controller & Keyboard**, **Games & Emulation** (Game Settings, Artwork, Emulation), **Media**,
+**Controller, Remote & Keyboard**, **Games & Emulation** (Game Settings, Artwork, Emulation), **Media**,
 **Accounts**, **Theme & Time** and **System** (with PS5 Hardware on a PS5).
 
 | Section | What's in it |
@@ -470,7 +550,7 @@ The Settings column groups related sections: **Display & Sound**, **Network & Bl
 | Sound | Output device, input (mic) device, volumes, menu sounds |
 | Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; VPN; speed test; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
-| Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
+| Controller, Remote & Keyboard | Remap every button, remote key and keyboard key, TV remote setup, button combos, Guide/PS option, swap Select/Back, diagnostics |
 | Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, Memory Guard, frame rate overlay, demo library |
 | Artwork | SteamGridDB API key, fill in missing artwork, reset all |
 | Theme | Interface (cross-media bar or Dashboard), then that look's settings — Dashboard: background and accent colour; cross-media bar: wave colour — plus theme packs (stock and your own, install from a folder or .zip) — see [Interfaces](#interfaces) and [THEMES.md](THEMES.md) |

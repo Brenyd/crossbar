@@ -159,10 +159,14 @@ def merge(cfg, clean):
         ls.setdefault(lid, {}).update(vals)
 
 
+RUNNING = {"id": None}              # the look the menu was last loaded with (server.index_html)
+
+
 def overlay(cfg=None):
-    """How the native Quick Menu should look right now (overlay.py): style + colours."""
+    """How the native Quick Menu should look right now (overlay.py): style + colours — the look the
+    menu is running, so a new Interface choice waiting for a reload doesn't change it early."""
     cfg = cfg or util.load_config()
-    m = get(cfg.get("interface", "xmb")) or get("xmb") or {"id": "xmb", "overlay": {"style": "panel"}, "colors": {}}
+    m = get(RUNNING["id"] or cfg.get("interface", "xmb")) or get("xmb") or {"id": "xmb", "overlay": {"style": "panel"}, "colors": {}}
     ov = dict(m.get("overlay") or {})
     vals = settings(cfg).get(m["id"], {})
     acc_key = ov.get("accent_setting")

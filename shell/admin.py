@@ -459,6 +459,8 @@ def vpn_split(req):
         except (KeyError, ValueError, TypeError):
             fail("Bad app group")
         gid = int(gid)
+    for k in ("all", dev):                        # replies arrive on the VPN for traffic sent there: loose check
+        _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
     route = ["ip", "-4", "route", "add", "default"] + (["via", gw] if gw else []) + ["dev", dev, "table", SPLIT_TABLE]
     r = _run(*route)
     if r.returncode:
@@ -467,6 +469,30 @@ def vpn_split(req):
         _run("ip", "-4", "rule", "add", "to", n, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
     for a in frm:
         _run("ip", "-4", "rule", "add", "from", a, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF))
+    # Traffic sent into the VPN by these rules was sized for your normal connection (its route was
+    # chosen first): TCP would announce a segment size that doesn't fit the tunnel, and the big replies
+    # vanish (connections open, then hang). Clamp it to the tunnel's MTU. And anything leaving
+    # through the VPN that doesn't already have the VPN's address gets it.
+    common = f"""  chain mss {{
+    type filter hook postrouting priority mangle; policy accept;
+    oifname "{dev}" tcp flags & (syn | rst) == syn tcp option maxseg size set rt mtu
+  }}
+  chain post {{
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "{dev}" {"ip saddr != " + frm[0] + " " if frm else ""}masquerade
+  }}
+"""
+    # The tunnel's own encrypted packets: WireGuard encrypts an app's packet in place, so the encrypted
+    # copy can still look like the app's (same socket owner) and would be marked and sent back into
+    # the tunnel — a loop, and the app's connection never gets anywhere. Leave them alone: by
+    # WireGuard's own mark, and by the VPN server's address.
+    ex = [v4(x, "VPN server", net=False) for x in (req.get("exempt") or [])[:8]]
+    ex = [x for x in ex if x]
+    emark = req.get("exempt_mark")
+    if emark is not None and (not isinstance(emark, int) or not 0 < emark < 2 ** 32):
+        fail("Bad mark")
+    exempt = (f"    meta mark {emark:#x} return\n" if emark else "") + \
+             (f"    ip daddr {{ {', '.join(ex)} }} return\n" if ex else "")
     if gid is not None:
         _run("ip", "-4", "rule", "add", "fwmark", SPLIT_MARK, "lookup", SPLIT_TABLE, "pref", str(SPLIT_PREF + 1))
         # DNS from VPN apps: to a local resolver (127.x, the usual stub) → Crossbar's relay, which asks
@@ -483,28 +509,93 @@ def vpn_split(req):
         rules = f"""table inet crossbar_split {{
   chain out {{
     type route hook output priority mangle; policy accept;
-    meta skgid {gid} meta mark set {SPLIT_MARK} counter
+{exempt}    meta skgid {gid} meta mark set {SPLIT_MARK} counter
   }}
   chain v6 {{
     type filter hook output priority filter; policy accept;
     meta skgid {gid} meta nfproto ipv6 ip6 daddr != ::1 reject
   }}
-{dnat}  chain post {{
-    type nat hook postrouting priority srcnat; policy accept;
-    meta mark {SPLIT_MARK} oifname "{dev}" masquerade
-  }}
-}}
+{dnat}{common}}}
 """
         r = _run("nft", "-f", "-", inp=rules)
         if r.returncode:
             split_clear()
             fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
-        for k in ("all", dev):                    # replies arrive on the VPN for these: loose check
-            _run("sysctl", "-qw", f"net.ipv4.conf.{k}.rp_filter=2")
+    else:
+        # no app group: still give anything leaving through the VPN the VPN's address
+        r = _run("nft", "-f", "-", inp=f"""table inet crossbar_split {{
+{common}}}
+""")
+        if r.returncode:
+            fail(f"Couldn't set up split tunneling: {r.stderr.strip()[-200:]}")
     print(json.dumps({"ok": True, "sites": len(to), "apps": gid is not None, "dns": bool(dns)}))
 
 
+# Never pulled in by a package Crossbar installs: the kernel, graphics drivers and the GL/Vulkan stack
+# stay exactly as you (or your PS5 setup) installed them.
+PROTECTED_PKGS = re.compile(r"^(linux(-[\w.-]+)?|mesa(-[\w.-]+)?|lib32-mesa(-[\w.-]+)?|vulkan-[\w.-]+|lib32-vulkan-[\w.-]+|"
+                            r"nvidia(-[\w.-]+)?|xf86-video-[\w.-]+|amdvlk|lib32-amdvlk|opencl-[\w.-]+|libva-mesa-driver|"
+                            r"mesa-vdpau|vulkan-icd-loader|lib32-vulkan-icd-loader)$")
+
+
+def install_lutris(req):
+    """pacman -S lutris, after a dry run shows it won't bring in anything protected."""
+    plan = _run("pacman", "-Sp", "--needed", "--print-format", "%n", "lutris")
+    if plan.returncode:
+        fail(f"pacman can't install Lutris: {(plan.stderr or plan.stdout).strip()[-200:]}")
+    pkgs = [ln.strip() for ln in plan.stdout.splitlines() if ln.strip() and not ln.startswith(("::", " "))]
+    bad = [p for p in pkgs if PROTECTED_PKGS.match(p) and p != "linux-api-headers"]
+    if bad:
+        fail("Installing Lutris would also install " + ", ".join(bad[:6]) + " (graphics / kernel packages Crossbar never "
+             "changes): install Lutris yourself, or the Flatpak (Store › Install Apps › Flatpak: Lutris)")
+    r = _run("pacman", "-S", "--needed", "--noconfirm", "lutris")
+    if r.returncode:
+        fail(f"pacman: {(r.stderr or r.stdout).strip()[-300:]}")
+    print(json.dumps({"ok": True, "installed": pkgs}))
+
+
 VPN_GROUP = "crossbar-vpn"
+PORT_STATE = "/var/lib/crossbar/vpn-port.json"
+
+
+def vpn_port(req):
+    """Let the VPN's forwarded port in through this computer's firewall — ufw or firewalld, if one
+    is on — on the VPN interface only. The previous port is closed again."""
+    dev = clean(req.get("dev"), "Network device", r"[A-Za-z0-9_.-]{1,15}", maxlen=15)
+    try:
+        port = int(req.get("port"))
+    except (TypeError, ValueError):
+        fail("Bad port")
+    if not 1024 <= port <= 65535:
+        fail("Bad port")
+    try:
+        old = json.load(open(PORT_STATE))
+    except (OSError, ValueError):
+        old = {}
+    done = []
+    if shutil.which("ufw") and "Status: active" in _run("ufw", "status").stdout:
+        if old.get("ufw") and (old.get("port"), old.get("dev")) != (port, dev):
+            _run("ufw", "--force", "delete", "allow", "in", "on", old["dev"], "to", "any", "port", str(old["port"]))
+        r = _run("ufw", "allow", "in", "on", dev, "to", "any", "port", str(port), "comment", "Crossbar VPN forwarded port")
+        if r.returncode:
+            fail(f"ufw: {r.stderr.strip()[-160:]}")
+        done.append("ufw")
+    if shutil.which("firewall-cmd") and _run("firewall-cmd", "--state").returncode == 0:
+        zone = _run("firewall-cmd", f"--get-zone-of-interface={dev}").stdout.strip()
+        if not zone:
+            zone = "trusted"                   # the VPN interface only ever receives the forwarded port
+            _run("firewall-cmd", f"--zone={zone}", f"--add-interface={dev}")
+        if old.get("firewalld") and old.get("port") != port:
+            for proto in ("tcp", "udp"):
+                _run("firewall-cmd", f"--zone={old.get('zone') or zone}", f"--remove-port={old['port']}/{proto}")
+        for proto in ("tcp", "udp"):
+            _run("firewall-cmd", f"--zone={zone}", f"--add-port={port}/{proto}")
+        done.append("firewalld")
+    os.makedirs(os.path.dirname(PORT_STATE), exist_ok=True)
+    with open(PORT_STATE, "w") as f:
+        json.dump({"port": port, "dev": dev, "ufw": "ufw" in done, "firewalld": "firewalld" in done,
+                   "zone": locals().get("zone")}, f)
+    print(json.dumps({"ok": True, "firewalls": done}))
 
 
 def vpn_group(req):
@@ -541,7 +632,8 @@ if __name__ == "__main__":
         fail("crossbar-admin must run as root (via pkexec)")
     actions = {"nas-add": nas_add, "nas-remove": nas_remove, "nas-remount": nas_remount, "boot-session": boot_session,
                "ps5-fan-target": ps5_fan_target, "ps5-led": ps5_led, "ps5-control": ps5_control,
-               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status}
+               "vpn-split": vpn_split, "vpn-group": vpn_group, "vpn-split-status": vpn_split_status, "vpn-port": vpn_port,
+               "install-lutris": install_lutris}
     if len(sys.argv) != 2 or sys.argv[1] not in actions:
         fail("usage: admin.py " + "|".join(actions))
     try:

@@ -31,6 +31,7 @@ const X360 = {
   mode: 'home', slots: [], scroll: 0,
 
   // ---------------------------------------------------------------- lifecycle
+  ownsNowClock: true,                       // the top bar, tile and details tick on this look's own clock
   setup() {
     if (!$('#x-bg')) {                       // the backdrop covers the whole screen, letterbox included
       const bg = document.createElement('div');

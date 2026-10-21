@@ -2,8 +2,9 @@
 
 A **look** is a whole front end for Crossbar: how the menu, the Options panel, dialogs, toasts
 and the Quick Menu are drawn. Crossbar ships two — the **cross-media bar (PS3 style)** and the
-**Dashboard (Xbox 360 style)** — and switches between them live (**Settings › Theme ›
-Interface**, or **Interface** in the Quick Menu).
+**Dashboard (Xbox 360 style)** — and starts in the one chosen in **Settings › Theme › Interface**.
+Only that look is loaded (the backend builds it into the page, so the first frame is already
+drawn in it); choosing another saves it and reloads the menu.
 
 Underneath, every look runs the *same* menu: the same categories and items, folders, actions,
 Options entries, dialogs, keyboard, controller mapping and Quick Menu rows. A look only
@@ -82,7 +83,7 @@ the Dashboard (`looks/x360/`) shows everything a look can do.
 
 | Member | What it does |
 |---|---|
-| `setup()` / `teardown()` | build / remove your own page (it's rebuilt when the look changes) |
+| `setup()` / `teardown()` | build your own page (called once, when the menu starts in your look) / remove it |
 | `configure(state)` | apply your settings — called on every state update, so keep it cheap |
 | `render()` | draw the current page: categories or the open folder, then its items |
 | `renderCats()` | the categories (`CATS`, current `S.ci`), or the folder title (`S.stack`) |

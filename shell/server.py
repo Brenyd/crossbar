@@ -27,7 +27,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import looks, memguard, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import looks, memguard, jackett, lutris, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -81,6 +81,38 @@ def _browser_keyboard():
 
 PADS.browser_pid = lambda: BROWSER.proc.pid if BROWSER.running() else None
 PADS.on_browser = _browser_input
+
+
+def _remote_media(action):
+    """A TV remote's media key while the menu, the Quick Menu or a game is in front: whatever is
+    playing in the background reacts (local music first, then Spotify). False if nothing is."""
+    m = {"rewind": "prev", "fast_forward": "next"}.get(action, action)
+    if player.MUSIC.running():
+        player.music_control(m)
+        st = player.music_state() or {}
+        if m == "stop":
+            text = "Music stopped"
+        else:
+            text = ("⏸ " if st.get("paused") else "▶ ") + (st.get("title") or "") + (f" — {st['artist']}" if st.get("artist") else "")
+        HUB.publish({"type": "notice", "icon": "music", "text": text})
+        return True
+    try:
+        if SPOTIFY.status()["linked"]:
+            now = SPOTIFY.now()
+            if now:
+                sm = {"play": None if now.get("playing") else "toggle", "pause": "pause", "stop": "pause"}.get(m, m)
+                r = SPOTIFY.control(sm) if sm else now
+                r = r or {}
+                HUB.publish({"type": "notice", "icon": "music",
+                             "text": ("▶ " if r.get("playing") else "⏸ ") + (r.get("name") or "Spotify")
+                             + (f" — {r['artist']}" if r.get("artist") else "")})
+                return True
+    except Exception as e:
+        print(f"remote media: spotify: {e}", flush=True)
+    return False
+
+
+PADS.on_media = _remote_media
 BROWSER.on_keyboard = _browser_keyboard
 threading.Thread(target=_browser_worker, daemon=True).start()
 FORCE_DEMO = False
@@ -240,7 +272,7 @@ def _safe_gr(g):
 
 
 BROWSE_EXT = {".zip": ".zip", ".appimage": ".appimage", "image": (".png", ".jpg", ".jpeg", ".webp", ".gif"),
-              "vpn": (".conf", ".ovpn", ".zip"), "torrent": (".torrent",)}
+              "vpn": (".conf", ".ovpn", ".zip"), "torrent": (".torrent",), "any": ("",), "lutris": (".yml", ".yaml", ".json")}
 
 
 def r_apps(what, b):
@@ -454,6 +486,35 @@ def recent_video(cfg):
     return {"path": p, "title": os.path.splitext(os.path.basename(p))[0], "at": r.get("at", 0)}
 
 
+def index_html():
+    """The menu page, with the chosen interface (look) built in: only that look's script and styles
+    load, and the very first frame is drawn in it — no waiting on /api/looks or /api/state, and no
+    flash of another look. Changing Interface in Settings takes effect when the menu reloads."""
+    with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+        html = f.read()
+    try:
+        cfg = util.load_config()
+        m = looks.get(cfg.get("interface") or "xmb") or looks.get("xmb")
+    except Exception as e:
+        print(f"index: looks: {e!r}", flush=True)
+        m, cfg = None, {}
+    if not m or not m.get("script"):
+        return html.encode()
+    looks.RUNNING["id"] = m["id"]
+    pub = {k: v for k, v in m.items() if not k.startswith("_")}
+    try:
+        ls = looks.settings(cfg)
+    except Exception:
+        ls = {}
+    boot = json.dumps({"interface": m["id"], "look": pub, "look_settings": ls}).replace("</", "<\\/")
+    lid = re.sub(r"[^a-z0-9_-]", "", m["id"])
+    html = html.replace("<body>", f'<body data-shell="{lid}">', 1)
+    if m.get("css"):
+        html = html.replace("</head>", f'<link rel="stylesheet" href="{m["css"]}" data-look="{lid}">\n</head>', 1)
+    html = html.replace("</body>", f'<script>window.CROSSBAR_BOOT = {boot};</script>\n<script src="{m["script"]}"></script>\n</body>', 1)
+    return html.encode()
+
+
 def r_settings(b):
     allowed = {"demo", "user", "theme", "sounds", "clock24", "gamescope", "steam_bigpicture", "free_memory_in_games",
                "glyphs", "interface", "memory_guard"}
@@ -568,7 +629,15 @@ GET = {
     "/api/vpn/regions": lambda q: vpn.regions(q.get("provider")),
     "/api/vpn/ip": lambda q: vpn.addresses(),
     "/api/vpn/check": lambda q: vpn.split_check(),
+    "/api/vpn/pfcheck": lambda q: vpn.pf_check(),
     "/api/torrent": lambda q: torrent.summary(),
+    "/api/jackett": lambda q: jackett.status(),
+    "/api/lutris": lambda q: lutris.status(),
+    "/api/lutris/search": lambda q: lutris.search(q.get("q", ""), int(q.get("page") or 1)),
+    "/api/lutris/installers": lambda q: lutris.installers(q["slug"]),
+    "/api/lutris/script": lambda q: lutris.script_info(q["path"]),
+    "/api/jackett/indexers": lambda q: jackett.indexers(None if q.get("configured") in (None, "") else q.get("configured") == "1"),
+    "/api/jackett/config": lambda q: jackett.config(q["id"]),
     "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
     "/api/torrent/files": lambda q: torrent.files(q["hash"]),
     "/api/torrent/settings": lambda q: torrent.settings(),
@@ -577,7 +646,8 @@ GET = {
     "/api/torrent/plugins/unofficial": lambda q: torrent.unofficial_plugins(),
     "/api/torrent/plugins/official": lambda q: torrent.official_plugins(),
     "/api/torrent/plugin-login": lambda q: torrent.plugin_fields(q["name"]),
-    "/api/torrent/search": lambda q: torrent.search_results(q["id"], int(q.get("offset") or 0)),
+    "/api/torrent/search": lambda q: torrent.search_results(q["id"], int(q.get("offset") or 0), sort=q.get("sort") or "seeds",
+                                                          desc=None if q.get("desc") in (None, "") else q.get("desc") in ("1", "true")),
     "/api/wintricks/all": lambda q: wintricks.all_components(),
     "/api/music/state": lambda q: player.music_state(),
     "/api/video/state": lambda q: player.video_state(),
@@ -701,6 +771,37 @@ def route_post(path, b):
             return torrent.search_stop(b["id"])
         if what == "search/download":
             return torrent.download_result(b["url"], b.get("engine"), b.get("save_path"))
+        raise KeyError(what)
+    if head == "lutris":
+        what = "/".join(parts[1:])
+        if what == "install":
+            title = f"{b.get('name') or b.get('slug') or 'Game'} (Lutris)"
+            return JOBS.start("install", title, lambda j: lutris.install(j, b.get("slug"), b.get("version"), b.get("target"),
+                                                                       b.get("files") or {}, b.get("script_path")),
+                              "lutris", b.get("slug") or b.get("script_path")).as_dict()
+        if what == "answer":
+            return lutris.answer(b)
+        if what == "setup":
+            return JOBS.start("install", "Lutris", lutris.install_lutris, "lutris", "lutris").as_dict()
+        raise KeyError(what)
+    if head == "jackett":
+        what = "/".join(parts[1:])
+        if what == "install":
+            return JOBS.start("install", "Jackett", jackett.install, "jackett", "install").as_dict()
+        if what == "start":
+            jackett.start()
+            return jackett.status()
+        if what == "stop":
+            jackett.stop()
+            return jackett.status()
+        if what == "config":
+            return jackett.save_config(b["id"], b.get("values") or {})
+        if what == "test":
+            return jackett.test(b["id"])
+        if what == "remove":
+            return jackett.remove(b["id"])
+        if what == "settings":
+            return jackett.set_settings(**{k: v for k, v in b.items() if k in ("admin_password", "search", "autostart", "flaresolverr")})
         raise KeyError(what)
     if head == "vpn":
         what = parts[1] if len(parts) > 1 else ""
@@ -840,7 +941,22 @@ def route_post(path, b):
         raise KeyError(path)
     if head == "controls":
         if len(parts) > 1 and parts[1] == "capture":
-            return {"token": PADS.capture(float(b.get("timeout", 10)), bool(b.get("combo")))}
+            return {"token": PADS.capture(float(b.get("timeout", 10)), bool(b.get("combo")), b.get("kind") or "gamepad")}
+        if len(parts) > 1 and parts[1] == "learn-remote":
+            if PADS.mode != "inputd":
+                raise RuntimeError("TV remotes need the controller service (crossbar-inputd): run Update")
+            name = PADS.learn_remote(float(b.get("timeout", 15)))
+            if not name:
+                return {"name": None}
+            controls.set_remote_device(name, True)
+            PADS.push_remote_devices()
+            time.sleep(0.6)
+            return {"name": name, **controls.describe(), "pads": PADS.status()}
+        if len(parts) > 1 and parts[1] == "remote-device":
+            controls.set_remote_device(str(b["name"]), b.get("on"))
+            PADS.push_remote_devices()
+            time.sleep(0.6)
+            return {**controls.describe(), "pads": PADS.status()}
         if len(parts) > 1 and parts[1] == "browser-pads":
             PADS.browser_pads = [str(x)[:120] for x in b.get("pads", [])][:8]
             return {"ok": True}
@@ -850,6 +966,7 @@ def route_post(path, b):
             return {**controls.describe(), "pads": PADS.status()}
         if len(parts) > 1 and parts[1] == "cancel":
             PADS.cancel_capture()
+            PADS.cancel_learn()
             return {"ok": True}
         if b.get("swap"):
             controls.swap_ok_back()
@@ -1085,6 +1202,8 @@ def route_post(path, b):
             return JOBS.start("scan", "Bluetooth", lambda j: system.bluetooth_scan(10)).as_dict()
         if parts[1] == "pair":
             return JOBS.start("pair", b.get("name") or b["mac"], lambda j: system.bluetooth_pair(b["mac"])).as_dict()
+        if parts[1] == "repair":
+            return JOBS.start("pair", b.get("name") or b["mac"], lambda j: system.bluetooth_repair(b["mac"])).as_dict()
         system.bluetooth_do(parts[1], b["mac"])       # connect / disconnect / remove
         return system.bluetooth_status()
     if head == "time":
@@ -1273,6 +1392,8 @@ class Handler(BaseHTTPRequestHandler):
                     traceback.print_exc()
                 return self._send(500, {"error": str(e)})
         rel = "index.html" if path in ("", "/") else path.lstrip("/")
+        if rel == "index.html":
+            return self._send(200, index_html(), "text/html; charset=utf-8")
         full = os.path.realpath(os.path.join(WEB, rel))
         if not full.startswith(os.path.realpath(WEB)) or not os.path.isfile(full):
             return self._send(404, b"not found", "text/plain")
@@ -1303,6 +1424,9 @@ def main():
     os.makedirs(util.GAMES_DIR, exist_ok=True)
     session.watchdog()
     memguard.start(lambda text: HUB.publish({"type": "notice", "text": text, "icon": "info"}))
+    lutris.on_event(HUB.publish)
+    if vpn.split_on():
+        vpn.DNS_RELAY.start()        # first thing: VPN apps' lookups are sent to it while the VPN is up
     PADS.start()
 
     def keep_xmb_marked():
@@ -1333,9 +1457,15 @@ def main():
         ps5hw.apply_saved()
         SPOTIFY.ensure_receiver()
         vpn.on_port(torrent.on_vpn_port)            # a port the VPN forwards becomes the torrent port
+        vpn.resume()                                # VPN already up: DNS relay, split rules, port forwarding carry on
         vpn.autoconnect()
         vpn.split_watch()                           # split rules follow the VPN even when it came up without us
         torrent.autostart()
+        jackett.autostart()
+        try:
+            torrent.fix_engine_group()
+        except Exception as e:
+            print(f"torrent: {e}", flush=True)
         threading.Thread(target=torrent_notices, daemon=True).start()
         if util.load_config()["discord"].get("signed_in"):
             try:

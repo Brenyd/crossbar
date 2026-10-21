@@ -1,5 +1,124 @@
 # Changelog
 
+## 1.2.9 Alpha
+- **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a
+  SofaBaton set up as one, a Fire TV / Google TV remote, an IR receiver, HDMI-CEC — now works fully,
+  not only its arrows. Found automatically, or by pressing a button in **Set Up a Remote…**; every
+  button can be remapped, and **Test the Remote** shows what arrived
+- **Media keys control whatever is playing**: music, Spotify, a video, live TV, YouTube and other web
+  apps, even behind a game. Play, Pause and Stop do exactly that; Rewind / Fast Forward skip songs in
+  music and seek in videos (hold to keep going)
+- **Live TV with a remote**: Channel ± changes channel, number keys type a channel number, Record
+  goes back to the last channel, Red / Green switch subtitles / audio track, Blue or Guide opens Live TV
+- Volume ± and Mute change the console's volume; Home opens the Quick Menu; Power opens the Quick
+  Menu instead of shutting down. In games and other apps the remote types the matching keys. The
+  controller service holds the remote while Crossbar runs (so keys never act twice) and lets it go
+  when Crossbar stops
+- The video player: Previous goes to the previous channel in live TV (not back to 0:00)
+
+## 1.2.8 Alpha (testing branch)
+- **Lutris installs stopped with "Couldn't find lutris-wrapper script"**: Lutris looks for its wrapper
+  next to the program that started it, which was Crossbar's helper (and, in the Flatpak, Lutris lives
+  under /app). The helper now finds Lutris's real folder first, so install commands run
+- **Jackett stopped right away (CultureNotFoundException, en-US)**: Crossbar started it in .NET's
+  ICU-free mode, which Jackett can't run in. It now uses the system's ICU, and if there is none,
+  lets .NET accept named cultures. When Jackett does fail to start, the reason is in the message
+- **Bluetooth controllers that wouldn't connect** (br-connection-busy / br-connection-create-socket):
+  pressing Connect twice no longer starts two connections; paired devices are trusted, so a
+  controller connects itself when its PS button is pressed; a connect that fails says what to do;
+  new **Pair Again** in Options forgets the device, finds it in pairing mode and pairs it fresh
+
+## 1.2.7 Alpha
+- **Jackett in Torrents** (Torrents › Jackett): install the official Jackett build from its GitHub,
+  then add any tracker it supports — public, semi-private, private with your account — and fill in
+  each tracker's own settings form with the controller (text, password, choices, categories, options,
+  captcha picture). Add & Test shows Jackett's exact answer. Jackett then searches alongside your
+  plugins (each tracker's results and errors shown), and its downloads go through Jackett so private
+  sites' sign-ins work. Settings: FlareSolverr, admin password, start with Crossbar, update, stop
+- **Lutris installers in Install Apps**: search lutris.net, pick a game's installer, see what it
+  downloads and what you provide (your own setup files, disc images), choose them and the install
+  folder, Install. Lutris's own installer engine runs the script; its questions (Wine download, a
+  language / edition menu, a disc, a file) come up on the screen; progress in Downloads; the game
+  lands in Game. Local .yml scripts too. Install Lutris installs the Arch package (refusing if
+  pacman would touch graphics drivers or the kernel), or use the Flatpak
+
+## 1.2.6 Alpha (testing branch)
+- **VPN apps time out — the cause**: WireGuard encrypts a packet in place, so the encrypted copy can
+  still look like it came from the VPN app that sent it. The split-tunneling rule marked it too and
+  sent it back into the tunnel: a loop, so VPN apps (the test app, the DNS leak test, the torrent
+  engine in the VPN group) connected nowhere, while traffic from the VPN's own address worked.
+  WireGuard's packets now carry their own mark and, with the VPN server's address, are left alone
+- **Torrents "Only Use the VPN"**: the engine is bound to the VPN's interface and address only,
+  not also run as a VPN app — traffic from the VPN's address goes straight through the tunnel (the
+  path that works), and with the VPN down there's no torrent traffic. An engine still running the
+  old way is restarted once
+- **Search plugins and the leak tests** (Crossbar's own helpers) send their connections from the
+  VPN's address too
+- **Firewalled** in Torrents explains itself: peers can't connect in without the VPN's forwarded
+  port; downloads still work (A on the line for more)
+
+## 1.2.5 Alpha (testing branch)
+- **VPN apps' connections no longer hang** (split tunneling): traffic sent into the VPN by the split
+  rules had already been sized for your normal connection, and the VPN's packets are smaller, so
+  connections opened and then stalled (the test app "timed out", torrents waited for peers). TCP is
+  now clamped to the tunnel's size on the way in (MSS clamping)
+- **PIA port forwarding**: asked PIA only at the server's address inside the tunnel, which some
+  servers refuse. It now also tries the server's public address through the tunnel (what other PIA
+  scripts use) and remembers whichever answers, with its requests tied to the VPN interface like
+  `curl --interface`. Check Port Forwarding shows the location (fresh from PIA: does it forward?)
+  and each address tried
+- **Torrent search plugins run one by one**: each enabled plugin runs on its own (a few at a time)
+  instead of all in one qBittorrent search process — which lower-cased plugin names, so community
+  plugins whose file names have capitals never ran. A plugin whose class is named differently from
+  its file runs too; one that hangs is stopped after a minute without holding up the rest; and
+  every plugin's result shows on the first row (how many it found, or ✕), with each one's error
+  (a site blocking it is called out) on A
+- **Long text scrolls**: the highlighted line in Options panels, lists and the Quick Menu scrolls
+  slowly across when it doesn't fit, so the whole thing can be read
+
+## 1.2.4 Alpha (testing branch)
+- **Starts in your interface from a cold boot**: the menu page now comes from the backend with the
+  chosen look built in, so the very first frame is the Dashboard (or the cross-media bar) — it no
+  longer started in the cross-media bar and waited on the backend to switch, and a slow or missed
+  answer at boot can't leave you in the wrong one
+- **Only the chosen interface is loaded**: the other look's code, styles and backdrop aren't loaded
+  at all (the cross-media bar's waves don't run under the Dashboard)
+- **Interface is a setting now, not a live switch**: Settings › Theme › Interface saves your choice
+  and reloads the menu into it (a few seconds, back to Theme). The Interface row is gone from both
+  Quick Menus; the in-game Quick Menu keeps the style of the interface that's running
+- **Now Playing ticks smoothly in the cross-media bar too**: the time and progress bar move every
+  second instead of jumping with each report from the player or Spotify (the Dashboard had this
+  already)
+
+## 1.2.3 Alpha (testing branch)
+- **VPN apps' DNS survives restarts**: with split tunneling on, VPN apps' lookups go to a relay
+  inside Crossbar, and the firewall kept sending them there after Crossbar restarted (an update,
+  Restart Crossbar, Memory Guard) while nothing was listening. So nothing that used the VPN could
+  look up a name: torrent trackers and DHT, search plugins, the leak tests. The relay now starts
+  first thing, the VPN's DNS server is saved, and OpenVPN connections (which never had one in split
+  mode) use one too (Cloudflare's, through the tunnel, when the provider doesn't say)
+- **DNS Through the VPN** (Split Tunneling): Automatic sends every lookup to the VPN's DNS when
+  systemd-resolved does the lookups (it asks for every app itself, so per-app DNS can't work there),
+  or choose For Everything / For VPN Apps Only. The VPN's DNS server is always reached through the tunnel
+- **Port forwarding**: switching it on works straight away (it needed a reconnect, and did nothing
+  if you said no); it retries when PIA doesn't answer (it gave up for good after the first failure);
+  it carries on after Crossbar restarts; PIA's signature is kept so the port stays the same; a
+  location without port forwarding says so; the port is opened in ufw / firewalld on the VPN only;
+  Torrents picks the port up when it starts later; Y › Check Port Forwarding shows each step
+- **Torrents through the VPN**: each VPN connection has a new address; the engine is now bound to
+  the new one (and asks its trackers again) on every connect and restart, instead of staying on
+  the old one
+- **Torrent IP leak test rebuilt**: no more third-party tracker page. It checks a connection made the
+  way the engine makes them and the address the BitTorrent network reports to the engine, and with
+  the VPN off and "Only Use the VPN" on, confirms there's no torrent traffic
+- **DNS leak test**: compares with your own address checked fresh, shows the VPN's DNS server, and
+  explains a systemd-resolved leak with the setting that fixes it
+- **Torrent search**: **Sort** by Seeds, Leechers, File Size, Upload Date, Name or Site (kept for the
+  next search); results show their age; "Nothing found" now says why — DNS, the connection, or
+  the plugins — after testing the plugins' sites the way the search reaches them
+- Split tunneling: everything leaving through the VPN gets the VPN's address (sites sent through it
+  included), and reverse-path checks are relaxed whether or not the app group exists
+
 ## 1.2.2 Alpha
 - **Memory Guard** (Settings › System, on by default): when a game runs the console out of
   memory, Crossbar first closes the menu window to give it room, and if memory still runs out,
