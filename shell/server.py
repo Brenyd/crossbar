@@ -27,7 +27,7 @@ vendor = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor")
 if os.path.isdir(vendor):
     sys.path.insert(0, vendor)
 
-from crossbar import looks, memguard, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
+from crossbar import looks, memguard, jackett, apps, artwork, extgames, folders, launchopts, wintricks, speedtest, vpn, torrent, leaktest, themes, compat, friends, controls, emulation, files, perf, trophies, glyphs, iptv, ps5hw, nas, session, display, media, party, player, quick, system, terminal, util  # noqa: E402
 from crossbar.events import HUB  # noqa: E402
 from crossbar.gamepad import Gamepads, mpv_should_read_gamepad  # noqa: E402
 from crossbar.jobs import JobManager  # noqa: E402
@@ -599,6 +599,9 @@ GET = {
     "/api/vpn/check": lambda q: vpn.split_check(),
     "/api/vpn/pfcheck": lambda q: vpn.pf_check(),
     "/api/torrent": lambda q: torrent.summary(),
+    "/api/jackett": lambda q: jackett.status(),
+    "/api/jackett/indexers": lambda q: jackett.indexers(None if q.get("configured") in (None, "") else q.get("configured") == "1"),
+    "/api/jackett/config": lambda q: jackett.config(q["id"]),
     "/api/torrent/list": lambda q: torrent.torrents(q.get("filter") or "all"),
     "/api/torrent/files": lambda q: torrent.files(q["hash"]),
     "/api/torrent/settings": lambda q: torrent.settings(),
@@ -732,6 +735,25 @@ def route_post(path, b):
             return torrent.search_stop(b["id"])
         if what == "search/download":
             return torrent.download_result(b["url"], b.get("engine"), b.get("save_path"))
+        raise KeyError(what)
+    if head == "jackett":
+        what = "/".join(parts[1:])
+        if what == "install":
+            return JOBS.start("install", "Jackett", jackett.install, "jackett", "install").as_dict()
+        if what == "start":
+            jackett.start()
+            return jackett.status()
+        if what == "stop":
+            jackett.stop()
+            return jackett.status()
+        if what == "config":
+            return jackett.save_config(b["id"], b.get("values") or {})
+        if what == "test":
+            return jackett.test(b["id"])
+        if what == "remove":
+            return jackett.remove(b["id"])
+        if what == "settings":
+            return jackett.set_settings(**{k: v for k, v in b.items() if k in ("admin_password", "search", "autostart", "flaresolverr")})
         raise KeyError(what)
     if head == "vpn":
         what = parts[1] if len(parts) > 1 else ""
@@ -1372,6 +1394,7 @@ def main():
         vpn.autoconnect()
         vpn.split_watch()                           # split rules follow the VPN even when it came up without us
         torrent.autostart()
+        jackett.autostart()
         try:
             torrent.fix_engine_group()
         except Exception as e:

@@ -440,8 +440,27 @@ def plugins():
                     "url": p.get("url", ""), "categories": [c.get("id") if isinstance(c, dict) else c for c in p.get("supportedCategories") or []],
                     "login": bool(plugin_fields(name))})
     out = sorted(out, key=lambda p: p["full_name"].lower())
+    jk = _jackett_entry()
+    if jk:
+        out.insert(0, jk)
     _cache["plugins_list"] = out
     return out
+
+
+def _jackett_entry():
+    """Jackett, when it's set up, is one more search source (on / off like a plugin)."""
+    from . import jackett
+    if not jackett.binary():
+        return None
+    n = None
+    if jackett.running():
+        try:
+            n = len(jackett.indexers(True))
+        except Exception:
+            n = None
+    return {"name": jackett.NAME, "full_name": f"Jackett ({n} tracker{'' if n == 1 else 's'})" if n is not None else "Jackett",
+            "version": jackett.version() or "", "enabled": bool(jackett.prefs().get("search", True)) and n != 0, "url": jackett.BASE,
+            "categories": list(jackett.CATS), "login": False, "virtual": True, "trackers": n}
 
 
 def install_plugin(url):
@@ -460,6 +479,11 @@ def install_plugin(url):
 def plugin_action(name, what, enable=True):
     if not re.fullmatch(r"[\w.\-]{1,80}", name or ""):
         raise ValueError("plugin")
+    from . import jackett
+    if name == jackett.NAME:
+        if what == "enable":
+            jackett.set_settings(search=enable)
+        return plugins()
     if what == "enable":
         api("POST", "/api/v2/search/enablePlugin", data={"names": name, "enable": "true" if enable else "false"})
     elif what == "remove":
@@ -505,8 +529,11 @@ def search_start(pattern, category="all", plugin_names=None):
             raise TorrentError(f"None of your search plugins have a “{category}” category: search Everything instead")
         names = fit
     nova = _nova_dir()
-    if not nova:
-        raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
+    from . import jackett
+    if not nova and any(n != jackett.NAME for n in names):
+        names = [n for n in names if n == jackett.NAME]       # Jackett alone can still search
+        if not names:
+            raise TorrentError("The search engine files aren't there yet: reinstall a plugin (Search Plugins)")
     from . import vpn
     _sid[0] += 1
     sid = _sid[0]
@@ -523,8 +550,28 @@ def search_start(pattern, category="all", plugin_names=None):
     # nova2's lower-casing of names, which left plugins whose file names have capitals unmatched.
     words = pattern.split()
 
+    def run_jackett():
+        from . import jackett
+        per = st["per"].pop(jackett.NAME, None) or {}
+        try:
+            res, tracker_status = jackett.search(pattern, category)
+        except Exception as e:
+            st["per"]["Jackett"] = {"count": 0, "running": False, "error": str(e)[:200]}
+            st["errors"] = (st["errors"] + [f"Jackett: {str(e)[:200]}"])[-8:]
+            return
+        st["results"].extend(res)
+        for tname, v in tracker_status.items():
+            st["per"][f"Jackett › {tname}"] = v
+            if v.get("error"):
+                st["errors"] = (st["errors"] + [f"Jackett › {tname}: {v['error'][:200]}"])[-8:]
+        if not tracker_status:
+            st["per"]["Jackett"] = {"count": len(res), "running": False, "error": "" if res else "no trackers answered"}
+
     def run_one(name):
         import sys
+        from . import jackett
+        if name == jackett.NAME:
+            return run_jackett()
         per = st["per"][name]
         argv = vpn.wrap([sys.executable or "python3", "-c", RUNNER, name, category, *words], "torrents")
         env = vpn.app_env("torrents", {**os.environ, "PYTHONWARNINGS": "ignore", "PYTHONDONTWRITEBYTECODE": "1"})
@@ -739,9 +786,19 @@ def search_stop(sid):
 
 def download_result(url, engine=None, save_path=None):
     """A search result: a magnet link is added as it is; a .torrent link is fetched by its plugin
-    (nova2dl.py, as qBittorrent does), so private sites' sign-ins and cookies are used."""
+    (nova2dl.py, as qBittorrent does), so private sites' sign-ins and cookies are used; a Jackett
+    result through Jackett (it holds the tracker's sign-in)."""
     if url.lower().startswith("magnet:"):
         return add(urls=[url], save_path=save_path)
+    if (engine or "").startswith("jackett"):
+        from . import jackett
+        kind, data = jackett.fetch(url)
+        if kind == "magnet":
+            return add(urls=[data], save_path=save_path)
+        out = api("POST", "/api/v2/torrents/add", data={"savepath": save_path or ""}, files={"torrents": ("jackett.torrent", data)})
+        if isinstance(out, str) and out.strip().lower().startswith("fail"):
+            raise TorrentError("The torrent engine didn't accept it (already added?)")
+        return {"ok": True}
     nova = _nova_dir()
     if nova and engine and re.fullmatch(r"[\w.\-]{1,80}", engine) and os.path.isfile(os.path.join(nova, "nova2dl.py")):
         import sys

@@ -216,13 +216,14 @@ const PLUGINS_FOLDER = {
   key: 'tplugins', label: 'Search Plugins', icon: 'search', sub: 'The sites Search looks through',
   children: async () => {
     const have = await api.get('/api/torrent/plugins');
-    const rows = have.map((p) => ({ key: `ip:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power',
+    const rows = have.filter((p) => !p.virtual).map((p) => ({ key: `ip:${p.name}`, label: p.full_name, icon: p.enabled ? 'check' : 'power',
       badge: p.login ? 'LOGIN' : '', sub: `${p.enabled ? 'On' : 'Off'} · v${p.version}`,
       action: async () => { if (await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }, `${p.full_name} ${p.enabled ? 'off' : 'on'}`)) reloadFolder(); },
       options: [{ label: p.enabled ? 'Turn Off' : 'Turn On', action: async () => { await tPost('plugin/action', { name: p.name, what: 'enable', enable: !p.enabled }); reloadFolder(); } },
         ...(p.login ? [{ label: 'Sign In…', action: () => pluginSignIn(p.name) }] : []),
         { label: 'Remove', action: async () => { if (await confirmBox(`Remove ${p.full_name}?`)) { await tPost('plugin/action', { name: p.name, what: 'remove' }, 'Removed'); reloadFolder(); } } }] }));
     return [
+      { ...JACKETT_FOLDER, sub: 'Hundreds of sites through Jackett, public and private: Torrents › Jackett' },
       pluginListFolder('tp-off', 'Get Official Plugins', 'Maintained by the qBittorrent project', () => api.get('/api/torrent/plugins/official')),
       { key: 'tp-un', label: 'Get Community Plugins', icon: 'folder', sub: 'From the qBittorrent wiki list (use at your own risk)',
         children: async () => {
@@ -363,6 +364,7 @@ function torrentsItem() {
           { key: 'magnet', label: 'Magnet Link…', icon: 'link', action: torrentAddMagnet },
           { key: 'file', label: '.torrent File…', icon: 'folder', torrentBrowse: true, children: () => torrentFileBrowse(null) }] },
         PLUGINS_FOLDER,
+        JACKETT_FOLDER,
         TSET_FOLDER,
         { key: 'tleak', label: 'Leak Tests', icon: 'search', sub: 'What address trackers see, and where DNS goes', children: LEAK_FOLDER.children },
         { key: 'quit', label: 'Stop the Torrent Engine', icon: 'power', sub: 'Stops downloading and seeding until you open Torrents again',
