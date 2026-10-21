@@ -50,6 +50,8 @@ if [[ -n "${UNINSTALL:-}" ]]; then
     [[ -f "$f" ]] && sed -i '/^# >>> crossbar (install-cachyos.sh) >>>$/,/^# <<< crossbar <<<$/d' "$f"
   done
   rm -f "$UHOME/.config/fish/conf.d/00-crossbar.fish" "$UHOME/.config/crossbar/boot-session"
+  DESK=$(sudo -u "$U" HOME="$UHOME" xdg-user-dir DESKTOP 2>/dev/null || echo "$UHOME/Desktop")
+  rm -f "$DESK/crossbar-return.desktop" "$UHOME/Desktop/crossbar-return.desktop" "$UHOME/.config/crossbar/desktop-icon-added"
   echo "Crossbar no longer starts at boot; your previous login setup is back."
   echo "(Crossbar is still installed: pick the \"Crossbar\" session on the login screen to use it.)"
   exit 0
@@ -161,6 +163,8 @@ if ((AUTOLOGIN)); then
     # an earlier run's generic hook isn't needed with this setup
     for f in "$UHOME/.bash_profile" "$UHOME/.profile" "$UHOME/.zprofile"; do remove_hook "$f"; done
     rm -f "$UHOME/.config/fish/conf.d/00-crossbar.fish" "$UHOME/.config/crossbar/boot-session"
+  DESK=$(sudo -u "$U" HOME="$UHOME" xdg-user-dir DESKTOP 2>/dev/null || echo "$UHOME/Desktop")
+  rm -f "$DESK/crossbar-return.desktop" "$UHOME/Desktop/crossbar-return.desktop" "$UHOME/.config/crossbar/desktop-icon-added"
   elif [[ "$DM" == sddm || "$DM" == plasmalogin ]] && systemctl is-enabled --quiet display-manager.service 2>/dev/null; then
     # A zzz-crossbar.conf drop-in sorts after the distro's own autologin files
     # (CachyOS handheld writes zz-steamos-autologin.conf), so it wins without editing them.

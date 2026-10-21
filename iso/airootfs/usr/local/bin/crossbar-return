@@ -11,6 +11,12 @@ if [[ -f "$HOME/.config/ps5-next-session" ]] && grep -q '>>> crossbar >>>' /etc/
     pkill -u "$(id -u)" -f gamescope-session || true
     exit 0
   fi
+  if ! grep -q 'Return to Crossbar" from Plasma' /etc/profile.d/ps5-tty-session.sh; then
+    # this switcher has no hook after Plasma (it would start gaming mode): end the whole
+    # desktop session instead, so tty1 logs in again and reads "crossbar"
+    sid=${XDG_SESSION_ID:-$(loginctl show-user "$(id -u)" -p Display --value 2>/dev/null)}
+    [[ -n "$sid" ]] && loginctl terminate-session "$sid" && exit 0
+  fi
   out='"ok": true'
 elif [[ -f "$HOME/.config/crossbar/boot-session" ]]; then
   # TTY autologin setup: choose Crossbar, then log out; tty1 logs back in and starts it

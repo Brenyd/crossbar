@@ -255,7 +255,7 @@ boot falls back to gaming mode. Details: [docs/INSTALL.md](docs/INSTALL.md).
 
 Switch any time:
 - In Crossbar: **Settings › System › Switch to Gaming Mode** or **Switch to Desktop**.
-- In Plasma: **Return to Crossbar** in the app menu.
+- In Plasma: the **Return to Crossbar** icon on the desktop (or in the app menu).
 
 ### Try it on your desktop (demo library, nothing installed)
 
