@@ -909,7 +909,22 @@ def route_post(path, b):
         raise KeyError(path)
     if head == "controls":
         if len(parts) > 1 and parts[1] == "capture":
-            return {"token": PADS.capture(float(b.get("timeout", 10)), bool(b.get("combo")))}
+            return {"token": PADS.capture(float(b.get("timeout", 10)), bool(b.get("combo")), b.get("kind") or "gamepad")}
+        if len(parts) > 1 and parts[1] == "learn-remote":
+            if PADS.mode != "inputd":
+                raise RuntimeError("TV remotes need the controller service (crossbar-inputd): run Update")
+            name = PADS.learn_remote(float(b.get("timeout", 15)))
+            if not name:
+                return {"name": None}
+            controls.set_remote_device(name, True)
+            PADS.push_remote_devices()
+            time.sleep(0.6)
+            return {"name": name, **controls.describe(), "pads": PADS.status()}
+        if len(parts) > 1 and parts[1] == "remote-device":
+            controls.set_remote_device(str(b["name"]), b.get("on"))
+            PADS.push_remote_devices()
+            time.sleep(0.6)
+            return {**controls.describe(), "pads": PADS.status()}
         if len(parts) > 1 and parts[1] == "browser-pads":
             PADS.browser_pads = [str(x)[:120] for x in b.get("pads", [])][:8]
             return {"ok": True}
@@ -919,6 +934,7 @@ def route_post(path, b):
             return {**controls.describe(), "pads": PADS.status()}
         if len(parts) > 1 and parts[1] == "cancel":
             PADS.cancel_capture()
+            PADS.cancel_learn()
             return {"ok": True}
         if b.get("swap"):
             controls.swap_ok_back()

@@ -30,10 +30,42 @@ resolution, and the controller works in them too: Crossbar types arrow keys, Ent
 Esc (B), Tab (Y) and media keys on a virtual keyboard. YouTube opens in its TV interface,
 which is built for exactly this.
 
-Every button and key above can be changed in **Settings › Controller & Keyboard**: pick an
+Every button and key above can be changed in **Settings › Controller, Remote & Keyboard**: pick an
 action, press the new button (or key), done. There's also *Swap Select and Back* and
 *Reset All to Defaults*. Controllers are read by Crossbar itself and input only goes to
 whatever is on screen — the menu, the video player, or nothing (games read the pad directly).
+
+### TV remotes (Android TV, SofaBaton, Fire TV…)
+
+A Bluetooth TV remote works as a full console remote. That includes an Android TV remote, a
+universal remote such as a **SofaBaton** set up as an Android TV device, a Fire TV / Google TV
+remote, an air mouse's buttons, an IR receiver or HDMI-CEC.
+
+1. Pair it in **Settings › Bluetooth** (for a SofaBaton, add the console in its app as an
+   *Android TV* device, then pair).
+2. Most remotes are found automatically. If yours isn't, open **Settings › Controller, Remote &
+   Keyboard › TV Remote › Set Up a Remote…** and press any button on it.
+
+| Remote button | What it does |
+|---|---|
+| Arrows / OK | Move / select |
+| Back (or Exit, Stop) | Back |
+| Home | Quick Menu, over anything |
+| Menu, Info, Guide, Settings | Options for the highlighted item |
+| Play/Pause, Rewind / Fast Forward, Previous / Next | Music, videos and live TV |
+| Channel + / − (Page Up / Down) | Next / previous (category, track, channel) |
+| Volume + / −, Mute | The console's volume (shows the level) |
+| Power | Opens the Quick Menu: Turn Off is there, so a stray press never shuts the console down |
+| Numbers | Type numbers |
+
+In a game or another app, the remote types the matching keys (arrows, Enter, Esc, Tab, media
+keys) into it, and Home still opens the Quick Menu. Every button can be changed in **TV Remote ›
+Remote Buttons**: pick an action, press the remote button. **Test the Remote** shows what
+Crossbar received. **Not a Remote** (in a device's Options) hands a device back if it was
+picked up by mistake.
+
+Crossbar holds the remote while it runs, so its keys only do what's mapped, and Linux never
+sees its Power key. When Crossbar isn't running, the remote acts like a keyboard again.
 
 ### How controllers work
 
@@ -52,7 +84,7 @@ short link — paste that link when asking for help.
 
 Check `systemctl status crossbar-inputd` (it should be *active*). Without it Crossbar falls
 back to reading the controller directly, which needs permissions.
-**Settings › Controller & Keyboard › Controller Diagnostics** shows what Crossbar sees and
+**Settings › Controller, Remote & Keyboard › Controller Diagnostics** shows what Crossbar sees and
 the last buttons it received. For a full report press Ctrl+Alt+T and run `crossbar-doctor`.
 The ISO ships a udev rule (`/etc/udev/rules.d/70-crossbar-input.rules`) that gives the
 console user access to controllers and `/dev/uinput`. On an existing install, copy that rule

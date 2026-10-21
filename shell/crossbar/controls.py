@@ -21,6 +21,9 @@ ACTIONS = [
     ("toggle", "Play / Pause"),
 ]
 DIRECTIONS = ("up", "down", "left", "right")
+# a TV remote has a few buttons a controller doesn't
+REMOTE_ACTIONS = ACTIONS + [("volume_up", "Volume Up"), ("volume_down", "Volume Down"), ("mute", "Mute"),
+                            ("power", "Power (opens the Quick Menu)")]
 
 DEFAULT_GAMEPAD = {
     "up": ["BTN_DPAD_UP", "ABS_HAT0Y-", "ABS_Y-"],
@@ -40,6 +43,41 @@ DEFAULT_KEYBOARD = {
     "ok": ["Enter", "Space"], "back": ["Escape", "Backspace"], "menu": ["Tab", "t"],
     "home": ["Home"], "prev": ["PageUp"], "next": ["PageDown"], "toggle": ["p"],
 }
+
+# Android TV remotes (and most Bluetooth / IR / HDMI-CEC remotes) send these Linux keys.
+DEFAULT_REMOTE = {
+    "up": ["KEY_UP"], "down": ["KEY_DOWN"], "left": ["KEY_LEFT"], "right": ["KEY_RIGHT"],
+    "ok": ["KEY_SELECT", "KEY_OK", "KEY_ENTER", "KEY_KPENTER"],
+    "back": ["KEY_BACK", "KEY_ESC", "KEY_EXIT", "KEY_BACKSPACE", "KEY_STOP", "KEY_STOPCD"],
+    "menu": ["KEY_MENU", "KEY_COMPOSE", "KEY_CONTEXT_MENU", "KEY_OPTION", "KEY_INFO", "KEY_EPG", "KEY_PROGRAM", "KEY_SETUP"],
+    "home": ["KEY_HOMEPAGE", "KEY_HOME"],
+    "prev": ["KEY_PREVIOUSSONG", "KEY_REWIND", "KEY_CHANNELDOWN", "KEY_PAGEUP"],
+    "next": ["KEY_NEXTSONG", "KEY_FASTFORWARD", "KEY_CHANNELUP", "KEY_PAGEDOWN"],
+    "toggle": ["KEY_PLAYPAUSE", "KEY_PLAY", "KEY_PAUSE", "KEY_PLAYCD", "KEY_PAUSECD", "KEY_MEDIA"],
+    "volume_up": ["KEY_VOLUMEUP"], "volume_down": ["KEY_VOLUMEDOWN"], "mute": ["KEY_MUTE"],
+    "power": ["KEY_POWER", "KEY_SLEEP", "KEY_POWER2"],
+}
+REMOTE_LABELS = {
+    "KEY_UP": "Up", "KEY_DOWN": "Down", "KEY_LEFT": "Left", "KEY_RIGHT": "Right", "KEY_SELECT": "OK", "KEY_OK": "OK",
+    "KEY_ENTER": "OK / Enter", "KEY_KPENTER": "Enter", "KEY_BACK": "Back", "KEY_ESC": "Esc", "KEY_EXIT": "Exit",
+    "KEY_BACKSPACE": "Backspace", "KEY_STOP": "Stop", "KEY_STOPCD": "Stop", "KEY_MENU": "Menu", "KEY_COMPOSE": "Menu",
+    "KEY_CONTEXT_MENU": "Menu", "KEY_OPTION": "Options", "KEY_INFO": "Info", "KEY_EPG": "Guide", "KEY_PROGRAM": "Guide",
+    "KEY_SETUP": "Settings", "KEY_HOMEPAGE": "Home", "KEY_HOME": "Home", "KEY_PREVIOUSSONG": "Previous",
+    "KEY_REWIND": "Rewind", "KEY_CHANNELDOWN": "Channel −", "KEY_PAGEUP": "Page Up", "KEY_NEXTSONG": "Next",
+    "KEY_FASTFORWARD": "Fast Forward", "KEY_CHANNELUP": "Channel +", "KEY_PAGEDOWN": "Page Down",
+    "KEY_PLAYPAUSE": "Play/Pause", "KEY_PLAY": "Play", "KEY_PAUSE": "Pause", "KEY_PLAYCD": "Play", "KEY_PAUSECD": "Pause",
+    "KEY_MEDIA": "Media", "KEY_VOLUMEUP": "Volume +", "KEY_VOLUMEDOWN": "Volume −", "KEY_MUTE": "Mute",
+    "KEY_POWER": "Power", "KEY_SLEEP": "Sleep", "KEY_POWER2": "Power", "KEY_SEARCH": "Search",
+    "KEY_VOICECOMMAND": "Voice / Mic", "KEY_RED": "Red", "KEY_GREEN": "Green", "KEY_YELLOW": "Yellow", "KEY_BLUE": "Blue",
+    "KEY_TV": "TV", "KEY_SUBTITLE": "Subtitles", "KEY_AUDIO": "Audio", "KEY_LAST": "Last", "KEY_TEXT": "Teletext",
+}
+
+
+def remote_label(token):
+    if token in REMOTE_LABELS:
+        return REMOTE_LABELS[token]
+    return token.replace("KEY_", "").replace("_", " ").title()
+
 
 # Friendly names. Linux reports Xbox X/Y as BTN_NORTH/BTN_WEST (the reverse of
 # their physical positions), while PlayStation pads use BTN_NORTH for triangle.
@@ -90,10 +128,12 @@ def load():
         g = data.get("gamepad") or {}
         if g.get("home") == ["BTN_MODE"]:
             g["home"] = list(DEFAULT_GAMEPAD["home"])
-    out = {"gamepad": {}, "keyboard": {}, "version": VERSION}
-    for kind, defaults in (("gamepad", DEFAULT_GAMEPAD), ("keyboard", DEFAULT_KEYBOARD)):
+    out = {"gamepad": {}, "keyboard": {}, "remote": {}, "version": VERSION,
+           "remote_devices": {str(k): bool(v) for k, v in (data.get("remote_devices") or {}).items()}
+           if isinstance(data.get("remote_devices"), dict) else {}}
+    for kind, defaults in (("gamepad", DEFAULT_GAMEPAD), ("keyboard", DEFAULT_KEYBOARD), ("remote", DEFAULT_REMOTE)):
         saved = data.get(kind) if isinstance(data.get(kind), dict) else {}
-        for action, _ in ACTIONS:
+        for action, _ in (REMOTE_ACTIONS if kind == "remote" else ACTIONS):
             v = saved.get(action)
             out[kind][action] = list(v) if isinstance(v, list) else list(defaults[action])
     return out
@@ -109,7 +149,7 @@ def save(c):
 
 
 def set_binding(kind, action, tokens):
-    if kind not in ("gamepad", "keyboard") or action not in dict(ACTIONS):
+    if kind not in ("gamepad", "keyboard", "remote") or action not in dict(REMOTE_ACTIONS if kind == "remote" else ACTIONS):
         raise KeyError(action)
     c = load()
     tokens = [t for t in dict.fromkeys(tokens) if t]
@@ -127,7 +167,7 @@ def set_binding(kind, action, tokens):
 
 def reset(kind=None, action=None):
     c = load()
-    for k, defaults in (("gamepad", DEFAULT_GAMEPAD), ("keyboard", DEFAULT_KEYBOARD)):
+    for k, defaults in (("gamepad", DEFAULT_GAMEPAD), ("keyboard", DEFAULT_KEYBOARD), ("remote", DEFAULT_REMOTE)):
         if kind in (None, k):
             for a in ([action] if action else defaults):
                 c[k][a] = list(defaults[a])
@@ -159,9 +199,22 @@ def swap_ok_back():
     return c
 
 
+def set_remote_device(name, on):
+    """Mark a device as a TV remote (True), as not one (False), or back to automatic (None)."""
+    c = load()
+    if on is None:
+        c["remote_devices"].pop(name, None)
+    else:
+        c["remote_devices"][name] = bool(on)
+    save(c)
+    return c
+
+
 def describe():
     c = load()
     return {**c, "actions": [{"id": a, "name": n} for a, n in ACTIONS],
+            "remote_actions": [{"id": a, "name": n} for a, n in REMOTE_ACTIONS],
+            "remote_labels": {t: remote_label(t) for toks in c["remote"].values() for t in toks},
             "guide_home": "BTN_MODE" in c["gamepad"]["home"],
             "labels": _labels(c)}
 

@@ -36,6 +36,9 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 ### 1.2 series: two interfaces, and staying out of the game's way
 
+**1.2.9 Alpha**
+- 🧪 **TV remotes:** Android TV / SofaBaton / Fire TV remotes, every button mapped and remappable
+
 **1.2.8 Alpha**
 - 🧪 Lutris installs run their commands (lutris-wrapper found, native and Flatpak)
 - 🧪 Jackett starts (no more en-US culture crash)

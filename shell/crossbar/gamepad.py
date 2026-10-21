@@ -55,6 +55,9 @@ class Gamepads:
         self.devices = {}               # path -> InputDevice (direct mode)
         self.names = {}                 # path -> name of real controllers
         self.virtual = {}               # path -> name of virtual pads (e.g. Steam's): grabbed, never read
+        self.remotes = {}               # path -> name of TV remotes (held by crossbar-inputd)
+        self._rkeymap = {}
+        self._learn = None
         self.absinfo = {}
         self.unreadable = {}
         self.available = False
@@ -102,6 +105,13 @@ class Gamepads:
                     if code is not None:
                         keymap.setdefault(code, []).append(action)
         self._keymap, self._absmap, self._combos = keymap, absmap, combos
+        rk = {}
+        for action, tokens in controls.load()["remote"].items():
+            for t in tokens:
+                code = E.get(t)
+                if code is not None:
+                    rk.setdefault(code, []).append(action)
+        self._rkeymap = rk
         self._combo_keys = {E[n] for parts, _ in combos for n in parts}
 
     @staticmethod
@@ -285,14 +295,18 @@ class Gamepads:
         name = WEB_KEYS.get(action)
         if not name:
             return
+        import evdev
+        self._key_code(evdev.ecodes.ecodes[name])
+
+    def _key_code(self, code):
         try:
             import evdev
-            code = evdev.ecodes.ecodes[name]
             if self.mode == "inputd":
                 self._cmd({"cmd": "key", "code": code})
                 return
             if self._uinput is None:
-                keys = [evdev.ecodes.ecodes[k] for k in set(WEB_KEYS.values())]
+                keys = sorted({evdev.ecodes.ecodes[k] for k in set(WEB_KEYS.values())} | {code}
+                              | {evdev.ecodes.ecodes[f"KEY_{d}"] for d in "0123456789"})
                 self._uinput = evdev.UInput({evdev.ecodes.EV_KEY: keys}, name="Crossbar Controller Keys")
                 time.sleep(0.15)
             for v in (1, 0):
@@ -304,9 +318,9 @@ class Gamepads:
             self._uinput = None
 
     # ---- capture (Settings › remap) ------------------------------------------
-    def capture(self, timeout=10, combo=False):
+    def capture(self, timeout=10, combo=False, kind="gamepad"):
         ev = threading.Event()
-        self._capture = {"event": ev, "token": None, "combo": combo, "first": None}
+        self._capture = {"event": ev, "token": None, "combo": combo and kind != "remote", "first": None, "kind": kind}
         ev.wait(timeout)
         tok = self._capture["token"] if self._capture else None
         self._capture = None
@@ -338,7 +352,7 @@ class Gamepads:
             self._down[code] = time.time()
         elif value == 0:
             self._down.pop(code, None)
-        if self._capture:
+        if self._capture and self._capture.get("kind") != "remote":
             if value == 1:
                 self._capture_key(self._key_token(code))
             return
@@ -372,6 +386,96 @@ class Gamepads:
                 self._press(a, token)
             elif value == 0:
                 self._release(a)
+
+    # ---- TV remotes --------------------------------------------------------------
+    VOLUME_STEP = 5
+
+    @staticmethod
+    def _remote_token(code):
+        import evdev
+        n = evdev.ecodes.KEY.get(code) or evdev.ecodes.BTN.get(code)
+        if isinstance(n, (list, tuple)):
+            n = next((x for x in n if x in controls.REMOTE_LABELS), None) \
+                or next((x for x in n if "MIN_" not in x and "MAX" not in x), n[0])
+        return n or f"KEY_{code}"
+
+    def _on_remote_key(self, path, code, value):
+        """A TV remote button: its own mapping (Settings › Controller, Remote & Keyboard › TV Remote).
+        In a game or another app the remote still works: its keys are typed into that app."""
+        token = self._remote_token(code)
+        if value == 1 and self._learn is not None and not self._learn.get("name"):
+            self._learn.update(name=self.remotes.get(path, ""), code=code)
+            self._learn["event"].set()
+            return
+        if self._capture and self._capture.get("kind") == "remote":
+            if value == 1:
+                self._capture_key(token)
+            return
+        actions = self._rkeymap.get(code, [])
+        if value == 0:
+            for a in actions:
+                self._release(a)
+            return
+        self.last_pad = time.time()
+        if not actions:
+            if value == 1:
+                digit = token.rsplit("_", 1)[-1]
+                if len(digit) == 1 and digit.isdigit() and self._target() not in ("overlay",):
+                    import evdev
+                    self._key_code(evdev.ecodes.ecodes["KEY_" + digit])
+                    self.log.appendleft({"t": time.time(), "token": token, "action": f"type {digit}", "to": self._target()})
+                else:
+                    self.log.appendleft({"t": time.time(), "token": token, "action": None, "to": "unmapped (remote)"})
+            return
+        for a in actions:
+            if a in ("volume_up", "volume_down", "mute"):
+                if a == "mute" and value != 1:
+                    continue
+                threading.Thread(target=self._volume, args=(a,), daemon=True).start()
+                continue
+            if value == 2:                       # the remote's own key repeat: ours handles held directions
+                if self._target() == "app" and a in controls.DIRECTIONS:
+                    self._web_key(a)
+                continue
+            if a == "power":
+                self.log.appendleft({"t": time.time(), "token": token, "action": "power", "to": "quick menu"})
+                self.on_home()
+                continue
+            target = self._target()
+            if target == "app" and a != "home":
+                self.log.appendleft({"t": time.time(), "token": token, "action": a, "to": "app (keys)"})
+                self._web_key(a)                 # a game / app in front: type the matching key into it
+                continue
+            self._press(a, token)
+
+    def _volume(self, a):
+        try:
+            if a == "mute":
+                system.set_audio("output", mute=True)
+            else:
+                system.set_audio("output", delta=self.VOLUME_STEP if a == "volume_up" else -self.VOLUME_STEP)
+            v = system.audio().get("output", {})
+            if v:
+                HUB.publish({"type": "notice", "icon": "sound",
+                             "text": "Muted" if v.get("muted") else f"Volume {v.get('volume')}%"})
+        except Exception as e:
+            self.log.appendleft({"t": time.time(), "token": a, "action": f"volume failed: {e}", "to": "system"})
+
+    def learn_remote(self, timeout=15):
+        """Set Up a Remote: the next key pressed on any keyboard-like device names the remote."""
+        self._learn = {"event": threading.Event(), "name": None}
+        self._cmd({"cmd": "learn", "on": True, "timeout": timeout})
+        self._learn["event"].wait(timeout)
+        got, self._learn = self._learn, None
+        self._cmd({"cmd": "learn", "on": False})
+        return got.get("name") if got else None
+
+    def cancel_learn(self):
+        if self._learn:
+            self._learn["event"].set()
+
+    def push_remote_devices(self):
+        self._cmd({"cmd": "remotes", "force": controls.load()["remote_devices"]})
 
     def _on_abs(self, path, code, value, lo, hi):
         import evdev
@@ -443,6 +547,7 @@ class Gamepads:
         self._sock, self.mode, self.available, self.error, self.inputd_error = s, "inputd", True, "", ""
         self.grabbed = None
         self.update_grab()
+        self.push_remote_devices()
         print("gamepad: connected to crossbar-inputd", flush=True)
         buf = b""
         try:
@@ -461,7 +566,13 @@ class Gamepads:
                         path = m.get("path")
                         if m["e"] in ("key", "abs") and path in self.virtual:
                             continue      # Steam's virtual pad mirrors the real one: ignore
-                        if m["e"] == "key":
+                        if m["e"] == "key" and path in self.remotes:
+                            self._on_remote_key(path, m["code"], m["value"])
+                        elif m["e"] == "learned":
+                            if self._learn is not None and not self._learn.get("name"):
+                                self._learn.update(name=m.get("name"), code=m.get("code"))
+                                self._learn["event"].set()
+                        elif m["e"] == "key":
                             self._on_key(m["code"], m["value"])
                         elif m["e"] == "abs":
                             lo, hi = self.absinfo.get(path, {}).get(str(m["code"]), (-32768, 32767))
@@ -470,7 +581,7 @@ class Gamepads:
                             self.last_physical = time.time()
                             HUB.publish({"type": "physical-input"})
                         elif m["e"] == "dev":
-                            table = self.virtual if m.get("virtual") else self.names
+                            table = self.remotes if m.get("remote") else self.virtual if m.get("virtual") else self.names
                             if m["added"]:
                                 table[path] = m["name"]
                                 self.absinfo[path] = {k: tuple(v) for k, v in m.get("abs", {}).items()}
@@ -484,6 +595,7 @@ class Gamepads:
                 self._sock = None
             self.names.clear()
             self.virtual.clear()
+            self.remotes.clear()
             s.close()
 
     # ---- source 2: read /dev/input directly (fallback) --------------------------
@@ -648,7 +760,7 @@ class Gamepads:
 
     def status(self):
         return {"available": self.available, "mode": self.mode, "devices": list(self.names.values()),
-                "virtual": list(self.virtual.values()),
+                "virtual": list(self.virtual.values()), "remotes": list(self.remotes.values()),
                 "unreadable": sorted(set(n for p, n in self.unreadable.items() if _is_joystick(p))),
                 "grabbed": bool(self.grabbed), "xmb_focused": self.xmb_focused, "error": self.error,
                 "inputd_error": self.inputd_error, "uinput_error": self.uinput_error,
