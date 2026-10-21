@@ -22,8 +22,15 @@ ACTIONS = [
 ]
 DIRECTIONS = ("up", "down", "left", "right")
 # a TV remote has a few buttons a controller doesn't
-REMOTE_ACTIONS = ACTIONS + [("volume_up", "Volume Up"), ("volume_down", "Volume Down"), ("mute", "Mute"),
-                            ("power", "Power (opens the Quick Menu)")]
+REMOTE_ACTIONS = ACTIONS + [
+    ("play", "Play"), ("pause", "Pause"), ("stop", "Stop"),
+    ("rewind", "Rewind (previous song)"), ("fast_forward", "Fast Forward (next song)"),
+    ("channel_up", "Channel Up"), ("channel_down", "Channel Down"), ("last_channel", "Last Channel"),
+    ("subtitles", "Subtitles"), ("audio_track", "Audio Track"), ("live_tv", "Live TV"),
+    ("volume_up", "Volume Up"), ("volume_down", "Volume Down"), ("mute", "Mute"),
+    ("power", "Power (opens the Quick Menu)")]
+# what media keys do: whatever is playing (music, Spotify, a video, live TV, a web app) reacts
+MEDIA_ACTIONS = ("toggle", "play", "pause", "stop", "rewind", "fast_forward", "prev", "next")
 
 DEFAULT_GAMEPAD = {
     "up": ["BTN_DPAD_UP", "ABS_HAT0Y-", "ABS_Y-"],
@@ -48,12 +55,17 @@ DEFAULT_KEYBOARD = {
 DEFAULT_REMOTE = {
     "up": ["KEY_UP"], "down": ["KEY_DOWN"], "left": ["KEY_LEFT"], "right": ["KEY_RIGHT"],
     "ok": ["KEY_SELECT", "KEY_OK", "KEY_ENTER", "KEY_KPENTER"],
-    "back": ["KEY_BACK", "KEY_ESC", "KEY_EXIT", "KEY_BACKSPACE", "KEY_STOP", "KEY_STOPCD"],
-    "menu": ["KEY_MENU", "KEY_COMPOSE", "KEY_CONTEXT_MENU", "KEY_OPTION", "KEY_INFO", "KEY_EPG", "KEY_PROGRAM", "KEY_SETUP"],
+    "back": ["KEY_BACK", "KEY_ESC", "KEY_EXIT", "KEY_BACKSPACE"],
+    "menu": ["KEY_MENU", "KEY_COMPOSE", "KEY_CONTEXT_MENU", "KEY_OPTION", "KEY_INFO", "KEY_SETUP", "KEY_YELLOW"],
     "home": ["KEY_HOMEPAGE", "KEY_HOME"],
-    "prev": ["KEY_PREVIOUSSONG", "KEY_REWIND", "KEY_CHANNELDOWN", "KEY_PAGEUP"],
-    "next": ["KEY_NEXTSONG", "KEY_FASTFORWARD", "KEY_CHANNELUP", "KEY_PAGEDOWN"],
-    "toggle": ["KEY_PLAYPAUSE", "KEY_PLAY", "KEY_PAUSE", "KEY_PLAYCD", "KEY_PAUSECD", "KEY_MEDIA"],
+    "prev": ["KEY_PREVIOUSSONG"], "next": ["KEY_NEXTSONG"],
+    "toggle": ["KEY_PLAYPAUSE", "KEY_MEDIA"],
+    "play": ["KEY_PLAY", "KEY_PLAYCD"], "pause": ["KEY_PAUSE", "KEY_PAUSECD"], "stop": ["KEY_STOP", "KEY_STOPCD"],
+    "rewind": ["KEY_REWIND"], "fast_forward": ["KEY_FASTFORWARD"],
+    "channel_up": ["KEY_CHANNELUP", "KEY_PAGEUP"], "channel_down": ["KEY_CHANNELDOWN", "KEY_PAGEDOWN"],
+    "last_channel": ["KEY_RECORD", "KEY_LAST"],
+    "subtitles": ["KEY_RED", "KEY_SUBTITLE"], "audio_track": ["KEY_GREEN", "KEY_AUDIO", "KEY_LANGUAGE"],
+    "live_tv": ["KEY_BLUE", "KEY_TV", "KEY_EPG", "KEY_PROGRAM"],
     "volume_up": ["KEY_VOLUMEUP"], "volume_down": ["KEY_VOLUMEDOWN"], "mute": ["KEY_MUTE"],
     "power": ["KEY_POWER", "KEY_SLEEP", "KEY_POWER2"],
 }
@@ -70,6 +82,7 @@ REMOTE_LABELS = {
     "KEY_POWER": "Power", "KEY_SLEEP": "Sleep", "KEY_POWER2": "Power", "KEY_SEARCH": "Search",
     "KEY_VOICECOMMAND": "Voice / Mic", "KEY_RED": "Red", "KEY_GREEN": "Green", "KEY_YELLOW": "Yellow", "KEY_BLUE": "Blue",
     "KEY_TV": "TV", "KEY_SUBTITLE": "Subtitles", "KEY_AUDIO": "Audio", "KEY_LAST": "Last", "KEY_TEXT": "Teletext",
+    "KEY_RECORD": "Record", "KEY_LANGUAGE": "Language", "KEY_MINUS": "−", "KEY_KPMINUS": "−", "KEY_DOT": "·",
 }
 
 

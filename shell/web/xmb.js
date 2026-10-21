@@ -855,6 +855,7 @@ function connectEvents() {
       if (QuickMenu.open) QuickMenu.close(false);
       if (CATS.some((c) => c.id === ev.cat)) goCat(ev.cat);
       if (ev.folder === 'trophies' && typeof TROPHIES_FOLDER !== 'undefined') openFolder(TROPHIES_FOLDER);
+      if (ev.folder === 'live-tv' && typeof iptvTopFolder === 'function' && S.state.iptv?.linked) openFolder(iptvTopFolder('live'));   // a remote's Live TV / Guide button
       return;
     }
     if (ev.type === 'open-settings') { QuickMenu.open && QuickMenu.close(false); if (ev.folder) openSettingsFolder(ev.folder); else goCat('settings'); return; }

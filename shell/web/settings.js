@@ -155,11 +155,12 @@ const REMOTE_FOLDER = {
       { key: 'test', label: 'Test the Remote', icon: 'info', sub: 'Press buttons, then open this to see what Crossbar got', action: showDiagnostics },
       { key: 'how', label: 'How It Works', icon: 'info', sub: 'What each button does',
         action: () => message([
-          'Arrows move, OK selects, Back goes back, Home opens the Quick Menu, Menu (or Info / Guide) opens Options.',
-          'Play/Pause, Rewind / Fast Forward and Channel ± control music, videos and live TV; Volume and Mute change the console\'s volume; Power opens the Quick Menu (Turn Off is there), so a stray press never shuts the console down.',
-          'Number buttons type numbers. In a game or another app, the remote types the matching keys into it, and Home still brings up the Quick Menu.',
-          'Any button can be changed in Remote Buttons.',
-        ].join('\n\n'), 'TV Remote') },
+          'Arrows move, OK selects, Back goes back, Home opens the Quick Menu, Menu / Info / Yellow open Options.',
+          'Media keys work on whatever is playing: music, Spotify, a video, live TV, YouTube and other web apps — even behind a game. Play, Pause and Stop do just that; Rewind / Fast Forward skip songs in music and seek in videos.',
+          'Live TV: Channel ± changes channel, number keys type a channel number (OK enters it at once), Record jumps back to the last channel, Red is subtitles, Green the audio track, and Blue (or Guide) opens Live TV.',
+          'Volume ± and Mute change the console\'s volume. Power opens the Quick Menu, so a stray press never shuts the console down.',
+          'In a game or another app the remote types the matching keys, and Home still opens the Quick Menu. Any button can be changed in Remote Buttons.',
+].join('\n\n'), 'TV Remote') },
       { key: 'reset', label: 'Reset Remote Buttons', icon: 'refresh', sub: 'Back to the Android TV layout',
         action: async () => { if (await confirmBox('Reset all remote buttons to the defaults?')) savedControls(await api.post('/api/controls', { reset: 'remote' }), 'Remote buttons reset'); } },
     );

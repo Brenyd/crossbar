@@ -48,15 +48,21 @@ remote, an air mouse's buttons, an IR receiver or HDMI-CEC.
 
 | Remote button | What it does |
 |---|---|
-| Arrows / OK | Move / select |
-| Back (or Exit, Stop) | Back |
+| Arrows / OK | Move / select (OK also enters a typed channel number) |
+| Back | Back |
 | Home | Quick Menu, over anything |
-| Menu, Info, Guide, Settings | Options for the highlighted item |
-| Play/Pause, Rewind / Fast Forward, Previous / Next | Music, videos and live TV |
-| Channel + / − (Page Up / Down) | Next / previous (category, track, channel) |
+| Menu, Info, Yellow | Options for the highlighted item |
+| Play, Pause, Play/Pause, Stop | Whatever is playing: music, Spotify, a video, live TV, a web app — even behind a game |
+| Rewind / Fast Forward | Previous / next song in music and Spotify; back 10 s / forward 30 s in videos (hold to keep going) |
+| Channel + / − | Live TV: next / previous channel. In the menu: next / previous category |
+| Numbers | Live TV: type a channel number (it switches after a moment, or press OK). Elsewhere they type |
+| Record | Live TV: back to the last channel |
+| Red / Green | Subtitles / audio track in videos and live TV |
+| Blue (or Guide, TV) | Opens Live TV |
 | Volume + / −, Mute | The console's volume (shows the level) |
 | Power | Opens the Quick Menu: Turn Off is there, so a stray press never shuts the console down |
-| Numbers | Type numbers |
+
+The channel number is the channel's place in the list you started watching from (the category in Live TV).
 
 In a game or another app, the remote types the matching keys (arrows, Enter, Esc, Tab, media
 keys) into it, and Home still opens the Quick Menu. Every button can be changed in **TV Remote ›

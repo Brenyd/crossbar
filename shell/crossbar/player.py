@@ -139,6 +139,8 @@ def music_control(action, value=None):
         MUSIC.cmd("cycle", "pause")
     elif action == "pause":
         MUSIC.cmd("set_property", "pause", True)
+    elif action == "play":
+        MUSIC.cmd("set_property", "pause", False)
     elif action == "next":
         MUSIC.cmd("playlist-next", "force")
     elif action == "prev":

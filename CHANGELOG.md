@@ -3,12 +3,18 @@
 ## 1.2.9 Alpha
 - **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a
   SofaBaton set up as one, a Fire TV / Google TV remote, an IR receiver, HDMI-CEC — now works fully,
-  not only its arrows. OK, Back, Home (Quick Menu), Menu / Info / Guide (Options), Play/Pause,
-  Rewind / Fast Forward, Channel ±, Volume ±, Mute, Power (opens the Quick Menu instead of shutting
-  down) and the number keys. Found automatically, or by pressing a button in **Set Up a Remote…**.
-  Every button can be remapped. In games and other apps the remote types the matching keys, and Home
-  still opens the Quick Menu. The controller service holds the remote while Crossbar runs (so keys
-  never act twice) and lets it go when Crossbar stops
+  not only its arrows. Found automatically, or by pressing a button in **Set Up a Remote…**; every
+  button can be remapped, and **Test the Remote** shows what arrived
+- **Media keys control whatever is playing**: music, Spotify, a video, live TV, YouTube and other web
+  apps, even behind a game. Play, Pause and Stop do exactly that; Rewind / Fast Forward skip songs in
+  music and seek in videos (hold to keep going)
+- **Live TV with a remote**: Channel ± changes channel, number keys type a channel number, Record
+  goes back to the last channel, Red / Green switch subtitles / audio track, Blue or Guide opens Live TV
+- Volume ± and Mute change the console's volume; Home opens the Quick Menu; Power opens the Quick
+  Menu instead of shutting down. In games and other apps the remote types the matching keys. The
+  controller service holds the remote while Crossbar runs (so keys never act twice) and lets it go
+  when Crossbar stops
+- The video player: Previous goes to the previous channel in live TV (not back to 0:00)
 
 ## 1.2.8 Alpha (testing branch)
 - **Lutris installs stopped with "Couldn't find lutris-wrapper script"**: Lutris looks for its wrapper

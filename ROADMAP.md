@@ -38,6 +38,7 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 **1.2.9 Alpha**
 - 🧪 **TV remotes:** Android TV / SofaBaton / Fire TV remotes, every button mapped and remappable
+- 🧪 Media keys control whatever is playing; Channel ± and channel numbers in live TV
 
 **1.2.8 Alpha**
 - 🧪 Lutris installs run their commands (lutris-wrapper found, native and Flatpak)

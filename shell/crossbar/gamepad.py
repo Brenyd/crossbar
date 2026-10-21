@@ -80,6 +80,7 @@ class Gamepads:
         self.uinput_error = ""
         self.browser_pid = lambda: None       # set by the server: Crossbar's browser process
         self.on_browser = None                # set by the server: browser.act(action, repeat)
+        self.on_media = None                  # set by the server: media key -> music / Spotify (True if handled)
         self.reload()
 
     # ---- mapping -----------------------------------------------------------
@@ -305,7 +306,8 @@ class Gamepads:
                 self._cmd({"cmd": "key", "code": code})
                 return
             if self._uinput is None:
-                keys = sorted({evdev.ecodes.ecodes[k] for k in set(WEB_KEYS.values())} | {code}
+                keys = sorted({evdev.ecodes.ecodes[k] for k in set(WEB_KEYS.values()) | set(self.MEDIA_KEYS.values())
+                               | {"KEY_PAGEUP", "KEY_PAGEDOWN"}} | {code}
                               | {evdev.ecodes.ecodes[f"KEY_{d}"] for d in "0123456789"})
                 self._uinput = evdev.UInput({evdev.ecodes.EV_KEY: keys}, name="Crossbar Controller Keys")
                 time.sleep(0.15)
@@ -420,7 +422,10 @@ class Gamepads:
         if not actions:
             if value == 1:
                 digit = token.rsplit("_", 1)[-1]
-                if len(digit) == 1 and digit.isdigit() and self._target() not in ("overlay",):
+                if len(digit) == 1 and digit.isdigit() and self._target() == "video":
+                    player.video_input(f"digit:{digit}")         # a channel number
+                    self.log.appendleft({"t": time.time(), "token": token, "action": f"channel {digit}", "to": "video"})
+                elif len(digit) == 1 and digit.isdigit() and self._target() not in ("overlay",):
                     import evdev
                     self._key_code(evdev.ecodes.ecodes["KEY_" + digit])
                     self.log.appendleft({"t": time.time(), "token": token, "action": f"type {digit}", "to": self._target()})
@@ -433,20 +438,70 @@ class Gamepads:
                     continue
                 threading.Thread(target=self._volume, args=(a,), daemon=True).start()
                 continue
+            target = self._target()
             if value == 2:                       # the remote's own key repeat: ours handles held directions
-                if self._target() == "app" and a in controls.DIRECTIONS:
+                if target == "video" and a in ("rewind", "fast_forward"):
+                    player.video_input(a)
+                elif target == "app" and a in controls.DIRECTIONS:
                     self._web_key(a)
                 continue
+            self.log.appendleft({"t": time.time(), "token": token, "action": a, "to": target})
             if a == "power":
-                self.log.appendleft({"t": time.time(), "token": token, "action": "power", "to": "quick menu"})
                 self.on_home()
-                continue
-            target = self._target()
-            if target == "app" and a != "home":
-                self.log.appendleft({"t": time.time(), "token": token, "action": a, "to": "app (keys)"})
+            elif a in controls.MEDIA_ACTIONS:
+                self._media(a, target)
+            elif a in ("channel_up", "channel_down"):
+                if target == "video":
+                    player.video_input(a)        # live TV: the next / previous channel
+                elif target in ("web", "app"):
+                    self._key_code(self._ec("KEY_PAGEUP" if a == "channel_up" else "KEY_PAGEDOWN"))
+                else:
+                    self._press("next" if a == "channel_up" else "prev", token)
+            elif a in ("last_channel", "subtitles", "audio_track"):
+                if target == "video":
+                    player.video_input(a)
+            elif a == "live_tv":
+                if target != "xmb":
+                    system.show_shell()
+                HUB.publish({"type": "open-cat", "cat": "tv", "folder": "live-tv"})
+            elif target == "app" and a != "home":
                 self._web_key(a)                 # a game / app in front: type the matching key into it
-                continue
-            self._press(a, token)
+            else:
+                self._press(a, token)
+
+    MEDIA_KEYS = {"toggle": "KEY_PLAYPAUSE", "play": "KEY_PLAYCD", "pause": "KEY_PAUSECD", "stop": "KEY_STOPCD",
+                  "rewind": "KEY_REWIND", "fast_forward": "KEY_FASTFORWARD", "prev": "KEY_PREVIOUSSONG",
+                  "next": "KEY_NEXTSONG"}
+
+    @staticmethod
+    def _ec(name):
+        import evdev
+        return evdev.ecodes.ecodes[name]
+
+    def _media(self, a, target):
+        """Media keys reach whatever is playing: the video / live TV player, a web app or the
+        browser (as real media keys), else music or Spotify behind the menu or a game."""
+        if target == "video":
+            player.video_input(a)
+            return
+        if target in ("web", "browser"):
+            self._key_code(self._ec(self.MEDIA_KEYS[a]))
+            return
+        threading.Thread(target=self._media_behind, args=(a, target), daemon=True).start()
+
+    def _media_behind(self, a, target):
+        try:
+            if self.on_media and self.on_media(a):
+                return
+        except Exception as e:
+            self.log.appendleft({"t": time.time(), "token": a, "action": f"media failed: {e}", "to": "music"})
+            return
+        if player.VIDEO.running():               # a video left open behind the menu
+            player.video_input(a)
+        elif target == "app":
+            self._key_code(self._ec(self.MEDIA_KEYS[a]))
+        else:
+            HUB.publish({"type": "notice", "icon": "music", "text": "Nothing is playing"})
 
     def _volume(self, a):
         try:

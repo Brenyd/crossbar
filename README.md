@@ -54,7 +54,7 @@ It installs next to the system you already have (CachyOS works great, including 
 
 | | |
 |---|---|
-| **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys, volume, channel ±, numbers, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
+| **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys for whatever is playing, volume, channel ± and channel numbers for live TV, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
 | **Lutris installers** (1.2.7) | The community install scripts for thousands of games, run by Lutris's own engine. Point it at your own setup files or disc images, and every question it asks comes up on the TV. |
 | **Jackett** (1.2.7) | Hundreds of public and private trackers, each set up from the controller with its own form (including captchas), searched alongside your plugins. |
 | **Two interfaces** (1.2) | The PS3-style cross-media bar, or a ground-up Xbox 360-style Dashboard with a Guide over games. Your choice is the one that boots. |
@@ -174,10 +174,13 @@ Pair the remote in **Settings › Bluetooth**. For a **SofaBaton**, add the cons
 *Android TV* device first. Most remotes are recognised on their own; if yours isn't, use **Settings ›
 Controller, Remote & Keyboard › TV Remote › Set Up a Remote…** and press any button on it.
 
-- **Arrows and OK** move and select, **Back** goes back, **Home** opens the Quick Menu, and **Menu / Info /
-  Guide** opens Options.
-- **Play/Pause, Rewind, Fast Forward and Channel ±** control music, videos and live TV.
-- **Volume ± and Mute** change the console's volume, and **numbers** type.
+- **Arrows and OK** move and select, **Back** goes back, **Home** opens the Quick Menu, and **Menu / Info**
+  opens Options.
+- **Media keys control whatever is playing:** music, Spotify, a video, live TV, YouTube and other web apps,
+  even behind a game. Play, Pause and Stop do exactly that; Rewind / Fast Forward skip songs and seek videos.
+- **Live TV:** Channel ± changes channel, the number keys type a channel number, Record goes back to the
+  last channel, Red / Green pick subtitles / audio, and Blue (or Guide) opens Live TV.
+- **Volume ± and Mute** change the console's volume.
 - **Power** opens the Quick Menu, where Turn Off is, so a stray press never shuts the console down.
 - **In a game or another app** the remote types the matching keys into it, and Home still brings up
   the Quick Menu.
@@ -281,8 +284,8 @@ erases the chosen disk.
 | Select / Back | A ✕ / B ○ | OK / Back | Enter / Esc |
 | Options for the highlighted item | Y △ | Menu (or Info, Guide) | Tab |
 | Quick Menu, over anything | **Select + Start** | **Home** (or Power) | Home, or Super+Esc |
-| Change pivot / Guide tab (Dashboard) | LB / RB | Channel ± | |
-| Play/Pause, previous / next track | Start, LB / RB | Play/Pause, Rewind / Fast Forward | P, Page Up / Page Down |
+| Change pivot / Guide tab (Dashboard) | LB / RB | Channel ± (in live TV: channels) | |
+| Play/Pause, previous / next track | Start, LB / RB | Play, Pause, Stop, Rewind / Fast Forward (whatever is playing) | P, Page Up / Page Down |
 | Volume | Quick Menu › Volume | Volume ±, Mute | |
 | Steam's overlay (Steam games) | Guide / PS | | Shift+Tab |
 | Terminal | | | Ctrl+Alt+T |

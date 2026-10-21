@@ -81,6 +81,38 @@ def _browser_keyboard():
 
 PADS.browser_pid = lambda: BROWSER.proc.pid if BROWSER.running() else None
 PADS.on_browser = _browser_input
+
+
+def _remote_media(action):
+    """A TV remote's media key while the menu, the Quick Menu or a game is in front: whatever is
+    playing in the background reacts (local music first, then Spotify). False if nothing is."""
+    m = {"rewind": "prev", "fast_forward": "next"}.get(action, action)
+    if player.MUSIC.running():
+        player.music_control(m)
+        st = player.music_state() or {}
+        if m == "stop":
+            text = "Music stopped"
+        else:
+            text = ("⏸ " if st.get("paused") else "▶ ") + (st.get("title") or "") + (f" — {st['artist']}" if st.get("artist") else "")
+        HUB.publish({"type": "notice", "icon": "music", "text": text})
+        return True
+    try:
+        if SPOTIFY.status()["linked"]:
+            now = SPOTIFY.now()
+            if now:
+                sm = {"play": None if now.get("playing") else "toggle", "pause": "pause", "stop": "pause"}.get(m, m)
+                r = SPOTIFY.control(sm) if sm else now
+                r = r or {}
+                HUB.publish({"type": "notice", "icon": "music",
+                             "text": ("▶ " if r.get("playing") else "⏸ ") + (r.get("name") or "Spotify")
+                             + (f" — {r['artist']}" if r.get("artist") else "")})
+                return True
+    except Exception as e:
+        print(f"remote media: spotify: {e}", flush=True)
+    return False
+
+
+PADS.on_media = _remote_media
 BROWSER.on_keyboard = _browser_keyboard
 threading.Thread(target=_browser_worker, daemon=True).start()
 FORCE_DEMO = False
