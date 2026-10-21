@@ -1,6 +1,18 @@
 # Changelog
 
-## 1.2.7 Alpha (testing branch)
+## 1.2.8 Alpha (testing branch)
+- **Lutris installs stopped with "Couldn't find lutris-wrapper script"**: Lutris looks for its wrapper
+  next to the program that started it, which was Crossbar's helper (and, in the Flatpak, Lutris lives
+  under /app). The helper now finds Lutris's real folder first, so install commands run
+- **Jackett stopped right away (CultureNotFoundException, en-US)**: Crossbar started it in .NET's
+  ICU-free mode, which Jackett can't run in. It now uses the system's ICU, and if there is none,
+  lets .NET accept named cultures. When Jackett does fail to start, the reason is in the message
+- **Bluetooth controllers that wouldn't connect** (br-connection-busy / br-connection-create-socket):
+  pressing Connect twice no longer starts two connections; paired devices are trusted, so a
+  controller connects itself when its PS button is pressed; a connect that fails says what to do;
+  new **Pair Again** in Options forgets the device, finds it in pairing mode and pairs it fresh
+
+## 1.2.7 Alpha
 - **Jackett in Torrents** (Torrents › Jackett): install the official Jackett build from its GitHub,
   then add any tracker it supports — public, semi-private, private with your account — and fill in
   each tracker's own settings form with the controller (text, password, choices, categories, options,

@@ -184,6 +184,37 @@ def running():
         return False
 
 
+def _has_icu():
+    import glob
+    for d in ("/usr/lib", "/usr/lib64", "/usr/lib/x86_64-linux-gnu", "/usr/local/lib", "/lib64"):
+        if glob.glob(os.path.join(d, "libicuuc.so*")):
+            return True
+    return False
+
+
+def _dotnet_env():
+    """Jackett asks for the en-US culture at start: with ICU (the icu package) it runs normally; without
+    it, .NET's invariant mode must also be told to accept named cultures, or Jackett crashes with
+    CultureNotFoundException ("Only the invariant culture is supported")."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("DOTNET_SYSTEM_GLOBALIZATION")}
+    env["DOTNET_SYSTEM_GLOBALIZATION_PREDEFINED_CULTURES_ONLY"] = "false"
+    if not _has_icu():
+        env["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1"
+    return env
+
+
+def _last_error():
+    try:
+        with open(os.path.join(util.HOME, ".cache", "crossbar-jackett.log"), errors="replace") as f:
+            tail = f.read()[-6000:]
+    except OSError:
+        return ""
+    m = None
+    for m in re.finditer(r"(?:Unhandled exception\.\s*)?([A-Za-z.]+(?:Exception|Error)):\s*([^\n]{0,160})", tail):
+        pass
+    return f": {m.group(1).split('.')[-1]} — {m.group(2).strip()}" if m else ""
+
+
 def start():
     """Start Jackett if it isn't running (as you, on this machine only; through the VPN when
     Torrents uses it, since Jackett is what talks to the torrent sites)."""
@@ -196,7 +227,7 @@ def start():
     argv = [b, "--NoUpdates", "--NoRestart"]
     if vpn.uses_vpn("torrents"):
         argv = vpn.wrap(argv, "torrents")
-    env = {**os.environ, "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT": "1"}     # no ICU needed
+    env = _dotnet_env()
     os.makedirs(os.path.join(util.HOME, ".cache"), exist_ok=True)
     log = open(os.path.join(util.HOME, ".cache", "crossbar-jackett.log"), "a")
     _state["proc"] = subprocess.Popen(argv, cwd=os.path.dirname(b), stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT,
@@ -207,7 +238,7 @@ def start():
         if running():
             return True
         if _state["proc"].poll() is not None:
-            raise JackettError("Jackett stopped right away (see ~/.cache/crossbar-jackett.log)")
+            raise JackettError("Jackett stopped right away" + (_last_error() or " (see ~/.cache/crossbar-jackett.log)"))
     raise JackettError("Jackett didn't start within a minute (see ~/.cache/crossbar-jackett.log)")
 
 

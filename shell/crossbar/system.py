@@ -666,8 +666,63 @@ def bluetooth_pair(mac):
         p.wait(timeout=5)
 
 
+_bt_busy = {}
+_bt_lock = threading.Lock()
+
+
+def _bt_connected(mac):
+    return "Connected: yes" in _btctl("info", mac, timeout=5)
+
+
+def _bt_connect(mac):
+    """Connect a paired device. Controllers (DualSense, DualShock, Xbox) mostly connect themselves
+    when their PS / Guide button is pressed: trusting them is what lets that work, and a host-side
+    connect to a controller that's asleep fails with br-connection-create-socket."""
+    with _bt_lock:
+        if _bt_busy.get(mac, 0) > time.time():
+            raise RuntimeError("Already connecting — give it a few seconds")
+        _bt_busy[mac] = time.time() + 30
+    try:
+        info = _btctl("info", mac, timeout=5)
+        pad = "Icon: input-gaming" in info
+        if "Trusted: no" in info:
+            _btctl("trust", mac, timeout=5)
+        for attempt in range(2):
+            out = _btctl("connect", mac, timeout=25)
+            if "Connection successful" in out or _bt_connected(mac):
+                return
+            if "InProgress" in out or "busy" in out:          # BlueZ is already connecting: wait for it
+                for _ in range(20):
+                    time.sleep(0.5)
+                    if _bt_connected(mac):
+                        return
+            time.sleep(1.5)
+            if _bt_connected(mac):                            # the device connected itself meanwhile
+                return
+        if pad:
+            raise RuntimeError("The controller didn't answer. Press its PS (or Guide) button to connect it. "
+                               "If the light just blinks and goes out, it's paired with another system: "
+                               "choose Pair Again in Options")
+        raise RuntimeError("The device didn't answer: switch it on and bring it closer, or choose Pair Again in Options")
+    finally:
+        _bt_busy.pop(mac, None)
+
+
+def bluetooth_repair(mac):
+    """Forget the device, find it again in pairing mode, and pair it fresh (a stale link key is the
+    usual reason a paired controller stops connecting)."""
+    _btctl("remove", mac, timeout=10)
+    for _ in range(3):
+        bluetooth_scan(8)
+        if mac in _bt_devices():
+            return bluetooth_pair(mac)
+    raise RuntimeError("Didn't find it: hold Create + PS (Share + PS on a DualShock 4) until the light flashes fast, then try again")
+
+
 def bluetooth_do(action, mac):
-    word = {"connect": "Connection successful", "disconnect": "Successful disconnected", "remove": "Device has been removed"}[action]
+    if action == "connect":
+        return _bt_connect(mac)
+    word = {"disconnect": "Successful disconnected", "remove": "Device has been removed"}[action]
     out = _btctl(action, mac, timeout=25)
     if word.split()[0] not in out:
         raise RuntimeError(out.strip().splitlines()[-1] if out.strip() else f"{action} failed")

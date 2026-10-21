@@ -36,6 +36,11 @@ Newest first. Each version lists what it added; ⚠️ marks features that still
 
 ### 1.2 series: two interfaces, and staying out of the game's way
 
+**1.2.8 Alpha**
+- 🧪 Lutris installs run their commands (lutris-wrapper found, native and Flatpak)
+- 🧪 Jackett starts (no more en-US culture crash)
+- 🧪 Bluetooth controllers: no double connects, trusted so the PS button connects them, Pair Again
+
 **1.2.7 Alpha**
 - 🧪 **Jackett** in Torrents: install, add / configure any tracker from the controller, search through it
 - 🧪 **Lutris installers** in Install Apps: community scripts, your own files and discs, every prompt on the TV

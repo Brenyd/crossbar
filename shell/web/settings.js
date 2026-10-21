@@ -640,10 +640,13 @@ const SETTINGS_FOLDERS = [
       for (const d of bt.devices) {
         const act = (a, ok) => async () => { await call(() => api.post(`/api/bluetooth/${a}`, { mac: d.mac }), ok); reloadFolder(); };
         items.push({ key: `bt:${d.mac}`, label: d.name, icon: d.connected ? 'check' : d.kind,
-          sub: d.connected ? 'Connected' : d.paired ? 'Paired — {ok} to connect' : 'Not paired — {ok} to pair',
-          action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? act('connect', `Connected ${d.name}`)
+          sub: d.connected ? 'Connected' : d.paired ? (d.kind === 'game' ? 'Paired — press its PS button, or {ok} to connect' : 'Paired — {ok} to connect') : 'Not paired — {ok} to pair',
+          action: d.connected ? act('disconnect', `Disconnected ${d.name}`) : d.paired ? (() => { toast(`Connecting ${d.name}…`, d.kind); return act('connect', `Connected ${d.name}`)(); })
             : async () => { toast(`Pairing ${d.name}…`, 'game'); await call(() => api.post('/api/bluetooth/pair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 3000); },
           options: [{ label: d.connected ? 'Disconnect' : 'Connect', action: d.connected ? act('disconnect') : act('connect') },
+                    ...(d.paired ? [{ label: 'Pair Again', action: async () => {
+                      if (!(await confirmBox(d.kind === 'game' ? `Hold Create + PS on ${d.name} until its light flashes fast, then choose OK.` : `Put ${d.name} in pairing mode, then choose OK.`))) return;
+                      toast(`Pairing ${d.name} again…`, d.kind); await call(() => api.post('/api/bluetooth/repair', { mac: d.mac, name: d.name })); pollJobs(); setTimeout(reloadFolder, 15000); } }] : []),
                     { label: 'Forget Device', action: async () => { if (await confirmBox(`Forget ${d.name}?`)) act('remove', `Forgot ${d.name}`)(); } }] });
       }
       return items;
@@ -726,8 +729,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.7 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.7 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.8 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.8 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

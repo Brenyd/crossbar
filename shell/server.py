@@ -1154,6 +1154,8 @@ def route_post(path, b):
             return JOBS.start("scan", "Bluetooth", lambda j: system.bluetooth_scan(10)).as_dict()
         if parts[1] == "pair":
             return JOBS.start("pair", b.get("name") or b["mac"], lambda j: system.bluetooth_pair(b["mac"])).as_dict()
+        if parts[1] == "repair":
+            return JOBS.start("pair", b.get("name") or b["mac"], lambda j: system.bluetooth_repair(b["mac"])).as_dict()
         system.bluetooth_do(parts[1], b["mac"])       # connect / disconnect / remove
         return system.bluetooth_status()
     if head == "time":

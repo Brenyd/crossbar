@@ -41,8 +41,38 @@ def ask(event, **kw):
     return json.loads(line)
 
 
+def _point_at_wrapper():
+    """Lutris finds its lutris-wrapper script (which every install command runs through) next to the
+    program that started it: sys.argv[0]/../share/lutris/bin. Started as this helper — and in the Flatpak,
+    where Lutris lives under /app — that misses, so find the real prefix and say Lutris was started from there."""
+    import shutil
+    rel = os.path.join("share", "lutris", "bin", "lutris-wrapper")
+    prefixes = []
+    exe = shutil.which("lutris")
+    if exe:
+        prefixes.append(os.path.dirname(os.path.dirname(os.path.realpath(exe))))
+    prefixes += [sys.prefix, sys.base_prefix, "/app", "/usr", "/usr/local", os.path.expanduser("~/.local")]
+    try:
+        import lutris
+        d = os.path.dirname(os.path.abspath(lutris.__file__))
+        while d != os.path.dirname(d):                      # …/lib/python3.x/site-packages/lutris → walk up
+            d = os.path.dirname(d)
+            prefixes.append(d)
+    except Exception:
+        pass
+    for pre in prefixes:
+        if os.path.isfile(os.path.join(pre, rel)):
+            sys.argv[0] = os.path.join(pre, "bin", "lutris")
+            return os.path.join(pre, rel)
+    return None
+
+
 def main():
     job = json.loads(sys.argv[1])
+    if not _point_at_wrapper():
+        emit("error", text="Lutris's lutris-wrapper script is missing, so it can't run install commands. "
+                           "Reinstall Lutris (Install Apps › Lutris), then try again.")
+        return 2
     os.environ.setdefault("LUTRIS_SKIP_INIT", "1")
     import gi
     gi.require_version("Gtk", "3.0")
