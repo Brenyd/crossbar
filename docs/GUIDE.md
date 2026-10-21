@@ -120,7 +120,7 @@ one, and [LOOKS.md](LOOKS.md) to build a new console skin.
 
 ## Button glyphs
 
-**Settings › Controller & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
+**Settings › Controller, Remote & Keyboard › Button Glyphs**: Automatic (matches the connected controller),
 Xbox (A B X Y), PlayStation (✕ ○ □ △) or Nintendo (B A Y X). Every hint uses them — the menu, the
 Quick Menu, the video player's panel and the remapping screen — and they follow your button mapping,
 so a remapped action shows the button you actually press. Glyphs follow the button's *position*
@@ -132,7 +132,7 @@ so a remapped action shows the button you actually press. Glyphs follow the butt
 Press **Select + Start** (or **Home**) during a game, video or app. The Quick Menu opens **on top
 of** whatever is running — a native window on the Wayland overlay layer, like the Steam or Discord
 overlay — and takes the controller and keyboard while it's open, so the game underneath doesn't
-react. Guide/PS is left to Steam by default (Settings › Controller & Keyboard can give it to
+react. Guide/PS is left to Steam by default (Settings › Controller, Remote & Keyboard can give it to
 Crossbar instead). It follows your Interface:
 
 | Cross-media bar | Dashboard |
@@ -535,7 +535,7 @@ When a game closes you're back in the menu.
 ## Settings
 
 The Settings column groups related sections: **Display & Sound**, **Network & Bluetooth**,
-**Controller & Keyboard**, **Games & Emulation** (Game Settings, Artwork, Emulation), **Media**,
+**Controller, Remote & Keyboard**, **Games & Emulation** (Game Settings, Artwork, Emulation), **Media**,
 **Accounts**, **Theme & Time** and **System** (with PS5 Hardware on a PS5).
 
 | Section | What's in it |
@@ -544,7 +544,7 @@ The Settings column groups related sections: **Display & Sound**, **Network & Bl
 | Sound | Output device, input (mic) device, volumes, menu sounds |
 | Network | Status, Wi-Fi on/off, scan, connect, disconnect, forget; VPN; speed test; network drives (SMB/NFS) |
 | Bluetooth | On/off, find devices, pair controllers and headsets, connect, forget |
-| Controller & Keyboard | Remap every button and key, button combos, Guide/PS option, swap Select/Back, diagnostics |
+| Controller, Remote & Keyboard | Remap every button, remote key and keyboard key, TV remote setup, button combos, Guide/PS option, swap Select/Back, diagnostics |
 | Game Settings | Windows games (Proton/Wine picker, GE-Proton downloads), Big Picture launching, gamescope, free memory while gaming, Memory Guard, frame rate overlay, demo library |
 | Artwork | SteamGridDB API key, fill in missing artwork, reset all |
 | Theme | Interface (cross-media bar or Dashboard), then that look's settings — Dashboard: background and accent colour; cross-media bar: wave colour — plus theme packs (stock and your own, install from a folder or .zip) — see [Interfaces](#interfaces) and [THEMES.md](THEMES.md) |

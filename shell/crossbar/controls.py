@@ -59,7 +59,7 @@ DEFAULT_REMOTE = {
 }
 REMOTE_LABELS = {
     "KEY_UP": "Up", "KEY_DOWN": "Down", "KEY_LEFT": "Left", "KEY_RIGHT": "Right", "KEY_SELECT": "OK", "KEY_OK": "OK",
-    "KEY_ENTER": "OK / Enter", "KEY_KPENTER": "Enter", "KEY_BACK": "Back", "KEY_ESC": "Esc", "KEY_EXIT": "Exit",
+    "KEY_ENTER": "Enter", "KEY_KPENTER": "Enter", "KEY_BACK": "Back", "KEY_ESC": "Esc", "KEY_EXIT": "Exit",
     "KEY_BACKSPACE": "Backspace", "KEY_STOP": "Stop", "KEY_STOPCD": "Stop", "KEY_MENU": "Menu", "KEY_COMPOSE": "Menu",
     "KEY_CONTEXT_MENU": "Menu", "KEY_OPTION": "Options", "KEY_INFO": "Info", "KEY_EPG": "Guide", "KEY_PROGRAM": "Guide",
     "KEY_SETUP": "Settings", "KEY_HOMEPAGE": "Home", "KEY_HOME": "Home", "KEY_PREVIOUSSONG": "Previous",

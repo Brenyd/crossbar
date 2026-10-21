@@ -555,7 +555,7 @@ class Model:
     def build_settings(self):
         api = self.api
         return [
-            {"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller & Keyboard", "sub": "Button mapping, glyphs",
+            {"key": "pad", "icon": "input-gaming-symbolic", "label": "Controller, Remote & Keyboard", "sub": "Button mapping, TV remote, glyphs",
              "ok": lambda: api.post("/api/overlay/settings", {"folder": "controls"})},
             {"key": "display", "icon": "video-display-symbolic", "label": "Display & Sound", "sub": "Resolution, outputs",
              "ok": lambda: api.post("/api/overlay/settings", {"folder": "display"})},
