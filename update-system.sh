@@ -74,6 +74,15 @@ install -Dm644 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.deskto
 if [[ -x "$HERE/ps5-session.sh" ]] && "$HERE/ps5-session.sh" detect 2>/dev/null; then
   "$HERE/ps5-session.sh" repatch "$U" || echo "warning: couldn't update the PS5 session switcher"
 fi
+# a "Return to Crossbar" icon on the Plasma desktop (once: if you delete it, it stays deleted)
+if [[ -x /usr/bin/startplasma-wayland || -x /usr/bin/startplasma-x11 ]] && [[ ! -e "$UHOME/.config/crossbar/desktop-icon-added" ]]; then
+  DESK=$(sudo -u "$U" HOME="$UHOME" xdg-user-dir DESKTOP 2>/dev/null || true)
+  [[ -n "$DESK" && "$DESK" != "$UHOME" ]] || DESK="$UHOME/Desktop"
+  sudo -u "$U" mkdir -p "$DESK" "$UHOME/.config/crossbar"
+  sudo -u "$U" install -m755 "$HERE/iso/airootfs/usr/share/applications/crossbar-return.desktop" "$DESK/crossbar-return.desktop"
+  sudo -u "$U" touch "$UHOME/.config/crossbar/desktop-icon-added"
+  echo "Return to Crossbar icon added to the desktop ($DESK)"
+fi
 # screen capture (Discord's Share Screen) in the Crossbar session only
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal/sway-portals.conf" /etc/xdg/xdg-desktop-portal/sway-portals.conf
 install -Dm644 "$HERE/iso/airootfs/etc/xdg/xdg-desktop-portal-wlr/sway" /etc/xdg/xdg-desktop-portal-wlr/sway

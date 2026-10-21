@@ -19,6 +19,8 @@
   Plasma closes was only added when the PS5 switcher script matched one exact line, and updates
   never re-applied it. It's now placed wherever that script hands over to gaming mode, every update
   refreshes it, and Return to Crossbar ends the desktop session itself if the hook is ever missing
+- **Return to Crossbar icon on the Plasma desktop**, added by the installer and by Update (once: delete
+  it and it stays deleted; Uninstall removes it)
 
 ## 1.2.8 Alpha (testing branch)
 - **Lutris installs stopped with "Couldn't find lutris-wrapper script"**: Lutris looks for its wrapper
