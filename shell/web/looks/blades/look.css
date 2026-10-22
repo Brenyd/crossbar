@@ -36,37 +36,36 @@ body[data-shell="blades"][data-bbg="dark"] #demo-badge { color: rgba(255,255,255
 /* ---- the blades ---- */
 #b-root { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 #b-root .b-blades { position: absolute; inset: 0; perspective: 1800px; }
-.b-blade { position: absolute; top: 92px; height: 912px; border-radius: 22px 22px 6px 6px; overflow: hidden;
-  background: linear-gradient(180deg, var(--c) 0%, color-mix(in srgb, var(--c) 55%, var(--c2)) 46%, var(--c2) 100%);
-  box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 2px 0 rgba(255,255,255,.55), inset 0 -2px 0 rgba(0,0,0,.25);
+.b-blade { position: absolute; top: 92px; height: 912px; overflow: visible;
+  filter: drop-shadow(0 16px 22px rgba(0,0,0,.32));
   transition: left .42s cubic-bezier(.2,.8,.2,1), width .42s cubic-bezier(.2,.8,.2,1), transform .42s cubic-bezier(.2,.8,.2,1), filter .3s; }
-/* glass: the shine across the top of every blade */
-.b-blade .b-gloss { position: absolute; left: 0; right: 0; top: 0; height: 46%;
-  background: linear-gradient(180deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,.16) 38%, rgba(255,255,255,0) 100%); }
-.b-blade::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%;
-  background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.22)); }
-/* closed blades: just the edge, leaning back a little, the name running up it */
-.b-blade.l { transform: rotateY(14deg); transform-origin: 100% 50%; filter: brightness(.86); border-radius: 14px 6px 6px 14px; }
-.b-blade.r { transform: rotateY(-14deg); transform-origin: 0 50%; filter: brightness(.86); border-radius: 6px 14px 14px 6px; }
-.b-blade .b-spine { position: absolute; left: 0; width: 50px; top: 0; bottom: 0; display: flex; flex-direction: column; align-items: center;
-  padding-top: 26px; gap: 18px; transition: opacity .25s; }
+.b-blade .b-shape, .b-blade .b-paint { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* closed blades: just the edge, leaning back, the name running up it, pressed into the glass */
+.b-blade.l { transform: rotateY(16deg); transform-origin: 100% 50%; filter: drop-shadow(0 12px 16px rgba(0,0,0,.3)) brightness(.9) saturate(.95); }
+.b-blade.r { transform: rotateY(-16deg); transform-origin: 0 50%; filter: drop-shadow(0 12px 16px rgba(0,0,0,.3)) brightness(.9) saturate(.95); }
+.b-blade .b-spine { position: absolute; left: 0; width: 50px; top: 150px; bottom: 0; display: flex; flex-direction: column; align-items: center;
+  padding-top: 18px; gap: 18px; transition: opacity .25s; }
 .b-blade.on .b-spine { opacity: 0; }
-.b-blade .b-sico { width: 30px; height: 30px; flex: none; }
-.b-blade .b-sico .i { color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
-.b-blade .b-sl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 24px; letter-spacing: .5px; color: #fff; white-space: nowrap;
-  text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 8px rgba(0,0,0,.25); }
-.b-blade.on { box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.65), inset 0 -2px 0 rgba(0,0,0,.25); }
+.b-blade .b-sico { width: 28px; height: 28px; flex: none; }
+.b-blade .b-sico .i { color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.45)); }
+.b-blade .b-sl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 23px; letter-spacing: 1px; color: #fff; white-space: nowrap;
+  text-shadow: 0 -1px 0 rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.35), 0 0 10px rgba(0,0,0,.25); }
+.b-blade.on { filter: drop-shadow(0 26px 34px rgba(0,0,0,.42)); }
+/* flipping: the blade you go to swings round from its stack like a page */
+.b-blade.swing-r { animation: b-swing-r .5s cubic-bezier(.2,.8,.2,1); transform-origin: 100% 50%; }
+.b-blade.swing-l { animation: b-swing-l .5s cubic-bezier(.2,.8,.2,1); transform-origin: 0 50%; }
+@keyframes b-swing-r { from { transform: rotateY(-38deg); } }
+@keyframes b-swing-l { from { transform: rotateY(38deg); } }
 
 /* ---- on the open blade: its name, your card, the list, the showcase ---- */
-#b-root .b-head { position: absolute; top: 128px; z-index: 60; transition: left .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-head { position: absolute; top: 146px; z-index: 60; transition: left .42s cubic-bezier(.2,.8,.2,1); }
 #b-root .b-crumb { font-size: 22px; color: #fff; opacity: .9; height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-shadow: 0 1px 3px rgba(0,0,0,.55); }
 #b-root .b-title { font-size: 62px; font-weight: 300; letter-spacing: -.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   text-shadow: 0 2px 6px rgba(0,0,0,.35); }
 #b-root .b-title.in { animation: b-in .4s cubic-bezier(.2,.8,.2,1); }
 @keyframes b-in { from { opacity: 0; transform: translateX(40px); } }
-#b-root .b-head::after { content: ""; position: absolute; left: 0; right: -420px; top: 118px; height: 2px;
-  background: linear-gradient(90deg, rgba(255,255,255,.7), rgba(255,255,255,0)); }
+#b-root .b-rule { position: absolute; left: -12px; top: 112px; width: calc(100% + 440px); height: 24px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
 #b-root .b-card { position: absolute; top: 132px; z-index: 60; display: flex; align-items: center; gap: 16px; padding: 10px 22px 10px 10px;
   border-radius: 10px; background: linear-gradient(rgba(255,255,255,.3), rgba(255,255,255,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 4px 14px rgba(0,0,0,.18);
   transition: right .42s cubic-bezier(.2,.8,.2,1); }
@@ -116,7 +115,7 @@ body[data-shell="blades"] #column .item.on .bar i { background: var(--b-c2); }
 body[data-shell="blades"] #column.swap .item { opacity: 0 !important; }
 
 /* the showcase */
-#b-root .b-show { position: absolute; top: 276px; z-index: 56; transition: left .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-show { position: absolute; top: 304px; z-index: 56; transition: left .42s cubic-bezier(.2,.8,.2,1); }
 #b-root .b-show[hidden] { display: none; }
 #b-root .b-show.in { animation: b-show .35s cubic-bezier(.2,.8,.2,1); }
 @keyframes b-show { from { opacity: 0; transform: translateY(14px); } }
@@ -211,12 +210,11 @@ body[data-shell="blades"] .toast .ico .i { color: #fff; filter: none; }
 body[data-shell="blades"] #quick .q-panel { display: none; }
 body[data-shell="blades"] #quick .q-shade, body[data-shell="blades"] #quick:not(.has-shot) .q-shade { background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.25)); }
 body:not([data-shell="blades"]) #quick .b-guide { display: none; }
-.b-guide { position: absolute; left: 64px; top: 92px; width: 760px; height: 912px; display: flex; flex-direction: column; overflow: hidden;
-  border-radius: 22px 22px 6px 6px; color: #fff; font-family: var(--b-font);
-  background: linear-gradient(180deg, var(--g-c2) 0%, color-mix(in srgb, var(--g-c) 60%, var(--g-c2)) 40%, var(--g-c) 100%);
-  box-shadow: 0 24px 60px rgba(0,0,0,.5), inset 0 2px 0 rgba(255,255,255,.6); animation: b-guide .3s cubic-bezier(.2,.8,.2,1); }
-.b-guide .b-gloss { position: absolute; left: 0; right: 0; top: 0; height: 40%; pointer-events: none;
-  background: linear-gradient(180deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,.12) 40%, rgba(255,255,255,0)); }
+.b-guide { position: absolute; left: 64px; top: 92px; width: 760px; height: 912px; display: flex; flex-direction: column;
+  color: #fff; font-family: var(--b-font); filter: drop-shadow(0 24px 34px rgba(0,0,0,.5)); animation: b-guide .3s cubic-bezier(.2,.8,.2,1); }
+.b-guide .b-shape { position: absolute; inset: 0; }
+.b-guide .b-shape .b-paint { width: 100%; height: 100%; display: block; }
+.b-guide .bg-card { margin-top: 70px; }
 @keyframes b-guide { from { transform: translateX(-200px); opacity: 0; } }
 .bg-card { position: relative; display: flex; align-items: center; gap: 18px; margin: 34px 40px 0; padding: 12px 22px 12px 12px; border-radius: 10px;
   background: linear-gradient(rgba(255,255,255,.3), rgba(255,255,255,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); }
@@ -254,3 +252,81 @@ body[data-shell="blades"] #launch { background: rgba(0,0,0,.75); }
 body[data-shell="blades"] #launch .l-spin { border-color: rgba(255,255,255,.15); border-top-color: var(--b-c); }
 body[data-shell="blades"] #launch .l-title { font-weight: 300; }
 #stage:has(#quick:not([hidden])) #hint, #stage:has(#dialog:not([hidden])) #hint { opacity: .25; }
+
+/* ================================================================ hand-finished details */
+/* list rows: a faint engraved line between them, icons sitting in small glass orbs */
+body[data-shell="blades"] #column .item::after { content: ""; position: absolute; left: 70px; right: 30px; bottom: -4px; height: 2px;
+  background: linear-gradient(90deg, rgba(0,0,0,.14), rgba(0,0,0,.05) 70%, transparent), linear-gradient(90deg, rgba(255,255,255,.22), transparent 75%);
+  background-size: 100% 1px, 100% 1px; background-position: 0 0, 0 1px; background-repeat: no-repeat; }
+body[data-shell="blades"] #column .item.on::after { opacity: 0; }
+body[data-shell="blades"] #column .item .ico.b-orbi { width: 46px; height: 46px; padding: 9px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, rgba(255,255,255,.75), rgba(255,255,255,.12) 52%, rgba(0,0,0,.18) 53%, rgba(255,255,255,.18) 100%), var(--b-c2);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.8), inset 0 -2px 4px rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.3); }
+body[data-shell="blades"] #column .item.on .ico.b-orbi { width: 46px; height: 46px; box-shadow: inset 0 1px 1px rgba(255,255,255,.9), inset 0 -2px 4px rgba(0,0,0,.2), 0 0 10px color-mix(in srgb, var(--b-c) 70%, #fff); }
+body[data-shell="blades"] #column .item .ico.b-orbi .i, body[data-shell="blades"] #column .item.on .ico.b-orbi .i { color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
+/* the highlight: a glass capsule, its shine curved, a soft halo in the blade's light */
+body[data-shell="blades"] #column .item.on { border-radius: 32px; overflow: hidden;
+  background: radial-gradient(ellipse 120% 90% at 30% -20%, #ffffff 0%, #ffffff 46%, rgba(255,255,255,0) 47%),
+              linear-gradient(180deg, #f7f9fa 0%, #e3e9ed 55%, #d2dbe1 56%, #eef2f4 100%);
+  box-shadow: 0 0 0 2px rgba(255,255,255,.95), 0 0 0 4px color-mix(in srgb, var(--b-c2) 35%, transparent),
+              0 0 26px 4px color-mix(in srgb, var(--b-c) 55%, #fff), 0 8px 16px rgba(0,0,0,.28), inset 0 -3px 6px rgba(0,0,0,.08); }
+body[data-shell="blades"] #column .item.on .label { color: #1d2226; text-shadow: 0 1px 0 rgba(255,255,255,.9); }
+/* the showcase: a bevelled frame, shine curving over the top, a reflection below */
+#b-root .b-frame { position: relative; display: inline-block; max-width: 100%; padding: 8px; border-radius: 18px;
+  background: linear-gradient(160deg, rgba(255,255,255,.75), rgba(255,255,255,.18) 40%, rgba(0,0,0,.2) 100%);
+  box-shadow: 0 14px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.3);
+  -webkit-box-reflect: below 6px linear-gradient(transparent 80%, rgba(255,255,255,.28)); }
+#b-root .b-frame::after { content: ""; position: absolute; inset: 8px; border-radius: 11px; pointer-events: none;
+  background: radial-gradient(ellipse 140% 70% at 20% -18%, rgba(255,255,255,.55), rgba(255,255,255,.12) 55%, rgba(255,255,255,0) 56%); }
+#b-root .b-frame .b-art { width: 600px; max-width: 100%; border-radius: 11px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.25); -webkit-box-reflect: none; }
+#b-root .b-frame .b-art.ic, #b-root .b-frame .b-art.poster, #b-root .b-frame .b-art.square { width: 300px; }
+#b-root .b-s-label { margin-top: 58px; }
+/* your card: a glass plate with a swept right end */
+#b-root .b-card { border-radius: 12px 44px 44px 12px; padding: 9px 34px 9px 9px;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.16) 50%, rgba(255,255,255,.06) 51%, rgba(255,255,255,.22));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.2), 0 6px 16px rgba(0,0,0,.25); }
+#b-root .b-pic { border-radius: 8px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.7), 0 2px 4px rgba(0,0,0,.35);
+  background: radial-gradient(ellipse 120% 80% at 30% 0%, rgba(255,255,255,.6), rgba(255,255,255,0) 55%), linear-gradient(160deg, var(--b-c), var(--b-c2)); }
+/* the backdrop: rings of light, soft rays from above, a polished floor */
+#b-bg .b-orb { opacity: .7; background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.9), color-mix(in srgb, var(--b-c) 40%, transparent) 34%, transparent 66%); }
+#b-bg .b-orb i { inset: 170px; border-width: 10px; border-color: rgba(255,255,255,.45); filter: blur(3px); }
+#b-bg .b-orb::before, #b-bg .b-orb::after { content: ""; position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,.55); }
+#b-bg .b-orb::before { inset: 110px; }
+#b-bg .b-orb::after { inset: 40px; border-width: 1px; border-color: rgba(255,255,255,.35); }
+#b-bg .b-wash::after { content: ""; position: absolute; inset: 0;
+  background: repeating-conic-gradient(from 180deg at 50% -10%, rgba(255,255,255,.07) 0deg 4deg, rgba(255,255,255,0) 4deg 11deg);
+  -webkit-mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000, transparent 75%); mask-image: radial-gradient(ellipse 70% 80% at 50% 0%, #000, transparent 75%); }
+body[data-bbg="dark"] #b-bg .b-orb::before, body[data-bbg="dark"] #b-bg .b-orb::after { border-color: rgba(255,255,255,.18); }
+/* the hint buttons: a spot of light on each */
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph { position: relative; }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph::after { content: ""; position: absolute; left: 22%; right: 22%; top: 6%; height: 38%; border-radius: 50%;
+  background: linear-gradient(rgba(255,255,255,.75), rgba(255,255,255,0)); pointer-events: none; }
+/* the title: lit from above, a little depth */
+#b-root .b-title { text-shadow: 0 2px 0 rgba(0,0,0,.12), 0 3px 10px rgba(0,0,0,.3), 0 -1px 0 rgba(255,255,255,.25); }
+
+/* text that sits on the shine stays readable */
+.b-blade .b-sl { text-shadow: 0 1px 2px rgba(0,0,0,.55), 0 0 12px rgba(0,0,0,.3); }
+#b-root .b-tag { text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+#b-root .b-status { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+
+/* the Guide, finished like the blades */
+.bg-title { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; text-shadow: 0 2px 0 rgba(0,0,0,.12), 0 3px 10px rgba(0,0,0,.3); }
+.b-guide .bg-rule { position: relative; display: block; width: 92%; height: 22px; margin: 2px 0 10px 28px; filter: drop-shadow(0 1px 1px rgba(0,0,0,.18)); }
+.bg-card { border-radius: 12px 44px 44px 12px; padding: 9px 34px 9px 9px;
+  background: linear-gradient(180deg, rgba(255,255,255,.5), rgba(255,255,255,.14) 50%, rgba(255,255,255,.05) 51%, rgba(255,255,255,.2));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.9), inset 0 -1px 0 rgba(0,0,0,.2), 0 6px 16px rgba(0,0,0,.25); }
+.bg-tag, .bg-now, .bg-time { color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+.bg-pic { border-radius: 8px; box-shadow: inset 0 0 0 2px rgba(255,255,255,.7), 0 2px 4px rgba(0,0,0,.35);
+  background: radial-gradient(ellipse 120% 80% at 30% 0%, rgba(255,255,255,.6), rgba(255,255,255,0) 55%), linear-gradient(160deg, var(--g-c2), var(--g-c)); }
+.bg-ico.b-orbi { width: 44px; height: 44px; padding: 9px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, rgba(255,255,255,.75), rgba(255,255,255,.12) 52%, rgba(0,0,0,.18) 53%, rgba(255,255,255,.18) 100%), var(--g-c);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.8), inset 0 -2px 4px rgba(0,0,0,.25), 0 2px 4px rgba(0,0,0,.3); }
+.bg-row.on .bg-ico.b-orbi .i { color: #fff; filter: drop-shadow(0 1px 1px rgba(0,0,0,.4)); }
+.bg-row.on { border-radius: 30px;
+  background: radial-gradient(ellipse 120% 90% at 30% -20%, #ffffff 0%, #ffffff 46%, rgba(255,255,255,0) 47%),
+              linear-gradient(180deg, #f7f9fa 0%, #e3e9ed 55%, #d2dbe1 56%, #eef2f4 100%);
+  box-shadow: 0 0 0 2px rgba(255,255,255,.95), 0 0 24px 4px color-mix(in srgb, var(--g-c2) 55%, #fff), 0 8px 16px rgba(0,0,0,.28); }
+.bg-row.on .bg-label { color: #1d2226; text-shadow: 0 1px 0 rgba(255,255,255,.9); }
+.bg-row + .bg-row:not(.on)::before { content: ""; position: absolute; }
+#b-root .b-crumb { opacity: 1; text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 10px rgba(0,0,0,.25); }
+#b-root .b-tag, #b-root .b-status, .bg-tag, .bg-now, .bg-time { text-shadow: 0 1px 2px rgba(0,0,0,.7), 0 0 12px rgba(0,0,0,.3); }

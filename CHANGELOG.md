@@ -14,6 +14,12 @@
 - Settings: Background (Light, Dark, theme picture), Blade Colours (Classic — a colour per blade —
   or all Silver / Green / Blue / Black) and Guide Colour
 - No console maker's logo or brand marks are drawn
+- **Hand-finished look**: blades are painted, not boxes — a top edge that sweeps up toward the open
+  blade, glass shine with a curved edge, a bloom of light and shading at the foot, a bright rim; faint
+  swooshes and rings of light on the open blade; the blade you flip to swings round like a page.
+  Icons sit in little glass orbs, the highlight is a glass capsule with a halo, the title has a
+  tapered curved rule, the showcase a bevelled frame, your card a swept glass plate, and the
+  backdrop has rings and rays of light. The Guide blade (in the menu and over games) matches
 
 ## 1.2.9 Alpha
 - **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a

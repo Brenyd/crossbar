@@ -26,13 +26,18 @@ const BLADE_COLORS = {          // [light, deep] per category, "Classic"
 const BLADE_ONE = { silver: ['#aeb6be', '#56606a'], green: ['#86cf3c', '#2f7f18'], blue: ['#5aa2ff', '#1c4fae'], black: ['#55595f', '#17181a'] };
 const BLADE_NAMES = { users: 'Profile', game: 'Games', party: 'Social', settings: 'System', photo: 'Pictures', tv: 'TV' };
 const bladeName = (c) => BLADE_NAMES[c.id] || c.label;
+function mixHex(a, b, t) {            // a → b by t (0..1), for SVG gradient stops
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [x, y] = [p(a), p(b)];
+  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('');
+}
 
 const Blades = {
   id: 'blades',
   // ---- geometry (1920×1080 stage)
   X0: 64, X1: 1856, TOP: 92, BOT: 1004, STRIP: 50,
   PAD: 58,                       // inside the open blade
-  LIST_TOP: 276, ROW: 70, LIST_W: 640,
+  LIST_TOP: 304, ROW: 70, LIST_W: 640,
   dialogVertical: true,
   optionsGeom: { TOP: 210, MIN: 190, MAX: 960 },
   scroll: 0,
@@ -51,10 +56,13 @@ const Blades = {
       r.id = 'b-root';
       r.innerHTML = `
         <div class="b-blades"></div>
-        <div class="b-head"><div class="b-crumb"></div><div class="b-title"></div></div>
+        <div class="b-head"><div class="b-crumb"></div><div class="b-title"></div>
+          <svg class="b-rule" viewBox="0 0 1000 24" preserveAspectRatio="none" aria-hidden="true"><defs>
+            <linearGradient id="brg" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".95"/><stop offset=".55" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+            <path d="M0,17 C220,5 620,1 1000,7 C620,5 230,10 0,22 Z" fill="url(#brg)"/></svg></div>
         <div class="b-card"><div class="b-pic"></div><div class="b-who"><div class="b-tag"></div><div class="b-status"></div></div></div>
         <div class="b-now" hidden><span class="b-now-t"></span><div class="b-now-bar"><i></i></div></div>
-        <div class="b-show"><div class="b-art"><div class="b-art-ic"></div></div>
+        <div class="b-show"><div class="b-frame"><div class="b-art"><div class="b-art-ic"></div></div></div>
           <div class="b-s-label"></div><div class="b-s-badge"></div><div class="b-s-sub"></div><div class="b-s-bar"><i></i></div></div>
         <div class="b-more up">▲</div><div class="b-more down">▼</div>
         <div class="b-empty" hidden>Nothing here yet</div>`;
@@ -141,20 +149,68 @@ const Blades = {
   },
   open() { return this.geom(S.ci); },
 
+  // A blade, painted: a curved top edge that sweeps up toward the open blade, glass shine with a
+  // curved lower edge, a bloom of light, shading at the foot, a bright rim, and on the open blade
+  // faint swooshes and a ring. Drawn at the blade's final size (the box animates to it).
+  paint(j, w, h, side, [c, c2]) {
+    const id = `bp${j}`, open = side === 'on';
+    const t = open ? 44 : 30, r = open ? 20 : 12;
+    const shape = `M0,${t + r} Q0,${t} ${r},${t - 1} C${(w * 0.36).toFixed(1)},${t - 3} ${(w * 0.56).toFixed(1)},0 ${w - r},0 `
+      + `Q${w},0 ${w},${r} L${w},${h - r} Q${w},${h} ${w - r},${h} L${r},${h} Q0,${h} 0,${h - r} Z`;
+    const flip = side === 'r' ? ` transform="translate(${w},0) scale(-1,1)"` : '';
+    const gloss = open
+      ? `M0,0 H${w} V${(h * 0.09).toFixed(1)} C${(w * 0.64).toFixed(1)},${(h * 0.15).toFixed(1)} ${(w * 0.3).toFixed(1)},${(h * 0.29).toFixed(1)} 0,${(h * 0.4).toFixed(1)} Z`
+      : `M0,0 H${w} V${(h * 0.16).toFixed(1)} C${(w * 0.7).toFixed(1)},${(h * 0.2).toFixed(1)} ${(w * 0.3).toFixed(1)},${(h * 0.34).toFixed(1)} 0,${(h * 0.42).toFixed(1)} Z`;
+    const deco = open ? `
+      <g clip-path="url(#${id}k)" fill="none" stroke="#fff">
+        <path d="M${-60},${(h * 0.74).toFixed(0)} C${(w * 0.28).toFixed(0)},${(h * 0.56).toFixed(0)} ${(w * 0.62).toFixed(0)},${(h * 0.98).toFixed(0)} ${w + 60},${(h * 0.6).toFixed(0)}" stroke-width="70" stroke-opacity=".07"/>
+        <path d="M${-60},${(h * 0.83).toFixed(0)} C${(w * 0.3).toFixed(0)},${(h * 0.68).toFixed(0)} ${(w * 0.6).toFixed(0)},${(h * 1.02).toFixed(0)} ${w + 60},${(h * 0.72).toFixed(0)}" stroke-width="3" stroke-opacity=".22"/>
+        <circle cx="${(w * 0.9).toFixed(0)}" cy="${(h * 0.88).toFixed(0)}" r="${(h * 0.36).toFixed(0)}" stroke-width="30" stroke-opacity=".06"/>
+        <circle cx="${(w * 0.9).toFixed(0)}" cy="${(h * 0.88).toFixed(0)}" r="${(h * 0.46).toFixed(0)}" stroke-width="2" stroke-opacity=".16"/>
+      </g>` : '';
+    return `<svg class="b-paint" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" aria-hidden="true">
+      <defs>
+        <linearGradient id="${id}b" x1="0" y1="0" x2="0.25" y2="1">
+          <stop offset="0" stop-color="${c}"/><stop offset=".5" stop-color="${mixHex(c, c2, 0.45)}"/><stop offset="1" stop-color="${c2}"/></linearGradient>
+        <radialGradient id="${id}l" cx=".22" cy=".12" r=".75"><stop offset="0" stop-color="#fff" stop-opacity=".42"/><stop offset=".55" stop-color="#fff" stop-opacity=".06"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+        <linearGradient id="${id}g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".62"/><stop offset="1" stop-color="#fff" stop-opacity=".07"/></linearGradient>
+        <linearGradient id="${id}f" x1="0" y1="0" x2="0" y2="1"><stop offset=".55" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".32"/></linearGradient>
+        <linearGradient id="${id}e" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#fff" stop-opacity=".35"/><stop offset=".6" stop-color="#fff" stop-opacity=".95"/><stop offset="1" stop-color="#fff" stop-opacity=".5"/></linearGradient>
+        <clipPath id="${id}k"><path d="${shape}"${flip}/></clipPath>
+      </defs>
+      <g${flip}>
+        <path d="${shape}" fill="url(#${id}b)"/>
+        <path d="${shape}" fill="url(#${id}l)"/>
+        <path d="${shape}" fill="url(#${id}f)"/>
+      </g>
+      <g clip-path="url(#${id}k)"><path d="${gloss}" fill="url(#${id}g)"${flip}/></g>${deco}
+      <g${flip} fill="none">
+        <path d="${shape}" stroke="#fff" stroke-opacity=".28" stroke-width="5" clip-path="url(#${id}k)"/>
+        <path d="M${r},${t - 1} C${(w * 0.36).toFixed(1)},${t - 3} ${(w * 0.56).toFixed(1)},1 ${w - r},1" stroke="url(#${id}e)" stroke-width="2.5"/>
+        <path d="${shape}" stroke="#000" stroke-opacity=".25" stroke-width="1"/>
+      </g>
+    </svg>`;
+  },
+
   renderCats() {
     const wrap = $('.b-blades'); if (!wrap) return;
     if (wrap.children.length !== CATS.length) {
-      wrap.innerHTML = CATS.map((c) => {
-        const [a, b] = this.color(c);
-        return `<div class="b-blade" style="--c:${a};--c2:${b}"><div class="b-gloss"></div>
-          <div class="b-spine"><div class="b-sico">${icon(c.icon)}</div><div class="b-sl">${esc(bladeName(c))}</div></div></div>`;
-      }).join('');
+      wrap.innerHTML = CATS.map((c) => `<div class="b-blade"><div class="b-shape"></div>
+          <div class="b-spine"><div class="b-sico">${icon(c.icon)}</div><div class="b-sl">${esc(bladeName(c))}</div></div></div>`).join('');
     }
+    const H = this.BOT - this.TOP;
     [...wrap.children].forEach((el, j) => {
-      const g = this.geom(j);
+      const g = this.geom(j), col = this.color(CATS[j]);
       el.style.left = `${g.x}px`; el.style.width = `${g.w}px`;
       el.style.zIndex = g.side === 'on' ? 50 : g.side === 'l' ? 10 + j : 40 - j;
+      const was = el.dataset.side;
       el.className = `b-blade ${g.side}`;
+      if (was && was !== 'on' && g.side === 'on') {        // the blade you flipped to swings into place
+        el.classList.add(document.body.dataset.bflip === 'l' ? 'swing-l' : 'swing-r');
+      }
+      el.dataset.side = g.side;
+      const key = `${g.w}|${g.side}|${col}`;
+      if (el.dataset.paint !== key) { el.dataset.paint = key; el.querySelector('.b-shape').innerHTML = this.paint(j, g.w, H, g.side, col); }
     });
     const [a, b] = this.color(CATS[S.ci]);
     document.body.style.setProperty('--b-c', a); document.body.style.setProperty('--b-c2', b);
@@ -180,7 +236,7 @@ const Blades = {
     if (it.art !== undefined) {
       const h = hashHue(it.artTitle || it.label);
       slot = `<div class="art${it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : ''}" style="background-image:linear-gradient(135deg,hsl(${h} 45% 45%),hsl(${(h + 40) % 360} 50% 25%))"></div>`;
-    } else slot = `<div class="ico">${icon(it.icon)}</div>`;
+    } else slot = `<div class="ico b-orbi">${icon(it.icon)}</div>`;
     el.innerHTML = `${slot}<div class="txt"><div class="label">${esc(gl(it.label))}</div><div class="sub">${esc(gl(it.sub || ''))}</div>${
       it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>${
       it.badge ? `<div class="b-badge">${esc(it.badge)}</div>` : ''}`;
@@ -300,10 +356,14 @@ const Blades = {
     if (!g) {
       g = document.createElement('div');
       g.className = 'b-guide';
-      g.innerHTML = `<div class="b-gloss"></div><div class="bg-card"><div class="bg-pic"></div><div class="bg-who"><div class="bg-tag"></div><div class="bg-now"></div></div><div class="bg-time"></div></div>
-        <div class="bg-title"></div><div class="bg-rows"></div><div class="bg-foot"></div>`;
+      g.innerHTML = `<div class="b-shape"></div><div class="bg-card"><div class="bg-pic"></div><div class="bg-who"><div class="bg-tag"></div><div class="bg-now"></div></div><div class="bg-time"></div></div>
+        <div class="bg-title"></div><svg class="b-rule bg-rule" viewBox="0 0 1000 24" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0,17 C220,5 620,1 1000,7 C620,5 230,10 0,22 Z" fill="url(#brg)"/></svg><div class="bg-rows"></div><div class="bg-foot"></div>`;
       root.appendChild(g);
     }
+    const gc = Looks.colors('blades', 'guide') || ['#3f9b2a', '#86cf3c'];
+    const gkey = gc.join('|');
+    if (g.dataset.paint !== gkey) { g.dataset.paint = gkey; g.querySelector('.b-shape').innerHTML = this.paint('g', 760, 912, 'on', [gc[1], gc[0]]); }
     const d = q.data || {}, st = S.state || {};
     g.querySelector('.bg-pic').textContent = (st.user || 'P').charAt(0).toUpperCase();
     g.querySelector('.bg-tag').textContent = st.user || 'Player';
@@ -312,7 +372,7 @@ const Blades = {
     g.querySelector('.bg-title').textContent = ({ sound: 'Sound', perf: 'Performance', trophies: 'Trophies', social: 'Friends & Party', party: 'Party', friends: 'Friends' })[q.page] || 'Guide';
     g.querySelector('.bg-rows').innerHTML = q.rows.map((r, i) => `
       <div class="bg-row ${i === q.sel ? 'on' : ''}${r.danger ? ' danger' : ''}">
-        <div class="bg-ico">${r.art ? `<div class="bg-art" style="background-image:url('${esc(r.art)}')"></div>` : icon(r.icon)}</div>
+        <div class="bg-ico${r.art ? '' : ' b-orbi'}">${r.art ? `<div class="bg-art" style="background-image:url('${esc(r.art)}')"></div>` : icon(r.icon)}</div>
         <div class="bg-txt"><div class="bg-label">${esc(r.label.replace(/ ▸$/, ''))}</div><div class="bg-sub">${esc(gl(r.sub || ''))}</div>
           ${r.bar != null ? `<div class="bg-bar"><i style="width:${(r.bar * 100).toFixed(1)}%"></i></div>` : ''}</div>
         ${/ ▸$/.test(r.label) ? '<div class="bg-more">›</div>' : ''}

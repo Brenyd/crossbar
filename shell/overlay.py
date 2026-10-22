@@ -109,20 +109,21 @@ def blade_css(scale, look):
     return f"""
     .panel.blade {{ background: linear-gradient(180deg, {acc2} 0%, {acc} 100%); padding: {px(34)} {px(30)} {px(26)} {px(30)};
       border-radius: 0 {px(22)} {px(22)} 0; box-shadow: {px(10)} 0 {px(40)} rgba(0,0,0,0.5), inset 0 {px(2)} 0 rgba(255,255,255,0.55); }}
-    .panel.blade .g-top {{ padding: {px(12)} {px(18)} {px(12)} {px(12)}; border-radius: {px(10)}; margin-bottom: {px(18)};
+    .panel.blade .g-top {{ padding: {px(10)} {px(34)} {px(10)} {px(10)}; border-radius: {px(12)} {px(44)} {px(44)} {px(12)}; margin-bottom: {px(18)};
       background: linear-gradient(rgba(255,255,255,0.32), rgba(255,255,255,0.08)); }}
     .panel.blade .g-pic {{ background-color: {acc}; background-image: linear-gradient(145deg, rgba(255,255,255,0.55), rgba(0,0,0,0.25)); color: white;
       font-size: {px(30)}; min-width: {px(62)}; min-height: {px(62)}; border-radius: {px(6)}; }}
     .panel.blade .g-name {{ color: {text}; font-size: {px(25)}; }}
     .panel.blade .g-now, .panel.blade .g-time {{ color: {dim}; font-size: {px(18)}; }}
     .panel.blade .g-time {{ font-size: {px(22)}; }}
-    .panel.blade .title {{ color: {text}; font-size: {px(40)}; font-weight: 300; margin: 0 {px(10)} {px(6)}; }}
+    .panel.blade .title {{ color: {text}; font-size: {px(40)}; font-weight: 300; margin: 0 {px(10)} {px(6)}; text-shadow: 0 {px(2)} {px(8)} rgba(0,0,0,0.3); }}
+    .panel.blade .g-name, .panel.blade .g-now, .panel.blade .g-time {{ text-shadow: 0 1px {px(3)} rgba(0,0,0,0.6); }}
     .panel.blade .sep {{ background: rgba(255,255,255,0.6); min-height: {px(2)}; margin: 0 {px(10)} {px(10)}; }}
     .panel.blade .row {{ border-radius: {px(8)}; padding: {px(8)} {px(16)}; color: {text}; }}
     .panel.blade .label {{ font-size: {px(23)}; font-weight: 400; }}
     .panel.blade .sub {{ font-size: {px(15)}; color: {dim}; }}
-    .panel.blade .row.on {{ background: linear-gradient(180deg, #ffffff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%); color: #16181a;
-      box-shadow: 0 0 {px(16)} rgba(255,255,255,0.7); }}
+    .panel.blade .row.on {{ background: linear-gradient(180deg, #ffffff 0%, #f7f9fa 45%, #e3e9ed 55%, #d2dbe1 56%, #eef2f4 100%); color: #16181a;
+      border-radius: {px(30)}; box-shadow: 0 0 0 {px(2)} rgba(255,255,255,0.95), 0 0 {px(22)} rgba(255,255,255,0.75), 0 {px(6)} {px(14)} rgba(0,0,0,0.28); }}
     .panel.blade .row.on .sub {{ color: #4a5056; }}
     .panel.blade .row.on image {{ color: {acc}; }}
     .panel.blade .row.danger.on {{ background: linear-gradient(180deg, #ffd7d7, #ff9c9c); }}
