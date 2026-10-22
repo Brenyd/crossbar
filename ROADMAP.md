@@ -34,6 +34,12 @@ These shipped but don't work properly yet. They come before any new features.
 
 Newest first. Each version lists what it added; ⚠️ marks features that still need work (see *Now* above).
 
+### 1.3 series: a third interface
+
+**1.3 Alpha**
+- ✅ **Blades** (Xbox 360, 2005 style): coloured blades, a list and showcase on each, a Guide blade over games
+- 🧪 The Guide blade drawn by the native overlay over games (needs confirming on the PS5)
+
 ### 1.2 series: two interfaces, and staying out of the game's way
 
 **1.2.9 Alpha**

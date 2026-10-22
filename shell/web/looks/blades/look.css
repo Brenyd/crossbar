@@ -1,0 +1,256 @@
+/* The Blades look (looks/blades/look.js) — modelled on the Xbox 360's first dashboard (2005).
+   Scoped to body[data-shell="blades"]. The open blade's colours are --b-c (light) and --b-c2
+   (deep); the Guide's are --g-c / --g-c2 (Settings › Theme › Guide Colour). */
+
+body[data-shell="blades"] {
+  --b-font: "Segoe UI", "Selawik", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+  --b-c: #b8d43a; --b-c2: #5d8a0e; --g-c: #3f9b2a; --g-c2: #86cf3c;
+  --b-text: #ffffff; --b-ink: #16181a;
+  --kb-bg: rgba(24,26,28,.96); --kb-key: rgba(255,255,255,.08); --kb-hl: var(--b-c); --kb-hl-text: var(--b-ink); --kb-radius: 6px;
+  font-family: var(--b-font); color: var(--b-text);
+}
+
+/* ---- backdrop: a soft lit room in the open blade's colour, a glowing orb high up ---- */
+#b-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; background: #e9edf0; transition: background .6s; }
+#b-bg .b-wash { position: absolute; inset: 0;
+  background: radial-gradient(ellipse 80% 70% at 50% 18%, rgba(255,255,255,.95), rgba(255,255,255,0) 70%),
+              linear-gradient(180deg, color-mix(in srgb, var(--b-c) 26%, #f4f6f7) 0%, color-mix(in srgb, var(--b-c2) 30%, #c9d0d5) 100%);
+  transition: background .6s; }
+#b-bg .b-orb { position: absolute; left: 50%; top: -260px; width: 900px; height: 900px; margin-left: -450px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 55%, rgba(255,255,255,.85), color-mix(in srgb, var(--b-c) 45%, transparent) 38%, transparent 68%);
+  opacity: .55; }
+#b-bg .b-orb i { position: absolute; inset: 210px; border-radius: 50%; border: 18px solid rgba(255,255,255,.35); filter: blur(6px); }
+#b-bg .b-floor { position: absolute; left: -10%; right: -10%; bottom: -30%; height: 60%; border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,.55), rgba(255,255,255,0) 65%); }
+body[data-bbg="dark"] #b-bg { background: #0d0e10; }
+body[data-bbg="dark"] #b-bg .b-wash { background: radial-gradient(ellipse 70% 60% at 50% 12%, color-mix(in srgb, var(--b-c) 34%, #1a1c1f), #0b0c0e 72%); }
+body[data-bbg="dark"] #b-bg .b-orb { opacity: .28; }
+body[data-bbg="dark"] #b-bg .b-floor { opacity: .08; }
+body[data-bbg="picture"] #b-bg { background: linear-gradient(rgba(0,0,0,.2), rgba(0,0,0,.45)); }
+body[data-bbg="picture"] #b-bg > div { display: none; }
+body[data-shell="blades"]:not([data-bbg="picture"]) #theme-bg, body[data-shell="blades"] #waves,
+body[data-shell="blades"] #cats, body[data-shell="blades"] #crumb, body[data-shell="blades"] #clock { visibility: hidden; display: none; }
+body[data-shell="blades"] #demo-badge { left: 64px; top: 34px; font-size: 14px; padding: 3px 10px; color: rgba(0,0,0,.5); border-color: rgba(0,0,0,.25); }
+body[data-shell="blades"][data-bbg="dark"] #demo-badge { color: rgba(255,255,255,.55); border-color: rgba(255,255,255,.3); }
+
+/* ---- the blades ---- */
+#b-root { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+#b-root .b-blades { position: absolute; inset: 0; perspective: 1800px; }
+.b-blade { position: absolute; top: 92px; height: 912px; border-radius: 22px 22px 6px 6px; overflow: hidden;
+  background: linear-gradient(180deg, var(--c) 0%, color-mix(in srgb, var(--c) 55%, var(--c2)) 46%, var(--c2) 100%);
+  box-shadow: 0 18px 40px rgba(0,0,0,.35), inset 0 2px 0 rgba(255,255,255,.55), inset 0 -2px 0 rgba(0,0,0,.25);
+  transition: left .42s cubic-bezier(.2,.8,.2,1), width .42s cubic-bezier(.2,.8,.2,1), transform .42s cubic-bezier(.2,.8,.2,1), filter .3s; }
+/* glass: the shine across the top of every blade */
+.b-blade .b-gloss { position: absolute; left: 0; right: 0; top: 0; height: 46%;
+  background: linear-gradient(180deg, rgba(255,255,255,.55) 0%, rgba(255,255,255,.16) 38%, rgba(255,255,255,0) 100%); }
+.b-blade::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 30%;
+  background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.22)); }
+/* closed blades: just the edge, leaning back a little, the name running up it */
+.b-blade.l { transform: rotateY(14deg); transform-origin: 100% 50%; filter: brightness(.86); border-radius: 14px 6px 6px 14px; }
+.b-blade.r { transform: rotateY(-14deg); transform-origin: 0 50%; filter: brightness(.86); border-radius: 6px 14px 14px 6px; }
+.b-blade .b-spine { position: absolute; left: 0; width: 50px; top: 0; bottom: 0; display: flex; flex-direction: column; align-items: center;
+  padding-top: 26px; gap: 18px; transition: opacity .25s; }
+.b-blade.on .b-spine { opacity: 0; }
+.b-blade .b-sico { width: 30px; height: 30px; flex: none; }
+.b-blade .b-sico .i { color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.4)); }
+.b-blade .b-sl { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 24px; letter-spacing: .5px; color: #fff; white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0,0,0,.65), 0 0 8px rgba(0,0,0,.25); }
+.b-blade.on { box-shadow: 0 24px 60px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.65), inset 0 -2px 0 rgba(0,0,0,.25); }
+
+/* ---- on the open blade: its name, your card, the list, the showcase ---- */
+#b-root .b-head { position: absolute; top: 128px; z-index: 60; transition: left .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-crumb { font-size: 22px; color: #fff; opacity: .9; height: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 3px rgba(0,0,0,.55); }
+#b-root .b-title { font-size: 62px; font-weight: 300; letter-spacing: -.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 2px 6px rgba(0,0,0,.35); }
+#b-root .b-title.in { animation: b-in .4s cubic-bezier(.2,.8,.2,1); }
+@keyframes b-in { from { opacity: 0; transform: translateX(40px); } }
+#b-root .b-head::after { content: ""; position: absolute; left: 0; right: -420px; top: 118px; height: 2px;
+  background: linear-gradient(90deg, rgba(255,255,255,.7), rgba(255,255,255,0)); }
+#b-root .b-card { position: absolute; top: 132px; z-index: 60; display: flex; align-items: center; gap: 16px; padding: 10px 22px 10px 10px;
+  border-radius: 10px; background: linear-gradient(rgba(255,255,255,.3), rgba(255,255,255,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 4px 14px rgba(0,0,0,.18);
+  transition: right .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-pic { width: 64px; height: 64px; border-radius: 6px; display: grid; place-items: center; font-size: 34px; color: #fff;
+  background: linear-gradient(145deg, rgba(255,255,255,.55), rgba(0,0,0,.25)), var(--b-c2); box-shadow: inset 0 0 0 2px rgba(255,255,255,.6); }
+#b-root .b-tag { font-size: 26px; max-width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+#b-root .b-status { font-size: 19px; color: rgba(255,255,255,.85); }
+#b-root .b-now { position: absolute; top: 232px; z-index: 60; width: 380px; font-size: 18px; color: rgba(255,255,255,.92);
+  text-shadow: 0 1px 2px rgba(0,0,0,.35); transition: right .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-now-t { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+#b-root .b-now-bar { height: 4px; margin-top: 6px; background: rgba(255,255,255,.3); border-radius: 2px; }
+#b-root .b-now-bar i { display: block; height: 100%; background: #fff; border-radius: 2px; transition: width 1s linear; }
+#b-root .b-more { position: absolute; z-index: 60; font-size: 20px; color: rgba(255,255,255,.8); }
+#b-root .b-more[hidden] { display: none; }
+#b-root .b-empty { position: absolute; left: 50%; top: 480px; transform: translateX(-50%); z-index: 60; font-size: 30px; color: rgba(255,255,255,.85); }
+
+/* the list */
+body[data-shell="blades"] #column { z-index: 2; }
+body[data-shell="blades"] #column .item { height: 62px; gap: 18px; padding: 0 22px 0 14px; border-radius: 8px; opacity: 1;
+  transition: transform .3s cubic-bezier(.2,.8,.2,1), opacity .2s, background .15s; }
+body[data-shell="blades"] #column .item .ico { width: 40px; height: 40px; animation: none; }
+body[data-shell="blades"] #column .item.on .ico { width: 40px; height: 40px; }
+body[data-shell="blades"] #column .item .ico .i { color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+body[data-shell="blades"] #column .item .art { width: 72px; height: 40px; border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.35); animation: none; }
+body[data-shell="blades"] #column .item .art.poster { width: 30px; height: 44px; }
+body[data-shell="blades"] #column .item .art.square { width: 40px; height: 40px; box-shadow: none; }
+body[data-shell="blades"] #column .item.on .art { width: 72px; height: 40px; }
+body[data-shell="blades"] #column .item.on .art.poster { width: 30px; height: 44px; }
+body[data-shell="blades"] #column .item.on .art.square { width: 40px; height: 40px; }
+body[data-shell="blades"] #column .item .txt { flex: 1; min-width: 0; }
+body[data-shell="blades"] #column .item .label, body[data-shell="blades"] #column .item.on .label { font-size: 29px; max-width: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,.4); overflow: hidden; text-overflow: ellipsis; }
+body[data-shell="blades"] #column .item .sub { display: none; }
+body[data-shell="blades"] #column .item .bar { width: auto; height: 5px; margin-top: 4px; background: rgba(255,255,255,.3); }
+body[data-shell="blades"] #column .item .bar i { box-shadow: none; }
+body[data-shell="blades"] #column .item .b-badge { flex: none; font-size: 13px; letter-spacing: 1.5px; padding: 2px 8px; border-radius: 4px;
+  border: 1px solid rgba(255,255,255,.6); color: #fff; }
+body[data-shell="blades"] #column .item.dim { opacity: 1; }
+/* the highlight: a lit glass bar, the text dark on it */
+body[data-shell="blades"] #column .item.on { background: linear-gradient(180deg, #ffffff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%);
+  box-shadow: 0 0 0 2px rgba(255,255,255,.9), 0 0 22px rgba(255,255,255,.75), 0 6px 14px rgba(0,0,0,.25); }
+body[data-shell="blades"] #column .item.on .label { color: var(--b-ink); text-shadow: none; }
+body[data-shell="blades"] #column .item.on .ico .i { color: var(--b-c2); filter: none; }
+body[data-shell="blades"] #column .item.on .b-badge { color: var(--b-c2); border-color: var(--b-c2); }
+body[data-shell="blades"] #column .item.on .bar { background: rgba(0,0,0,.15); }
+body[data-shell="blades"] #column .item.on .bar i { background: var(--b-c2); }
+body[data-shell="blades"] #column.swap .item { opacity: 0 !important; }
+
+/* the showcase */
+#b-root .b-show { position: absolute; top: 276px; z-index: 56; transition: left .42s cubic-bezier(.2,.8,.2,1); }
+#b-root .b-show[hidden] { display: none; }
+#b-root .b-show.in { animation: b-show .35s cubic-bezier(.2,.8,.2,1); }
+@keyframes b-show { from { opacity: 0; transform: translateY(14px); } }
+#b-root .b-art { width: 100%; max-width: 640px; aspect-ratio: 16 / 9; border-radius: 10px; background-size: cover; background-position: center;
+  box-shadow: 0 10px 26px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.55);
+  -webkit-box-reflect: below 6px linear-gradient(transparent 82%, rgba(255,255,255,.26)); }
+#b-root .b-art.poster { width: 300px; aspect-ratio: 2 / 3; background-size: cover; }
+#b-root .b-art.square { width: 300px; aspect-ratio: 1; background-size: contain; background-repeat: no-repeat; background-color: rgba(255,255,255,.15); }
+#b-root .b-art.ic { width: 300px; aspect-ratio: 1; display: grid; place-items: center;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,.12) 50%, rgba(0,0,0,.08) 51%, rgba(255,255,255,.18)), var(--b-c2); }
+#b-root .b-art-ic { width: 150px; height: 150px; }
+#b-root .b-art-ic:empty { display: none; }
+#b-root .b-art-ic .i { color: #fff; filter: drop-shadow(0 3px 6px rgba(0,0,0,.35)); }
+#b-root .b-s-label { margin-top: 70px; font-size: 38px; font-weight: 400; line-height: 1.15; text-shadow: 0 1px 3px rgba(0,0,0,.35);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+#b-root .b-s-badge { display: inline-block; margin-top: 12px; font-size: 14px; letter-spacing: 1.5px; padding: 3px 10px; border-radius: 4px;
+  background: rgba(0,0,0,.25); }
+#b-root .b-s-badge[hidden] { display: none; }
+#b-root .b-s-sub { margin-top: 12px; font-size: 23px; line-height: 1.4; color: rgba(255,255,255,.9); text-shadow: 0 1px 2px rgba(0,0,0,.3);
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden; }
+#b-root .b-s-bar { height: 7px; margin-top: 16px; max-width: 640px; background: rgba(255,255,255,.3); border-radius: 4px; }
+#b-root .b-s-bar[hidden] { display: none; }
+#b-root .b-s-bar i { display: block; height: 100%; border-radius: 4px; background: #fff; transition: width .5s; }
+
+/* ---- button hints, on the blade ---- */
+body[data-shell="blades"] #hint { right: auto; bottom: 96px; height: auto; padding: 0; background: none; text-align: left; z-index: 3;
+  display: flex; align-items: center; font-size: 22px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.4);
+  transition: left .42s cubic-bezier(.2,.8,.2,1); }
+body[data-shell="blades"] #hint span { margin: 0 30px 0 10px; }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph { display: inline-grid !important; place-items: center; width: 34px; height: 34px; min-width: 0;
+  margin: 0; padding: 0 !important; border: 0; border-radius: 50% !important; font-size: 16px; font-weight: 700; color: #fff; text-shadow: none;
+  background: radial-gradient(circle at 40% 30%, #9a9a9a, #4a4a4a); box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 1px 3px rgba(0,0,0,.4); }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph svg { width: 20px; height: 20px; }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph[data-a="ok"] { background: radial-gradient(circle at 40% 30%, #8fe04e, #3c9a18); }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph[data-a="back"] { background: radial-gradient(circle at 40% 30%, #ff6a6a, #c0161c); }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph[data-a="menu"] { background: radial-gradient(circle at 40% 30%, #ffd84a, #d49a00); color: #2a2100; }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph[data-a="kb_west"] { background: radial-gradient(circle at 40% 30%, #5aa7ff, #1557b8); }
+body[data-shell="blades"] :is(#hint, .bg-foot) b.glyph:is([data-a="prev"], [data-a="next"]) { width: 48px; height: 26px; border-radius: 13px !important;
+  font-size: 13px; margin-right: 6px; background: linear-gradient(#f2f2f2, #9da3a8); color: #222; }
+body[data-shell="blades"] .bg-foot b.glyph.bg-dpad { width: auto; padding: 0 10px !important; border-radius: 13px !important; height: 26px; font-size: 13px; }
+
+/* ---- Options (Y): a small blade sliding in from the right ---- */
+body[data-shell="blades"] #options { width: 620px; padding: 210px 0 0; border-radius: 22px 0 0 22px; color: #fff;
+  background: linear-gradient(180deg, var(--b-c) 0%, color-mix(in srgb, var(--b-c) 50%, var(--b-c2)) 45%, var(--b-c2) 100%);
+  box-shadow: -14px 0 40px rgba(0,0,0,.4), inset 2px 2px 0 rgba(255,255,255,.5); animation: b-fly .28s cubic-bezier(.2,.8,.2,1); }
+@keyframes b-fly { from { transform: translateX(120px); opacity: 0; } }
+body[data-shell="blades"] #options::before { content: attr(data-title); position: absolute; left: 50px; right: 40px; top: 110px; z-index: 2; height: auto;
+  font-size: 42px; font-weight: 300; color: #fff; background: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 4px rgba(0,0,0,.3); }
+body[data-shell="blades"] #options.more-up::before { background: none; }
+body[data-shell="blades"] #options.more-down::after { left: 0; background: linear-gradient(transparent, var(--b-c2)); }
+body[data-shell="blades"] #options .opt-head { padding: 0 50px 8px; font-size: 18px; letter-spacing: 2px; color: rgba(255,255,255,.8); }
+body[data-shell="blades"] .opt { margin: 0 26px; padding: 12px 24px; border-radius: 8px; font-size: 27px; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+body[data-shell="blades"] .opt.on { color: var(--b-ink); text-shadow: none; background: linear-gradient(180deg, #fff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%);
+  box-shadow: 0 0 18px rgba(255,255,255,.7); }
+body[data-shell="blades"] .opt.on::before { display: none; }
+
+/* ---- dialogs: a dark glass box with a band in the blade's colour ---- */
+body[data-shell="blades"] #dialog, body[data-shell="blades"] #dialog:has(.dlg-body.long) { background: rgba(0,0,0,.5); }
+body[data-shell="blades"] .dlg-box { width: 1000px; max-width: 1000px; padding: 120px 60px 46px; text-align: left; position: relative; overflow: hidden;
+  border: 0; border-radius: 18px; color: #fff; background: linear-gradient(180deg, rgba(46,50,54,.97), rgba(20,22,24,.97));
+  box-shadow: 0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.18); animation: b-pop .24s cubic-bezier(.2,.8,.2,1); }
+body[data-shell="blades"] .dlg-box::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 84px;
+  background: linear-gradient(180deg, rgba(255,255,255,.45), rgba(255,255,255,.08) 55%, rgba(0,0,0,0)), var(--b-c2); }
+@keyframes b-pop { from { transform: scale(.95); opacity: 0; } }
+body[data-shell="blades"] .dlg-title { position: absolute; left: 60px; right: 60px; top: 18px; font-size: 38px; font-weight: 300; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 3px rgba(0,0,0,.35); }
+body[data-shell="blades"] .dlg-box:has(.dlg-title:empty) { padding-top: 110px; }
+body[data-shell="blades"] .dlg-body, body[data-shell="blades"] .dlg-body.long { font-size: 26px; line-height: 1.5; max-width: none; margin: 0;
+  text-align: left !important; color: rgba(255,255,255,.92); max-height: 560px; }
+body[data-shell="blades"] .dlg-body.long { font-size: 23px; }
+body[data-shell="blades"] .dlg-fields { max-width: none; }
+body[data-shell="blades"] .dlg-fields label { color: rgba(255,255,255,.7); }
+body[data-shell="blades"] .dlg-fields input { background: rgba(255,255,255,.08); border: 2px solid rgba(255,255,255,.35); color: #fff; border-radius: 8px; }
+body[data-shell="blades"] .dlg-fields input:focus, body[data-shell="blades"] .dlg-fields input.padfocus { border-color: var(--b-c); box-shadow: 0 0 14px color-mix(in srgb, var(--b-c) 60%, transparent); }
+body[data-shell="blades"] .dlg-buttons { flex-direction: column; gap: 6px; margin-top: 34px; }
+body[data-shell="blades"] .dlg-btn { border: 0; border-radius: 8px; padding: 12px 26px; font-size: 27px; text-align: left; color: #fff; background: rgba(255,255,255,.07); }
+body[data-shell="blades"] .dlg-btn.on { color: var(--b-ink); background: linear-gradient(180deg, #fff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%);
+  box-shadow: 0 0 18px rgba(255,255,255,.55); }
+
+/* ---- toasts: a glass capsule at the bottom, a glowing ring for the icon ---- */
+body[data-shell="blades"] #toasts { left: 50%; right: auto; top: auto; bottom: 150px; width: 980px; transform: translateX(-50%);
+  flex-direction: column-reverse; align-items: center; }
+body[data-shell="blades"] .toast { border: 0; border-radius: 40px; padding: 10px 40px 10px 10px; gap: 20px; font-size: 24px; color: #fff; max-width: 980px;
+  background: linear-gradient(180deg, rgba(90,94,99,.96), rgba(30,32,35,.96) 52%, rgba(20,21,23,.96));
+  box-shadow: 0 12px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.25); animation: b-toast .35s cubic-bezier(.2,.8,.2,1); }
+body[data-shell="blades"] .toast .ico { width: 56px; height: 56px; padding: 12px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, rgba(255,255,255,.5), var(--g-c2) 55%, var(--g-c)); box-shadow: 0 0 14px var(--g-c2); }
+body[data-shell="blades"] .toast .ico .i { color: #fff; filter: none; }
+@keyframes b-toast { from { transform: translateY(40px); opacity: 0; } }
+
+/* ---- the Guide: a blade of its own, sliding in from the left ---- */
+body[data-shell="blades"] #quick .q-panel { display: none; }
+body[data-shell="blades"] #quick .q-shade, body[data-shell="blades"] #quick:not(.has-shot) .q-shade { background: linear-gradient(90deg, rgba(0,0,0,.55), rgba(0,0,0,.25)); }
+body:not([data-shell="blades"]) #quick .b-guide { display: none; }
+.b-guide { position: absolute; left: 64px; top: 92px; width: 760px; height: 912px; display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 22px 22px 6px 6px; color: #fff; font-family: var(--b-font);
+  background: linear-gradient(180deg, var(--g-c2) 0%, color-mix(in srgb, var(--g-c) 60%, var(--g-c2)) 40%, var(--g-c) 100%);
+  box-shadow: 0 24px 60px rgba(0,0,0,.5), inset 0 2px 0 rgba(255,255,255,.6); animation: b-guide .3s cubic-bezier(.2,.8,.2,1); }
+.b-guide .b-gloss { position: absolute; left: 0; right: 0; top: 0; height: 40%; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255,255,255,.5) 0%, rgba(255,255,255,.12) 40%, rgba(255,255,255,0)); }
+@keyframes b-guide { from { transform: translateX(-200px); opacity: 0; } }
+.bg-card { position: relative; display: flex; align-items: center; gap: 18px; margin: 34px 40px 0; padding: 12px 22px 12px 12px; border-radius: 10px;
+  background: linear-gradient(rgba(255,255,255,.3), rgba(255,255,255,.08)); box-shadow: inset 0 1px 0 rgba(255,255,255,.5); }
+.bg-pic { width: 70px; height: 70px; flex: none; border-radius: 6px; display: grid; place-items: center; font-size: 36px;
+  background: linear-gradient(145deg, rgba(255,255,255,.55), rgba(0,0,0,.25)), var(--g-c); box-shadow: inset 0 0 0 2px rgba(255,255,255,.6); }
+.bg-who { flex: 1; min-width: 0; }
+.bg-tag { font-size: 28px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.bg-now { font-size: 19px; color: rgba(255,255,255,.88); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-time { font-size: 24px; color: rgba(255,255,255,.9); }
+.bg-title { position: relative; margin: 26px 40px 10px; padding-bottom: 12px; font-size: 46px; font-weight: 300; text-shadow: 0 2px 4px rgba(0,0,0,.3);
+  border-bottom: 2px solid rgba(255,255,255,.55); }
+.bg-rows { position: relative; flex: 1; overflow: hidden; padding: 8px 28px; }
+.bg-row { display: flex; align-items: center; gap: 18px; padding: 9px 18px; border-radius: 8px; }
+.bg-row.on { color: var(--b-ink); background: linear-gradient(180deg, #fff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%); box-shadow: 0 0 18px rgba(255,255,255,.7); }
+.bg-row.danger.on { background: linear-gradient(180deg, #ffd7d7, #ff9c9c); }
+.bg-ico { width: 40px; height: 40px; flex: none; display: grid; place-items: center; }
+.bg-ico .i { color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+.bg-row.on .bg-ico .i { color: var(--g-c); filter: none; }
+.bg-art { width: 40px; height: 40px; border-radius: 4px; background-size: cover; background-position: center; }
+.bg-txt { flex: 1; min-width: 0; }
+.bg-label { font-size: 26px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgba(0,0,0,.3); }
+.bg-sub { font-size: 17px; color: rgba(255,255,255,.85); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bg-row.on .bg-label { text-shadow: none; }
+.bg-row.on .bg-sub { color: #4a5056; }
+.bg-bar { height: 5px; margin-top: 6px; border-radius: 3px; background: rgba(255,255,255,.3); }
+.bg-bar i { display: block; height: 100%; border-radius: 3px; background: #fff; }
+.bg-row.on .bg-bar { background: rgba(0,0,0,.15); }
+.bg-row.on .bg-bar i { background: var(--g-c); }
+.bg-more { font-size: 32px; opacity: .8; }
+.bg-foot { position: relative; display: flex; align-items: center; padding: 16px 40px 30px; font-size: 20px; text-shadow: 0 1px 2px rgba(0,0,0,.35); }
+.bg-foot span { margin: 0 26px 0 10px; }
+
+/* ---- the rest ---- */
+body[data-shell="blades"] #launch { background: rgba(0,0,0,.75); }
+body[data-shell="blades"] #launch .l-spin { border-color: rgba(255,255,255,.15); border-top-color: var(--b-c); }
+body[data-shell="blades"] #launch .l-title { font-weight: 300; }
+#stage:has(#quick:not([hidden])) #hint, #stage:has(#dialog:not([hidden])) #hint { opacity: .25; }

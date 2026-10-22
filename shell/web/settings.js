@@ -797,8 +797,8 @@ const SETTINGS_FOLDERS = [
         { key: 'branch', label: 'Update Branch', icon: 'settings',
           sub: `${st.update_branch || 'main'}${st.installed_branch && st.installed_branch !== (st.update_branch || 'main') ? ` · installed now: ${st.installed_branch}` : ''} · which version Update Crossbar installs`,
           action: pickUpdateBranch },
-        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.2.9 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
-          action: () => message(`Crossbar — an Arch-based console shell.\n1.2.9 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
+        { key: 'about', label: 'About Crossbar', icon: 'info', sub: `1.3 Alpha${st.installed_branch && st.installed_branch !== 'main' ? ` · ${st.installed_branch}` : ''}`,
+          action: () => message(`Crossbar — an Arch-based console shell.\n1.3 Alpha${st.installed_branch ? `\nBranch: ${st.installed_branch}` : ''}`, 'About') },
       ];
     },
   },

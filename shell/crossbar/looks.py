@@ -25,7 +25,7 @@ USER = os.path.join(util.HOME, ".local", "share", "crossbar", "looks")
 _ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _VALUE = re.compile(r"^[A-Za-z0-9 _.#()-]{1,40}$")
 SERVE = {".js", ".css", ".json", ".png", ".jpg", ".jpeg", ".svg", ".webp", ".woff", ".woff2", ".ttf", ".otf", ".ogg", ".wav", ".mp3"}
-OVERLAY_STYLES = ("panel", "guide")
+OVERLAY_STYLES = ("panel", "guide", "blade")
 
 
 def _dirs():

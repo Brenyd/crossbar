@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.3 Alpha (testing branch)
+- **Blades**, a third interface (Settings › Theme › Interface), in the style of the Xbox 360's first
+  dashboard (2005): every category is a glossy coloured blade; the open one fills the screen and the
+  others stand in stacks on either side with their names running up their edges. Left / right or
+  LB / RB flips blades like pages; each has a list down the left and a showcase on the right (the
+  highlighted thing's picture with a reflection, its name and description); folders open on the same
+  blade, and left goes back. Your card and what's playing sit in the corner
+- **Its Guide is a blade too**: the Quick Menu slides in from the left as a coloured blade with your
+  card, in the menu and over games (the native overlay has a new "blade" style for looks)
+- Options slide in as a small blade; dialogs are dark glass with a band in the blade's colour;
+  notifications are glass capsules; the button hints are the coloured round buttons
+- Settings: Background (Light, Dark, theme picture), Blade Colours (Classic — a colour per blade —
+  or all Silver / Green / Blue / Black) and Guide Colour
+- No console maker's logo or brand marks are drawn
+
 ## 1.2.9 Alpha
 - **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a
   SofaBaton set up as one, a Fire TV / Google TV remote, an IR receiver, HDMI-CEC — now works fully,

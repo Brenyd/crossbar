@@ -1,0 +1,23 @@
+{
+  "id": "blades",
+  "name": "Blades (Xbox 360, 2005 style)",
+  "short": "Blades",
+  "description": "Coloured blades you flip between, a list and a showcase on each, a Guide blade over games",
+  "author": "Crossbar",
+  "order": 5,
+  "settings": [
+    { "key": "bg", "label": "Background", "icon": "photo", "default": "light",
+      "choices": [["light", "Light"], ["dark", "Dark"], ["picture", "Theme picture", { "needs": "theme_picture" }]] },
+    { "key": "blades", "label": "Blade Colours", "icon": "palette", "default": "classic",
+      "choices": [["classic", "Classic (a colour per blade)"], ["silver", "Silver"], ["green", "Green"], ["blue", "Blue"], ["black", "Black"]] },
+    { "key": "guide", "label": "Guide Colour", "icon": "palette", "default": "green",
+      "choices": [["green", "Green"], ["blue", "Blue"], ["orange", "Orange"], ["silver", "Silver"], ["black", "Black"]] }
+  ],
+  "colors": {
+    "guide": {
+      "green": ["#3f9b2a", "#86cf3c"], "blue": ["#1f63b8", "#4fa3ff"], "orange": ["#c9620e", "#ffa23a"],
+      "silver": ["#6d747c", "#b9c0c7"], "black": ["#1d1f22", "#4a4e54"]
+    }
+  },
+  "overlay": { "style": "blade", "accent_setting": "guide", "text": "#ffffff", "dim": "rgba(255,255,255,0.75)" }
+}

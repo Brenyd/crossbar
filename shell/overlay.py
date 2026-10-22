@@ -100,6 +100,40 @@ def guide_css(scale, look):
     """
 
 
+def blade_css(scale, look):
+    """The Guide blade (a look whose look.json has "overlay": {"style": "blade"}): a glossy
+    coloured blade down the left, your card at the top, rows lit like glass."""
+    px = lambda n: f"{max(1, round(n * scale))}px"  # noqa: E731
+    acc, acc2 = look.get("accent", "#3f9b2a"), look.get("accent2", look.get("accent", "#86cf3c"))
+    text, dim = look.get("text", "#ffffff"), look.get("dim", "rgba(255,255,255,0.75)")
+    return f"""
+    .panel.blade {{ background: linear-gradient(180deg, {acc2} 0%, {acc} 100%); padding: {px(34)} {px(30)} {px(26)} {px(30)};
+      border-radius: 0 {px(22)} {px(22)} 0; box-shadow: {px(10)} 0 {px(40)} rgba(0,0,0,0.5), inset 0 {px(2)} 0 rgba(255,255,255,0.55); }}
+    .panel.blade .g-top {{ padding: {px(12)} {px(18)} {px(12)} {px(12)}; border-radius: {px(10)}; margin-bottom: {px(18)};
+      background: linear-gradient(rgba(255,255,255,0.32), rgba(255,255,255,0.08)); }}
+    .panel.blade .g-pic {{ background-color: {acc}; background-image: linear-gradient(145deg, rgba(255,255,255,0.55), rgba(0,0,0,0.25)); color: white;
+      font-size: {px(30)}; min-width: {px(62)}; min-height: {px(62)}; border-radius: {px(6)}; }}
+    .panel.blade .g-name {{ color: {text}; font-size: {px(25)}; }}
+    .panel.blade .g-now, .panel.blade .g-time {{ color: {dim}; font-size: {px(18)}; }}
+    .panel.blade .g-time {{ font-size: {px(22)}; }}
+    .panel.blade .title {{ color: {text}; font-size: {px(40)}; font-weight: 300; margin: 0 {px(10)} {px(6)}; }}
+    .panel.blade .sep {{ background: rgba(255,255,255,0.6); min-height: {px(2)}; margin: 0 {px(10)} {px(10)}; }}
+    .panel.blade .row {{ border-radius: {px(8)}; padding: {px(8)} {px(16)}; color: {text}; }}
+    .panel.blade .label {{ font-size: {px(23)}; font-weight: 400; }}
+    .panel.blade .sub {{ font-size: {px(15)}; color: {dim}; }}
+    .panel.blade .row.on {{ background: linear-gradient(180deg, #ffffff 0%, #f1f4f6 48%, #dfe5ea 52%, #f6f8f9 100%); color: #16181a;
+      box-shadow: 0 0 {px(16)} rgba(255,255,255,0.7); }}
+    .panel.blade .row.on .sub {{ color: #4a5056; }}
+    .panel.blade .row.on image {{ color: {acc}; }}
+    .panel.blade .row.danger.on {{ background: linear-gradient(180deg, #ffd7d7, #ff9c9c); }}
+    .panel.blade progressbar trough {{ background: rgba(255,255,255,0.3); }}
+    .panel.blade progressbar progress {{ background: white; }}
+    .panel.blade .row.on progressbar progress {{ background: {acc}; }}
+    .panel.blade .foot {{ color: {text}; margin-top: {px(12)}; }}
+    .panel.blade .hint, .panel.blade .more, .panel.blade .notice {{ color: {dim}; }}
+    """
+
+
 def css(scale, theme=None):
     px = lambda n: f"{max(1, round(n * scale))}px"  # noqa: E731
     t = theme or {}
@@ -383,9 +417,11 @@ class Overlay(Gtk.Application):
         if sig == self.look_sig:
             return look
         self.look_sig = sig
-        self._load_css(self.provider, css(self.css_scale, self.theme) + guide_css(self.css_scale, look))
+        self._load_css(self.provider, css(self.css_scale, self.theme) + guide_css(self.css_scale, look) + blade_css(self.css_scale, look))
         guide = look.get("style") == "guide"
+        blade = look.get("style") == "blade"
         (self.panel.add_css_class if guide else self.panel.remove_css_class)("guide")
+        (self.panel.add_css_class if blade else self.panel.remove_css_class)("blade")
         # the Guide: centred on the screen, 960 × 640 at 1080p (the 360's Guide is a box in the
         # middle, about half the screen wide); the panel: full height down the left
         s = self.scale
@@ -397,16 +433,19 @@ class Overlay(Gtk.Application):
         self.max_rows = self.guide_rows if guide else self.panel_rows
         for w in (self.g_top, self.g_tabs):
             w.set_visible(guide)
+        self.g_top.set_visible(guide or blade)     # the Guide blade: your card on top, no tabs
         for w in (self.kicker, self.title, self.sep):
             w.set_visible(not guide)
+        self.kicker.set_visible(not guide and not blade)
         return look
 
     def render(self):
         m = self.model
         look = self.style_for_look()
         guide = look.get("style") == "guide"
-        self.title.set_text(m.title())
-        if guide:
+        blade = look.get("style") == "blade"
+        self.title.set_text("Guide" if blade and m.page == "main" else m.title())
+        if guide or blade:
             d = m.data
             user = d.get("user") or "Player"
             self.g_pic.set_text(user[:1].upper())
@@ -414,12 +453,16 @@ class Overlay(Gtk.Application):
             app = d.get("app")
             self.g_now.set_text(f"Playing {app['title']}" if app else "In Crossbar")
             self.g_time.set_text(time.strftime("%-I:%M %p"))
-            for key, w in self.g_tab_widgets.items():
-                (w.add_css_class if key == m.tab() else w.remove_css_class)("on")
-            head = None if m.is_tab() else m.title()
-            self.g_head.set_visible(bool(head))
-            self.g_head.set_text((head or "").lower())
-            self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  {'Close' if m.is_tab() else 'Back'}      LB RB  Tabs"))
+            if blade:
+                self.g_head.set_visible(False)
+                self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  {'Close' if m.is_tab() else 'Back'}"))
+            else:
+                for key, w in self.g_tab_widgets.items():
+                    (w.add_css_class if key == m.tab() else w.remove_css_class)("on")
+                head = None if m.is_tab() else m.title()
+                self.g_head.set_visible(bool(head))
+                self.g_head.set_text((head or "").lower())
+                self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  {'Close' if m.is_tab() else 'Back'}      LB RB  Tabs"))
         else:
             self.g_head.set_visible(False)
             self.foot.set_text(self.g(f"{{ok}}  Select      ◀ ▶  Adjust      {{back}}  Back to {m.back_to()}"))

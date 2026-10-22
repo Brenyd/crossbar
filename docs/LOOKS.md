@@ -1,8 +1,8 @@
 # Looks (console skins)
 
 A **look** is a whole front end for Crossbar: how the menu, the Options panel, dialogs, toasts
-and the Quick Menu are drawn. Crossbar ships two — the **cross-media bar (PS3 style)** and the
-**Dashboard (Xbox 360 style)** — and starts in the one chosen in **Settings › Theme › Interface**.
+and the Quick Menu are drawn. Crossbar ships three — the **cross-media bar (PS3 style)**, **Blades (Xbox 360, 2005 style)** and the
+**Dashboard (Xbox 360, 2011 style)** — and starts in the one chosen in **Settings › Theme › Interface**.
 Only that look is loaded (the backend builds it into the page, so the first frame is already
 drawn in it); choosing another saves it and reloads the menu.
 
@@ -19,7 +19,7 @@ folder of front-end code — nothing in the backend changes.
 
 | Folder | What |
 |---|---|
-| `shell/web/looks/<id>/` | built in (`xmb`, `x360`) |
+| `shell/web/looks/<id>/` | built in (`xmb`, `blades`, `x360`) |
 | `~/.local/share/crossbar/looks/<id>/` | yours — they show up in Settings › Theme › Interface with no other change (reload the menu: Settings › System › Restart Crossbar) |
 | `shell/web/looks/_template/` | **a working starter look** to copy (it's skipped where it is) |
 
@@ -72,10 +72,11 @@ the Dashboard (`looks/x360/`) shows everything a look can do.
 - **colors** — named colour sets per setting value; `Looks.colors('<id>', 'accent')` gives the
   current one (`['#2563eb', '#60a5fa']`). The overlay uses them too (below).
 - **overlay** — how the native Quick Menu (drawn over games by `overlay.py`) looks while your
-  look is on: `"style": "panel"` (the XMB's list) or `"guide"` (the Dashboard's: profile, five
-  tabs walked with LB / RB, rows lit in your accent). `accent_setting` names the setting whose
+  look is on: `"style": "panel"` (the XMB's list), `"guide"` (the Dashboard's: profile, five
+  tabs walked with LB / RB, rows lit in your accent) or `"blade"` (Blades': a glossy blade down the
+  left in your accent colours, your card on top, rows lit like glass). `accent_setting` names the setting whose
   `colors` entry tints it; `panel` / `panel2` / `text` / `dim` are its colours.
-- **order** — where it sits in the Interface list (XMB 0, Dashboard 10).
+- **order** — where it sits in the Interface list (XMB 0, Blades 5, Dashboard 10).
 
 ## look.js: the Shell contract
 

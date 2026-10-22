@@ -5,18 +5,18 @@
 **A console front end for Linux gaming PCs and Linux on PS5.**<br>
 Boot straight to the couch. Every game, app, song, show and friend — from a controller or a TV remote.
 
-![Version](https://img.shields.io/badge/version-1.2.9_Alpha-informational)
+![Version](https://img.shields.io/badge/version-1.3_Alpha-informational)
 ![Base](https://img.shields.io/badge/base-Arch_%2F_CachyOS-1793d1)
 ![PS5](https://img.shields.io/badge/runs_on-PC_%26_PS5_Linux-black)
 ![Controller](https://img.shields.io/badge/controller_%26_remote-first-success)
 
-[Install](#install) · [What's new](#whats-new-in-12) · [Features](#whats-in-it) · [Guide](docs/GUIDE.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
+[Install](#install) · [What's new](#whats-new-in-13) · [Features](#whats-in-it) · [Guide](docs/GUIDE.md) · [Changelog](CHANGELOG.md) · [Roadmap](ROADMAP.md)
 
 </div>
 
-| Cross-media bar (PS3 style) | Dashboard (Xbox 360 style) |
-|---|---|
-| ![Cross-media bar](docs/xmb.png) | ![Dashboard](docs/dashboard.png) |
+| Cross-media bar (PS3 style) | Blades (Xbox 360, 2005 style) | Dashboard (Xbox 360, 2011 style) |
+|---|---|---|
+| ![Cross-media bar](docs/xmb.png) | ![Blades](docs/blades.png) | ![Dashboard](docs/dashboard.png) |
 
 Crossbar replaces the desktop with a console menu. Steam, GOG, Epic, Lutris and 27 emulated systems
 sit in one list, next to Flatpaks, AppImages and thousands of Lutris install scripts. Music, Spotify,
@@ -34,9 +34,9 @@ It installs next to the system you already have (CachyOS works great, including 
 
 ## Contents
 
-- [What's new in 1.2](#whats-new-in-12)
+- [What's new in 1.3](#whats-new-in-13)
 - [What's in it](#whats-in-it)
-- [Two interfaces](#two-interfaces)
+- [Three interfaces](#three-interfaces)
 - [The Quick Menu](#the-quick-menu)
 - [TV remotes](#tv-remotes)
 - [Lutris installers](#lutris-installers)
@@ -50,10 +50,11 @@ It installs next to the system you already have (CachyOS works great, including 
 - [For developers](#for-developers)
 - [Known gaps](#known-gaps)
 
-## What's new in 1.2
+## What's new in 1.3
 
 | | |
 |---|---|
+| **Blades** (1.3) | A third interface in the style of the Xbox 360's first dashboard: coloured blades you flip between like pages, a list and a showcase on each, and a Guide blade that slides in over games. |
 | **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys for whatever is playing, volume, channel ± and channel numbers for live TV, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
 | **Lutris installers** (1.2.7) | The community install scripts for thousands of games, run by Lutris's own engine. Point it at your own setup files or disc images, and every question it asks comes up on the TV. |
 | **Jackett** (1.2.7) | Hundreds of public and private trackers, each set up from the controller with its own form (including captchas), searched alongside your plugins. |
@@ -112,7 +113,7 @@ Everything is listed in the [changelog](CHANGELOG.md).
 - **Bluetooth pairing** from the menu, with **Pair Again** for a controller that stopped connecting.
 
 **Yours**
-- **Two complete interfaces**, plus theme packs and a starter kit for making
+- **Three complete interfaces**, plus theme packs and a starter kit for making
   [your own console skin](docs/LOOKS.md).
 - **Your own folders** in any category.
 
@@ -120,20 +121,30 @@ Everything is listed in the [changelog](CHANGELOG.md).
 - Temperatures, a temperature overlay, fan target, front light and boost.
 - Boots alongside the PS5 setup's gaming mode and Plasma, and switches between them.
 
-## Two interfaces
+## Three interfaces
 
 **Settings › Theme › Interface** picks the front end. Crossbar starts in it from a cold boot,
 and switching reloads the menu (a few seconds) and brings you back to Theme. Only the chosen
-interface is ever loaded, so the other one costs no memory. Underneath it's one menu: the same games,
+interface is ever loaded, so the others cost no memory. Underneath it's one menu: the same games,
 folders, Options, dialogs, keyboard and button mapping.
 
 - **Cross-media bar (PS3 style).** Categories run across, items run down, folders push a new column,
   and flowing waves sit behind (month colours or your theme pack).
-- **Dashboard (Xbox 360 style).** Lowercase pivots run across the top (**LB / RB**). Under them is a
+- **Blades (Xbox 360, 2005 style).** Every category is a glossy coloured blade. The open one fills the
+  screen; the others stand in stacks on either side, their names running up their edges. Left / right
+  (or LB / RB) flips to the next blade like turning a page. Each blade has a list down the left and a
+  showcase on the right with the highlighted thing's picture, reflection and description. The Guide
+  is a blade of its own that slides in from the left, in-game too. Choose **Background** (Light, Dark
+  or your theme pack's picture), **Blade Colours** (a colour per blade, or one colour) and **Guide Colour**.
+- **Dashboard (Xbox 360, 2011 style).** Lowercase pivots run across the top (**LB / RB**). Under them is a
   sideways wall of tiles led by a big one: whatever you used last, the game you just played, the
   film you were watching (with its poster), or the live channel (with its logo). What's playing sits
   centred at the top with its progress bar. Lists have a details pane, and Options slides in from
   the right. Choose **Background** (Light, Dark, Green or your theme pack's picture) and **Accent Colour**.
+
+| Blades: the Guide | Blades: dark background |
+|---|---|
+| ![Blades Guide](docs/blades-guide.png) | ![Blades dark](docs/blades-dark.png) |
 
 | Dashboard settings | Now playing |
 |---|---|
@@ -143,8 +154,8 @@ folders, Options, dialogs, keyboard and button mapping.
 
 Press **Select + Start** (or **Home** on a keyboard or remote) in any game, video or app. A native
 overlay opens on top, like Steam's or Discord's, and the game underneath stops seeing the controller
-until you close it. It matches your interface: a side panel for the cross-media bar, or a centred,
-360-sized **Guide** with five tabs for the Dashboard.
+until you close it. It matches your interface: a side panel for the cross-media bar, a coloured Guide blade for Blades, or
+a centred, 360-sized **Guide** with five tabs for the Dashboard.
 
 | Guide (Dashboard) | Quick Menu (cross-media bar) |
 |---|---|
@@ -366,7 +377,7 @@ shell/inputd.py               crossbar-inputd: root controller service (controll
 shell/crossbar/jackett.py     Jackett: install, trackers' setup forms, search, downloads
 shell/crossbar/lutris*.py     Lutris installers: lutris.net search, and a helper that runs Lutris's own engine
 shell/web/xmb.js              the menu core and the look contract ("Shell seam")
-shell/web/looks/<id>/         looks: xmb (PS3 style), x360 (Xbox 360 style), _template
+shell/web/looks/<id>/         looks: xmb (PS3 style), blades and x360 (Xbox 360 styles), _template
 iso/                          archiso overlay: packages, autologin, sway session, crossbar-shell
 ```
 

@@ -120,8 +120,10 @@ Thanks to [syrufex/PS5-Temperature-Control-Panel-Linux](https://github.com/syruf
 ## Interfaces
 
 **Settings › Theme & Time › Theme › Interface** picks the whole front end (switching reloads the menu; Crossbar
-starts in your choice from a cold boot): the **cross-media bar (PS3 style)** or the **Dashboard (Xbox 360 style)**. See the
-[README](../README.md#two-interfaces) for what each looks like, [THEMES.md](THEMES.md) to restyle
+starts in your choice from a cold boot): the **cross-media bar (PS3 style)**, **Blades (Xbox 360, 2005 style)** or the
+**Dashboard (Xbox 360, 2011 style)**. In Blades, left / right or LB / RB flips between blades, left inside a
+folder goes back, and the Guide is a blade that slides in from the left. See the
+[README](../README.md#three-interfaces) for what each looks like, [THEMES.md](THEMES.md) to restyle
 one, and [LOOKS.md](LOOKS.md) to build a new console skin.
 
 ## Button glyphs
