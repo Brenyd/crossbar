@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **A third interface: the Browser (PS2 style)** (Settings › Theme › Interface). Blocks stand in a
+  row on a thin shelf over a field of blocks drifting slowly upwards; **◀ ▶** walks the row and
+  **▲ ▼** changes category down the left edge. A folder of artwork opens as a grid of blocks, like
+  a memory card's saves, and anything else as System Configuration's rows — name on the left, value
+  on the right, a help line underneath. **Background** follows the date the way the PS2's did (deep
+  blue in the winter through to rust in the autumn), or pick a colour and keep it; **Drifting
+  Blocks** can be turned off. It's a look like any other (`shell/web/looks/ps2/`), so nothing in the
+  backend changed and the menu underneath is the same one
+
 ## 1.2.9 Alpha
 - **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a
   SofaBaton set up as one, a Fire TV / Google TV remote, an IR receiver, HDMI-CEC — now works fully,

@@ -26,7 +26,8 @@ These shipped but don't work properly yet. They come before any new features.
 - **More memory for big games:** an optional compressed swap in RAM (zram) set up from Settings,
   undoable, so heavy games have room before Memory Guard has to step in.
 - **More console skins:** new looks built on the looks system (see [docs/LOOKS.md](docs/LOOKS.md)),
-  from the project or from anyone using the starter template.
+  from the project or from anyone using the starter template. The **Browser (PS2 style)** is the
+  first one added this way.
 
 ---
 

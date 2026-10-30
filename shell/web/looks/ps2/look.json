@@ -1,0 +1,16 @@
+{
+  "id": "ps2",
+  "name": "Browser (PS2 style)",
+  "short": "PS2",
+  "description": "A row of blocks on a drifting field, its colour following the date",
+  "author": "Crossbar",
+  "order": 20,
+  "settings": [
+    { "key": "bg", "label": "Background", "icon": "palette", "default": "date",
+      "choices": [["date", "Automatic (follows the date)"], ["blue", "Blue"], ["teal", "Teal"], ["violet", "Violet"],
+                  ["amber", "Amber"], ["crimson", "Crimson"], ["graphite", "Graphite"], ["picture", "Theme picture", { "needs": "theme_picture" }]] },
+    { "key": "motion", "label": "Drifting Blocks", "icon": "display", "default": "on",
+      "choices": [["on", "Drifting"], ["off", "Still"]] }
+  ],
+  "overlay": { "style": "panel" }
+}

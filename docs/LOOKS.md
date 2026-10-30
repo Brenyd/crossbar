@@ -1,8 +1,9 @@
 # Looks (console skins)
 
 A **look** is a whole front end for Crossbar: how the menu, the Options panel, dialogs, toasts
-and the Quick Menu are drawn. Crossbar ships two — the **cross-media bar (PS3 style)** and the
-**Dashboard (Xbox 360 style)** — and starts in the one chosen in **Settings › Theme › Interface**.
+and the Quick Menu are drawn. Crossbar ships three — the **cross-media bar (PS3 style)**, the
+**Dashboard (Xbox 360 style)** and the **Browser (PS2 style)** — and starts in the one chosen in
+**Settings › Theme › Interface**.
 Only that look is loaded (the backend builds it into the page, so the first frame is already
 drawn in it); choosing another saves it and reloads the menu.
 
@@ -19,7 +20,7 @@ folder of front-end code — nothing in the backend changes.
 
 | Folder | What |
 |---|---|
-| `shell/web/looks/<id>/` | built in (`xmb`, `x360`) |
+| `shell/web/looks/<id>/` | built in (`xmb`, `x360`, `ps2`) |
 | `~/.local/share/crossbar/looks/<id>/` | yours — they show up in Settings › Theme › Interface with no other change (reload the menu: Settings › System › Restart Crossbar) |
 | `shell/web/looks/_template/` | **a working starter look** to copy (it's skipped where it is) |
 
@@ -42,7 +43,8 @@ The folder name, `"id"` in look.json and the id passed to `Shell.register` must 
 3. Restart Crossbar, then **Settings › Theme › Interface › your look**.
 
 The starter is ~80 lines: categories down the left, items on the right. Grow it from there —
-the Dashboard (`looks/x360/`) shows everything a look can do.
+the Dashboard (`looks/x360/`) shows everything a look can do, and the Browser (`looks/ps2/`) is a
+shorter worked example: three layouts, its own axes, and a backdrop of its own.
 
 ## look.json
 
@@ -75,7 +77,7 @@ the Dashboard (`looks/x360/`) shows everything a look can do.
   look is on: `"style": "panel"` (the XMB's list) or `"guide"` (the Dashboard's: profile, five
   tabs walked with LB / RB, rows lit in your accent). `accent_setting` names the setting whose
   `colors` entry tints it; `panel` / `panel2` / `text` / `dim` are its colours.
-- **order** — where it sits in the Interface list (XMB 0, Dashboard 10).
+- **order** — where it sits in the Interface list (XMB 0, Dashboard 10, Browser 20).
 
 ## look.js: the Shell contract
 

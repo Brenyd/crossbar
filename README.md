@@ -14,9 +14,9 @@ Boot straight to the couch. Every game, app, song, show and friend — from a co
 
 </div>
 
-| Cross-media bar (PS3 style) | Dashboard (Xbox 360 style) |
-|---|---|
-| ![Cross-media bar](docs/xmb.png) | ![Dashboard](docs/dashboard.png) |
+| Cross-media bar (PS3 style) | Dashboard (Xbox 360 style) | Browser (PS2 style) |
+|---|---|---|
+| ![Cross-media bar](docs/xmb.png) | ![Dashboard](docs/dashboard.png) | ![Browser](docs/ps2.png) |
 
 Crossbar replaces the desktop with a console menu. Steam, GOG, Epic, Lutris and 27 emulated systems
 sit in one list, next to Flatpaks, AppImages and thousands of Lutris install scripts. Music, Spotify,
@@ -36,7 +36,7 @@ It installs next to the system you already have (CachyOS works great, including 
 
 - [What's new in 1.2](#whats-new-in-12)
 - [What's in it](#whats-in-it)
-- [Two interfaces](#two-interfaces)
+- [Three interfaces](#three-interfaces)
 - [The Quick Menu](#the-quick-menu)
 - [TV remotes](#tv-remotes)
 - [Lutris installers](#lutris-installers)
@@ -57,7 +57,8 @@ It installs next to the system you already have (CachyOS works great, including 
 | **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys for whatever is playing, volume, channel ± and channel numbers for live TV, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
 | **Lutris installers** (1.2.7) | The community install scripts for thousands of games, run by Lutris's own engine. Point it at your own setup files or disc images, and every question it asks comes up on the TV. |
 | **Jackett** (1.2.7) | Hundreds of public and private trackers, each set up from the controller with its own form (including captchas), searched alongside your plugins. |
-| **Two interfaces** (1.2) | The PS3-style cross-media bar, or a ground-up Xbox 360-style Dashboard with a Guide over games. Your choice is the one that boots. |
+| **A PS2-style Browser** (new) | A third interface: blocks standing in a row on a drifting field, whose colour follows the date the way the PS2's did. Artwork opens as a memory-card grid, settings as System Configuration's lists. |
+| **Swappable interfaces** (1.2) | The PS3-style cross-media bar, or a ground-up Xbox 360-style Dashboard with a Guide over games. Your choice is the one that boots. |
 | **Memory Guard** (1.2.2) | A game that runs the console out of memory is closed, instead of the whole machine freezing. |
 | **VPN networking** (1.2.3 – 1.2.6) | Split tunnelling, DNS, port forwarding, torrents bound to the VPN, leak tests and plugin search rebuilt. |
 
@@ -120,11 +121,11 @@ Everything is listed in the [changelog](CHANGELOG.md).
 - Temperatures, a temperature overlay, fan target, front light and boost.
 - Boots alongside the PS5 setup's gaming mode and Plasma, and switches between them.
 
-## Two interfaces
+## Three interfaces
 
 **Settings › Theme › Interface** picks the front end. Crossbar starts in it from a cold boot,
 and switching reloads the menu (a few seconds) and brings you back to Theme. Only the chosen
-interface is ever loaded, so the other one costs no memory. Underneath it's one menu: the same games,
+interface is ever loaded, so the others cost no memory. Underneath it's one menu: the same games,
 folders, Options, dialogs, keyboard and button mapping.
 
 - **Cross-media bar (PS3 style).** Categories run across, items run down, folders push a new column,
@@ -134,16 +135,27 @@ folders, Options, dialogs, keyboard and button mapping.
   film you were watching (with its poster), or the live channel (with its logo). What's playing sits
   centred at the top with its progress bar. Lists have a details pane, and Options slides in from
   the right. Choose **Background** (Light, Dark, Green or your theme pack's picture) and **Accent Colour**.
+- **Browser (PS2 style).** Blocks stand in a row on a thin shelf, over a field of blocks drifting
+  slowly upwards. **◀ ▶** walks the row, **▲ ▼** changes category down the left edge, and whatever
+  the cursor is on is spelled out above the shelf. A folder of artwork opens as a grid of blocks,
+  like a memory card's saves; anything else as System Configuration's rows, the value on the right
+  and a help line underneath. **Background** is the PS2's own trick — the colour follows the date,
+  deep blue in the winter through to rust in the autumn — or pick one and keep it, and the drifting
+  can be turned off.
 
 | Dashboard settings | Now playing |
 |---|---|
 | ![Dashboard theme settings](docs/dashboard-theme.png) | ![Now playing](docs/now-playing.png) |
 
+| Browser: a folder of games | Browser: settings |
+|---|---|
+| ![Browser grid](docs/ps2-games.png) | ![Browser settings](docs/ps2-settings.png) |
+
 ## The Quick Menu
 
 Press **Select + Start** (or **Home** on a keyboard or remote) in any game, video or app. A native
 overlay opens on top, like Steam's or Discord's, and the game underneath stops seeing the controller
-until you close it. It matches your interface: a side panel for the cross-media bar, or a centred,
+until you close it. It matches your interface: a side panel for the cross-media bar and the Browser, or a centred,
 360-sized **Guide** with five tabs for the Dashboard.
 
 | Guide (Dashboard) | Quick Menu (cross-media bar) |
@@ -366,7 +378,7 @@ shell/inputd.py               crossbar-inputd: root controller service (controll
 shell/crossbar/jackett.py     Jackett: install, trackers' setup forms, search, downloads
 shell/crossbar/lutris*.py     Lutris installers: lutris.net search, and a helper that runs Lutris's own engine
 shell/web/xmb.js              the menu core and the look contract ("Shell seam")
-shell/web/looks/<id>/         looks: xmb (PS3 style), x360 (Xbox 360 style), _template
+shell/web/looks/<id>/         looks: xmb (PS3 style), x360 (Xbox 360 style), ps2 (PS2 style), _template
 iso/                          archiso overlay: packages, autologin, sway session, crossbar-shell
 ```
 
