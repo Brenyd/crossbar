@@ -44,7 +44,8 @@ The folder name, `"id"` in look.json and the id passed to `Shell.register` must 
 
 The starter is ~80 lines: categories down the left, items on the right. Grow it from there —
 the Dashboard (`looks/x360/`) shows everything a look can do, and the Browser (`looks/ps2/`) is a
-shorter worked example: three layouts, its own axes, and a backdrop of its own.
+shorter worked example: three layouts, its own axes, a backdrop of its own in CSS 3D, and a page
+that shows one entry at a time while keeping every item's node where the shared code expects it.
 
 ## look.json
 

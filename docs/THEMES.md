@@ -158,9 +158,11 @@ body[data-shell="x360"] #column .item { border-radius: 8px; }
 Themes can't ship JavaScript, so the Dashboard's *layout* isn't themeable — only what CSS can reach.
 
 With **Interface › Browser (PS2 style)** the menu is the PS2's: `body` carries `data-shell="ps2"`,
-`data-p2mode="browser" | "grid" | "list"` (the page layout), `data-p2bg="field" | "picture"` and
-`data-p2motion="on" | "off"`. Its whole palette is mixed from one hue, `--p2-h` (with `--p2-s`), so
-a pack can recolour everything at once:
+`data-p2mode="browser" | "grid" | "list"` (the page layout — the row, a memory card's grid, or
+System Configuration one entry at a time), `data-p2bg="field" | "picture"`, `data-p2motion="on" |
+"off"` and `data-p2more="1"` when a page has more than one entry. Its whole palette is mixed from
+one hue, `--p2-h` (with `--p2-s`), and `--p2-gold` heads the page while `--p2-lit` marks what the
+cursor is on, so a pack can recolour everything at once:
 
 ```css
 /* the Browser in your pack's colour, whatever the date says */

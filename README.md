@@ -57,7 +57,7 @@ It installs next to the system you already have (CachyOS works great, including 
 | **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys for whatever is playing, volume, channel ± and channel numbers for live TV, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
 | **Lutris installers** (1.2.7) | The community install scripts for thousands of games, run by Lutris's own engine. Point it at your own setup files or disc images, and every question it asks comes up on the TV. |
 | **Jackett** (1.2.7) | Hundreds of public and private trackers, each set up from the controller with its own form (including captchas), searched alongside your plugins. |
-| **A PS2-style Browser** (new) | A third interface: blocks standing in a row over the PS2's own backdrop — a burst of glowing rods turning in space, cubes tumbling past — in a colour that follows the date the way the PS2's did. Artwork opens as a memory-card grid, settings as System Configuration's lists. |
+| **A PS2-style Browser** (new) | A third interface, drawn the way the PS2 drew its own: nothing in a box, nothing down the side. Icons across the middle with only the one you're on named, settings one entry at a time like System Configuration, and the PS2's backdrop behind it — a burst of glowing rods turning in space, cubes tumbling past, in a colour that follows the date. |
 | **Swappable interfaces** (1.2) | The PS3-style cross-media bar, or a ground-up Xbox 360-style Dashboard with a Guide over games. Your choice is the one that boots. |
 | **Memory Guard** (1.2.2) | A game that runs the console out of memory is closed, instead of the whole machine freezing. |
 | **VPN networking** (1.2.3 – 1.2.6) | Split tunnelling, DNS, port forwarding, torrents bound to the VPN, leak tests and plugin search rebuilt. |
@@ -135,15 +135,17 @@ folders, Options, dialogs, keyboard and button mapping.
   film you were watching (with its poster), or the live channel (with its logo). What's playing sits
   centred at the top with its progress bar. Lists have a details pane, and Options slides in from
   the right. Choose **Background** (Light, Dark, Green or your theme pack's picture) and **Accent Colour**.
-- **Browser (PS2 style).** Blocks stand in a row on a thin shelf, over the PS2's own backdrop: a
-  burst of glowing rods turning slowly in space, with dark cubes tumbling past. The clock runs
-  across a black band at the top and the buttons along one at the bottom, each glyph a coloured
-  pip. **◀ ▶** walks the row, **▲ ▼** changes category down the left edge; where you are is
-  spelled out in gold and what the cursor is on in pale blue. A folder of artwork opens as a grid
-  of blocks, like a memory card's saves; anything else as System Configuration's rows, the value
-  on the right and a help line underneath. **Background** is the PS2's own trick — the colour
-  follows the date, deep blue in the winter through to rust in the autumn — or pick one and keep
-  it, and **Background Motion** can be set to Still.
+- **Browser (PS2 style).** The PS2's own menu: nothing is drawn in a box and nothing runs down
+  the side. Icons sit in a row across the middle on a thin rail, the one you're on in the centre
+  and larger, and only it is named — in the PS2's pale blue, with its description under it in
+  white and the page you're in above it in gold. **◀ ▶** walks the row and **▲ ▼** changes
+  category, with the arrows beside the heading to say so. A folder of artwork opens as a grid of
+  icons, like a memory card's saves. Anything else is **System Configuration**: one entry at a
+  time, its value under it and ▲ ▼ beside it, the next sliding in as you go. Behind it all is the
+  PS2's backdrop — a burst of glowing rods turning slowly in space with dark cubes tumbling past —
+  and the clock and buttons sit on black bands top and bottom, each glyph a coloured pip.
+  **Background** is the PS2's own trick: the colour follows the date, deep blue in the winter
+  through to rust in the autumn, or pick one and keep it. **Background Motion** can be set to Still.
 
 | Dashboard settings | Now playing |
 |---|---|

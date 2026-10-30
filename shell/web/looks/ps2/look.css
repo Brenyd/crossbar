@@ -1,17 +1,17 @@
-/* The Browser look (looks/ps2/look.js) — modelled on the PlayStation 2's menu: blocks standing
-   on a shelf over a drifting field, thin pale type, glass panels edged with one hairline.
-   Everything is scoped to body[data-shell="ps2"], so the other looks are untouched. The field's
-   colour is one hue (--p2-h, from Settings › Theme › Background), so every panel, block and
-   highlight is mixed from it. */
+/* The Browser look (looks/ps2/look.js) — the PlayStation 2's menu: nothing in a box, nothing
+   down the side. The backdrop, two black bands, and words — gold for the page, the PS2's pale
+   blue for what the cursor is on, white for its value. Everything is scoped to
+   body[data-shell="ps2"], so the other looks are untouched, and the whole palette is mixed from
+   one hue (--p2-h, from Settings › Theme › Background). */
 
 body[data-shell="ps2"] {
   --p2-h: 222; --p2-s: 44%;                    /* look.js sets these from Background */
   --p2-fg: #eef4ff; --p2-fg2: rgba(238,244,255,.64); --p2-fg3: rgba(238,244,255,.3);
-  --p2-lit: hsl(var(--p2-h) 85% 74%);          /* the highlight: the PS2's pale blue */
+  --p2-lit: hsl(var(--p2-h) 85% 78%);          /* the PS2's pale blue: what you're on */
   --p2-gold: #f2d14b;                          /* and its headings */
   --p2-line: hsl(var(--p2-h) 70% 82% / .3);
-  --p2-glass: hsl(var(--p2-h) 42% 11% / .76);
-  --p2-glass2: hsl(var(--p2-h) 42% 7% / .88);
+  --p2-glass: hsl(var(--p2-h) 42% 11% / .82);
+  --p2-glass2: hsl(var(--p2-h) 42% 7% / .9);
   --hl: hsl(var(--p2-h) 70% 70% / .2); --panel: var(--p2-glass); --accent: var(--p2-lit);
   --kb-bg: var(--p2-glass2); --kb-key: hsl(var(--p2-h) 60% 70% / .1); --kb-text: var(--p2-fg);
   --kb-hl: var(--p2-lit); --kb-hl-text: #06121f; --kb-radius: 3px;
@@ -66,126 +66,116 @@ body[data-shell="ps2"] #cats, body[data-shell="ps2"] #crumb { display: none; }
 
 #p2-root { position: absolute; inset: 0; pointer-events: none; }
 
-/* the letterbox bands the PS2 drew its clock and its buttons on (#clock and #demo-badge come
-   before #p2-root in the page, so they're lifted over the band they sit in) */
-#p2-root .p2-band { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, .78); }
+/* ---- the bands: the clock across the top, the buttons along the bottom (#clock and
+   #demo-badge come before #p2-root in the page, so they're lifted over the band) ---- */
+#p2-root .p2-band { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, .8); }
 #p2-root .p2-band.top { top: 0; height: 66px; border-bottom: 1px solid hsl(var(--p2-h) 60% 72% / .18); }
 #p2-root .p2-band.bot { bottom: 0; height: 70px; border-top: 1px solid hsl(var(--p2-h) 60% 72% / .18); }
-body[data-shell="ps2"] #clock { left: 150px; right: 150px; top: 15px; z-index: 2; font-size: 26px;
+body[data-shell="ps2"] #clock { left: 110px; right: 110px; top: 15px; z-index: 2; font-size: 26px;
   letter-spacing: 3px; color: var(--p2-fg); justify-content: space-between; }
 body[data-shell="ps2"] #clock-date { color: var(--p2-fg); }
 body[data-shell="ps2"] #demo-badge { left: 50%; top: 20px; transform: translateX(-50%); z-index: 2;
   font-size: 13px; color: var(--p2-fg2); border-color: var(--p2-line); }
 
-/* ---- the category index down the left edge (the top level) ---- */
-#p2-root .p2-cats { position: absolute; left: 150px; top: 250px; width: 250px; }
-#p2-root .p2-cat { display: flex; align-items: center; gap: 18px; height: 62px; color: var(--p2-fg3);
-  padding-left: 16px; border-left: 2px solid transparent; transition: color .2s, border-color .2s; }
-#p2-root .p2-cat .p2-ci { width: 32px; height: 32px; flex: none; }
-#p2-root .p2-cat .p2-cl { font-size: 23px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#p2-root .p2-cat.on { color: var(--p2-fg); border-left-color: var(--p2-lit);
-  text-shadow: 0 0 18px hsl(var(--p2-h) 90% 70% / .55); }
-#p2-root .p2-cat.on .p2-ci { filter: drop-shadow(0 0 8px hsl(var(--p2-h) 90% 70% / .6)); }
+/* ---- the words ---- */
+/* the page you're on, in the PS2's gold. At the top level ▲ ▼ walks the categories, so it wears
+   the same arrows an entry does. */
+#p2-root .p2-head { position: absolute; left: 0; right: 0; text-align: center; font-size: 36px;
+  color: var(--p2-gold); letter-spacing: 1px; text-shadow: 0 2px 14px rgba(0, 0, 0, .7); }
+#p2-root .p2-head span { position: relative; display: inline-block; vertical-align: bottom; }
+#p2-root .p2-head .p2-txt { display: inline-block; max-width: 1100px; font-style: normal;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+body[data-p2mode="browser"] #p2-root .p2-head span::after,
+body[data-p2mode="list"][data-p2more="1"] #column .item.on .label::after {
+  content: "▲\A▼"; white-space: pre; position: absolute; right: -52px; top: 50%;
+  transform: translateY(-50%); font-size: 15px; line-height: 1.1; letter-spacing: 0;
+  color: var(--p2-lit); opacity: .8; animation: p2-blink 2.4s ease-in-out infinite; }
+@keyframes p2-blink { 50% { opacity: .35; } }
+body[data-p2motion="off"] #p2-root .p2-head span::after { animation: none; }
 
-/* ---- the name of whatever the cursor is on, above the shelf ---- */
-#p2-root .p2-head { position: absolute; left: 470px; top: 96px; width: 1300px; }
-#p2-root .p2-path { font-size: 23px; color: var(--p2-gold); letter-spacing: 2px; height: 32px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#p2-root .p2-title { font-size: 52px; font-weight: 200; line-height: 1.2; height: 68px; color: var(--p2-lit);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 20px rgba(0,0,0,.6); }
-#p2-root .p2-badge { display: inline-block; margin-top: 6px; font-size: 14px; letter-spacing: 2px;
-  padding: 3px 10px; border: 1px solid var(--p2-line); color: var(--p2-fg2); }
-#p2-root .p2-sub { margin-top: 10px; font-size: 23px; color: var(--p2-fg2); line-height: 1.4;
-  max-height: 64px; overflow: hidden; }
-#p2-root .p2-bar { width: 520px; height: 5px; margin-top: 16px; background: hsl(var(--p2-h) 50% 70% / .2); }
+/* what the cursor is on: its name, then its value — the row and the grid show it here, a page
+   of settings draws its own (one entry at a time, below) */
+#p2-root .p2-sel { position: absolute; left: 0; right: 0; text-align: center; }
+#p2-root .p2-name { font-size: 44px; font-weight: 200; color: var(--p2-lit); letter-spacing: .5px;
+  max-width: 1300px; margin: 0 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .75); }
+#p2-root .p2-badge { display: inline-block; margin-top: 10px; font-size: 14px; letter-spacing: 2px;
+  padding: 2px 10px; border: 1px solid var(--p2-line); color: var(--p2-fg2); }
+#p2-root .p2-value { margin-top: 12px; font-size: 25px; color: var(--p2-fg); max-width: 1300px;
+  margin-left: auto; margin-right: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
+#p2-root .p2-bar { width: 440px; height: 5px; margin: 18px auto 0; background: hsl(var(--p2-h) 50% 70% / .22); }
 #p2-root .p2-bar i { display: block; height: 100%; background: var(--p2-lit); box-shadow: 0 0 10px var(--p2-lit); transition: width .5s; }
-#p2-root .p2-empty { position: absolute; left: 470px; top: 470px; font-size: 28px; color: var(--p2-fg2); }
+#p2-root .p2-empty { position: absolute; left: 0; right: 0; top: 520px; text-align: center;
+  font-size: 28px; color: var(--p2-fg2); }
 
-/* the shelf the row stands on, fading out at both ends */
-#p2-root .p2-shelf { position: absolute; left: 420px; right: 100px; top: 578px; height: 1px;
-  background: linear-gradient(90deg, transparent, var(--p2-line) 12%, var(--p2-line) 88%, transparent);
-  box-shadow: 0 0 24px hsl(var(--p2-h) 85% 70% / .22); }
+/* the rail the row stands on, fading out at both ends */
+#p2-root .p2-shelf { position: absolute; left: 150px; right: 150px; top: 586px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--p2-line) 18%, var(--p2-line) 82%, transparent);
+  box-shadow: 0 0 26px hsl(var(--p2-h) 85% 70% / .2); }
 
-/* ---- blocks ---- */
+/* ---- the icons: the artwork or the glyph itself, with nothing drawn round it ---- */
 body[data-shell="ps2"] #column .item { display: block; height: auto; gap: 0; text-align: center; }
-body[data-shell="ps2"] #column .p2-box { position: relative; width: 150px; height: 150px; margin: 0 auto;
-  transform-origin: 50% 100%; transition: transform .26s var(--ease);
-  background: linear-gradient(158deg, hsl(var(--p2-h) 40% 48% / .9), hsl(var(--p2-h) 48% 18% / .94));
-  border: 1px solid hsl(var(--p2-h) 70% 86% / .34);
-  box-shadow: 0 16px 28px rgba(0,0,0,.45), inset 0 1px 0 hsl(var(--p2-h) 85% 92% / .35); }
-/* the top and right faces: two skewed strips, so a block reads as a block and not a card */
-body[data-shell="ps2"] #column .p2-box::before { content: ""; position: absolute; left: 0; right: 0; top: -13px; height: 13px;
-  background: hsl(var(--p2-h) 55% 68% / .5); transform: skewX(-45deg); transform-origin: 0 100%; }
-body[data-shell="ps2"] #column .p2-box::after { content: ""; position: absolute; top: 0; bottom: 0; right: -13px; width: 13px;
-  background: hsl(var(--p2-h) 50% 26% / .6); transform: skewY(-45deg); transform-origin: 0 0; }
-body[data-shell="ps2"] #column .p2-gl { position: absolute; inset: 0; pointer-events: none;
-  background: linear-gradient(118deg, rgba(255,255,255,.26) 0 17%, rgba(255,255,255,.05) 33%, rgba(255,255,255,0) 54%); }
+body[data-shell="ps2"] #column .p2-obj { position: relative; width: 150px; height: 150px; margin: 0 auto;
+  transform-origin: 50% 100%; transition: transform .26s var(--ease), filter .26s; }
 body[data-shell="ps2"] #column .item .ico, body[data-shell="ps2"] #column .item .art {
-  position: absolute; inset: 10px; width: auto; height: auto; border-radius: 0; box-shadow: none; animation: none; transition: none; }
-body[data-shell="ps2"] #column .item .ico { display: grid; place-items: center; }
-body[data-shell="ps2"] #column .item .ico .i { width: 72px; height: 72px; }
-body[data-shell="ps2"] #column .item .art { background-color: hsl(var(--p2-h) 45% 10% / .5); font-size: 15px; }
-body[data-shell="ps2"] #column .item .art.poster, body[data-shell="ps2"] #column .item .art.square { background-size: contain; }
-body[data-shell="ps2"] #column .item.on .p2-box { transform: scale(1.34);
-  border-color: hsl(var(--p2-h) 90% 92% / .7); box-shadow: 0 18px 34px rgba(0,0,0,.5), 0 0 34px hsl(var(--p2-h) 90% 70% / .4), inset 0 1px 0 rgba(255,255,255,.45); }
-body[data-shell="ps2"] #column .item .p2-tag { position: absolute; left: 50%; top: 0; transform: translateX(-50%);
-  font-size: 12px; letter-spacing: 2px; padding: 1px 8px; background: var(--p2-glass2); border: 1px solid var(--p2-line); color: var(--p2-fg2); }
-
-/* the name under a block (the row and the grid): small, one line, the lit one brighter */
-body[data-shell="ps2"] #column .item .txt { width: 190px; margin: 0 auto; padding-top: 22px; }
-body[data-shell="ps2"] #column .item .label { font-size: 19px; color: var(--p2-fg3); transition: color .2s, font-size .2s; }
-body[data-shell="ps2"] #column .item .sub { display: none; }
-body[data-shell="ps2"] #column .item .bar { width: 150px; height: 4px; margin: 10px auto 0; border-radius: 0;
-  background: hsl(var(--p2-h) 50% 70% / .22); }
+  position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; animation: none; transition: none; }
+body[data-shell="ps2"] #column .item .ico { display: grid; place-items: center;
+  filter: drop-shadow(0 6px 16px rgba(0, 0, 0, .6)); }
+body[data-shell="ps2"] #column .item .ico .i { width: 96px; height: 96px; }
+body[data-shell="ps2"] #column .item .art { background-color: transparent; font-size: 15px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, .55); }
+body[data-shell="ps2"] #column .item .art.poster, body[data-shell="ps2"] #column .item .art.square {
+  background-size: contain; box-shadow: none; filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .55)); }
+/* not on it: dimmer and smaller, the way the PS2 pushed the rest of the row back */
+body[data-shell="ps2"] #column .item:not(.on) .p2-obj { transform: scale(.82); filter: brightness(.82) saturate(.85); }
+body[data-shell="ps2"] #column .item.on .p2-obj { filter: drop-shadow(0 0 26px hsl(var(--p2-h) 90% 70% / .45)); }
+/* the row and the grid name only what you're on (in .p2-sel), so the words stay out of the way */
+body[data-p2mode="browser"] #column .item .label, body[data-p2mode="grid"] #column .item .label,
+body[data-p2mode="browser"] #column .item .sub, body[data-p2mode="grid"] #column .item .sub { display: none; }
+body[data-shell="ps2"] #column .item .bar { width: 150px; height: 4px; margin: 14px auto 0; border-radius: 0;
+  background: hsl(var(--p2-h) 50% 70% / .25); }
 body[data-shell="ps2"] #column .item .bar i { background: var(--p2-lit); box-shadow: none; }
-body[data-shell="ps2"] #column .item.on .label { font-size: 20px; color: var(--p2-fg); text-shadow: 0 0 16px hsl(var(--p2-h) 90% 70% / .6); }
+body[data-shell="ps2"] #column .item .txt { padding: 0; }
 
-/* the row slides under the cursor, and fades out where the index and the screen edge are */
+/* the row fades out where it leaves the screen */
 body[data-shell="ps2"][data-p2mode="browser"] #column {
-  -webkit-mask-image: linear-gradient(90deg, transparent 390px, #000 480px, #000 1740px, transparent 1850px);
-  mask-image: linear-gradient(90deg, transparent 390px, #000 480px, #000 1740px, transparent 1850px); }
-/* a grid: the same blocks, six across, filling the width a folder gets to itself */
-body[data-shell="ps2"][data-p2mode="grid"] #p2-root .p2-head { left: 150px; width: 1620px; }
-body[data-shell="ps2"][data-p2mode="grid"] #p2-root .p2-sub { max-height: 32px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-body[data-shell="ps2"][data-p2mode="grid"] #p2-root .p2-bar { display: none; }   /* the block carries its own */
-body[data-shell="ps2"][data-p2mode="grid"] #p2-root .p2-shelf, body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-shelf { display: none; }
-body[data-shell="ps2"][data-p2mode="grid"] #column .item .txt { width: 210px; padding-top: 18px; }
+  -webkit-mask-image: linear-gradient(90deg, transparent 40px, #000 240px, #000 1680px, transparent 1880px);
+  mask-image: linear-gradient(90deg, transparent 40px, #000 240px, #000 1680px, transparent 1880px); }
 
-/* ---- a list: System Configuration's rows — name on the left, value on the right ---- */
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-head { left: 150px; width: 1620px; }
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-title { font-size: 46px; color: var(--p2-gold); }
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-sub { position: absolute; left: 0; top: 806px; width: 1400px; font-size: 22px; }
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-bar { position: absolute; left: 0; top: 854px; }
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-badge { display: none; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item { display: flex; align-items: center; gap: 24px; height: 68px;
-  padding: 0 28px; text-align: left; border-bottom: 1px solid hsl(var(--p2-h) 60% 80% / .12); }
-body[data-shell="ps2"][data-p2mode="list"] #column .p2-box, body[data-shell="ps2"][data-p2mode="list"] #column .item.on .p2-box {
-  width: 48px; height: 48px; flex: none; margin: 0; background: none; border: 0; box-shadow: none; transform: none; }
-body[data-shell="ps2"][data-p2mode="list"] #column .p2-box::before, body[data-shell="ps2"][data-p2mode="list"] #column .p2-box::after,
-body[data-shell="ps2"][data-p2mode="list"] #column .p2-gl { display: none; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .ico { inset: 0; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .ico .i { width: 40px; height: 40px; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .art { inset: 0; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .txt { display: flex; align-items: baseline; gap: 24px;
-  flex: 1; min-width: 0; width: auto; margin: 0; padding: 0; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .label { flex: 1; font-size: 27px; color: var(--p2-fg2);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px rgba(0, 0, 0, .75); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .sub { display: block; flex: none; max-width: 520px; height: auto;
-  opacity: 1; margin: 0; font-size: 21px; color: var(--p2-fg3); overflow: hidden; text-overflow: ellipsis;
-  text-shadow: 0 1px 6px rgba(0, 0, 0, .75); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .bar { position: absolute; left: 28px; right: 28px; bottom: 6px;
-  width: auto; height: 3px; margin: 0; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item .p2-tag { position: static; transform: none; flex: none; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on { background: linear-gradient(90deg,
-  hsl(var(--p2-h) 80% 70% / .16), hsl(var(--p2-h) 80% 70% / .04) 70%, transparent);
-  box-shadow: inset 3px 0 0 var(--p2-lit); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on .label { color: var(--p2-lit); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on::after { content: "▲\A▼"; white-space: pre;
-  flex: none; font-size: 13px; line-height: 1.15; color: var(--p2-lit); opacity: .75; }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on .sub { color: var(--p2-fg2); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on .ico .i { filter: drop-shadow(0 0 8px hsl(var(--p2-h) 90% 70% / .6)); }
+/* where the words sit on each screen */
+body[data-p2mode="browser"] #p2-root .p2-head { top: 300px; }
+body[data-p2mode="browser"] #p2-root .p2-sel { top: 638px; }
+body[data-p2mode="grid"] #p2-root .p2-head { top: 120px; }
+body[data-p2mode="grid"] #p2-root .p2-sel { top: 846px; }
+body[data-p2mode="grid"] #p2-root .p2-name { font-size: 38px; }
+body[data-p2mode="grid"] #p2-root .p2-value { margin-top: 8px; font-size: 23px; }
+body[data-p2mode="grid"] #p2-root .p2-bar { display: none; }
+body[data-p2mode="grid"] #p2-root .p2-badge { margin-top: 8px; }
+body[data-p2mode="grid"] #p2-root .p2-shelf, body[data-p2mode="list"] #p2-root .p2-shelf { display: none; }
 
-/* ---- the button hints ---- */
+/* ---- a page of settings: System Configuration — one entry at a time, its value under it ---- */
+body[data-p2mode="list"] #p2-root .p2-head { top: 396px; left: 520px; right: 200px; }
+body[data-p2mode="list"] #p2-root .p2-empty { top: 486px; left: 520px; right: 200px; }
+body[data-shell="ps2"][data-p2mode="list"] #column .item { text-align: center; }
+body[data-shell="ps2"][data-p2mode="list"] #column .p2-obj { display: none; }
+body[data-shell="ps2"][data-p2mode="list"] #column .item .label { position: relative; display: inline-block;
+  font-size: 42px; font-weight: 200; color: var(--p2-lit); letter-spacing: .5px; max-width: none;
+  overflow: visible;                                  /* style.css clips .label; the ▲ ▼ hang outside it */
+  text-shadow: 0 2px 16px rgba(0, 0, 0, .75); }
+body[data-shell="ps2"][data-p2mode="list"] #column .item .label .p2-txt { display: inline-block;
+  max-width: 1040px; font-style: normal; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; vertical-align: bottom; }
+body[data-shell="ps2"][data-p2mode="list"] #column .item .sub { display: block; height: auto; opacity: 1;
+  margin: 14px auto 0; max-width: 1100px; font-size: 25px; color: var(--p2-fg); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 12px rgba(0, 0, 0, .8); }
+body[data-shell="ps2"][data-p2mode="list"] #column .item .bar { width: 440px; margin-top: 18px; }
+body[data-shell="ps2"][data-p2mode="list"] #column .item .p2-tag { display: inline-block; margin-left: 16px;
+  padding: 2px 10px; border: 1px solid var(--p2-line); font-size: 14px; font-weight: 400;
+  letter-spacing: 2px; color: var(--p2-fg2); vertical-align: 8px; }
+body[data-p2mode="browser"] #column .item .p2-tag, body[data-p2mode="grid"] #column .item .p2-tag { display: none; }
+
+/* ---- the buttons along the bottom band, each glyph a coloured pip like the PS2's ---- */
 body[data-shell="ps2"] #hint { left: 150px; right: 150px; bottom: 18px; height: auto; padding: 0;
   background: none; text-align: left; font-size: 21px; color: var(--p2-fg); }
 body[data-shell="ps2"] #hint span { margin: 0 40px 0 12px; }
@@ -200,24 +190,27 @@ body[data-shell="ps2"] #hint b.glyph[data-a="menu"] { background: #2fa85e; }    
 body[data-shell="ps2"] #hint b.p2-dpad { width: auto; padding: 0 12px; border-radius: 17px;
   font-size: 14px; letter-spacing: 2px; background: #4a4f68; }
 
-/* ---- Options: a glass panel in from the right ---- */
-body[data-shell="ps2"] #options { width: 640px; padding: 300px 0 0 0;
-  background: linear-gradient(90deg, hsl(var(--p2-h) 42% 10% / .9), hsl(var(--p2-h) 42% 6% / .97));
-  border-left: 1px solid var(--p2-line); box-shadow: -20px 0 50px rgba(0,0,0,.5); }
-body[data-shell="ps2"] #options::before { content: attr(data-title); position: absolute; left: 44px; right: 40px; top: 238px;
-  z-index: 2; font-size: 21px; letter-spacing: 2px; color: var(--p2-fg2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-body[data-shell="ps2"] #options.more-down::after { left: 0; background: linear-gradient(transparent, hsl(var(--p2-h) 42% 6% / .97)); }
-body[data-shell="ps2"] #options .opt-head { padding: 0 44px 8px; font-size: 18px; letter-spacing: 2px; color: var(--p2-fg3); }
-body[data-shell="ps2"] .opt { font-size: 27px; padding: 14px 44px; color: var(--p2-fg2); }
-body[data-shell="ps2"] .opt.on { color: var(--p2-fg);
-  background: linear-gradient(90deg, hsl(var(--p2-h) 80% 70% / .3), transparent); }
-body[data-shell="ps2"] .opt.on::before { background: var(--p2-lit); box-shadow: 0 0 10px var(--p2-lit); }
+/* ---- Options (△): a small box where you are, not a panel down the side ---- */
+body[data-shell="ps2"] #options { left: 50%; right: auto; top: 286px; bottom: auto; width: 660px;
+  height: auto; max-height: 440px; padding: 0 0 22px; transform: translateX(-50%); background: var(--p2-glass2);
+  border: 1px solid var(--p2-line); box-shadow: 0 30px 70px rgba(0, 0, 0, .6); animation: p2-pop .2s var(--ease); }
+body[data-shell="ps2"] #options::before { content: attr(data-title); position: absolute; left: 36px; right: 36px;
+  top: 22px; z-index: 2; font-size: 22px; letter-spacing: 1px; color: var(--p2-gold);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+body[data-shell="ps2"] #options.more-down::after { left: 0; background: linear-gradient(transparent, var(--p2-glass2)); }
+body[data-shell="ps2"] #options .opt-list { padding-top: 60px; }
+body[data-shell="ps2"] #options .opt-head { padding: 0 36px 8px; font-size: 17px; letter-spacing: 2px; color: var(--p2-fg3); }
+body[data-shell="ps2"] .opt { font-size: 26px; padding: 12px 36px; color: var(--p2-fg2); }
+body[data-shell="ps2"] .opt.on { color: var(--p2-lit); background: none; }
+body[data-shell="ps2"] .opt.on::before { display: none; }
 
-/* ---- dialogs: a glass box, one hairline round it ---- */
-body[data-shell="ps2"] .dlg-box { width: 1080px; max-width: 1080px; padding: 48px 56px 44px; background: var(--p2-glass);
-  border: 1px solid var(--p2-line); box-shadow: 0 30px 70px rgba(0,0,0,.6); animation: p2-pop .2s var(--ease); }
+/* ---- dialogs: the PS2 asked in a plain box, centred ---- */
+body[data-shell="ps2"] .dlg-box { width: 1020px; max-width: 1020px; padding: 46px 56px 42px; background: var(--p2-glass);
+  border: 1px solid var(--p2-line); box-shadow: 0 30px 70px rgba(0, 0, 0, .6); animation: p2-pop .2s var(--ease); }
 @keyframes p2-pop { from { transform: scale(.97); opacity: 0; } }
-body[data-shell="ps2"] .dlg-title { font-size: 24px; letter-spacing: 2px; color: var(--p2-fg2); }
+body[data-shell="ps2"] #options { animation-name: p2-pop-x; }
+@keyframes p2-pop-x { from { transform: translateX(-50%) scale(.97); opacity: 0; } }
+body[data-shell="ps2"] .dlg-title { font-size: 24px; letter-spacing: 1px; color: var(--p2-gold); }
 body[data-shell="ps2"] .dlg-body { font-size: 28px; line-height: 1.5; }
 body[data-shell="ps2"] .dlg-fields input { background: hsl(var(--p2-h) 50% 70% / .1); border: 1px solid var(--p2-line);
   border-radius: 2px; color: var(--p2-fg); }
@@ -230,12 +223,13 @@ body[data-shell="ps2"] .dlg-btn.on { color: #06121f; background: var(--p2-lit); 
 
 /* ---- toasts, the Quick Menu's panel, starting a game ---- */
 body[data-shell="ps2"] .toast { border: 1px solid var(--p2-line); border-radius: 2px; background: var(--p2-glass2); }
+body[data-shell="ps2"] #toasts { top: 100px; }
 body[data-shell="ps2"] #quick .q-shade, body[data-shell="ps2"] #quick:not(.has-shot) .q-shade {
   background: linear-gradient(90deg, hsl(var(--p2-h) 45% 4% / .96) 0 46%, hsl(var(--p2-h) 45% 4% / .66)); }
 body[data-shell="ps2"] .q-panel { border-left: 1px solid var(--p2-line); padding-left: 24px; }
 body[data-shell="ps2"] .q-kicker { letter-spacing: 6px; color: var(--p2-fg2); }
-body[data-shell="ps2"] .q-row.on { background: linear-gradient(90deg, hsl(var(--p2-h) 80% 70% / .3), transparent);
-  box-shadow: inset 3px 0 0 var(--p2-lit); }
+body[data-shell="ps2"] .q-row.on { color: var(--p2-lit);
+  background: linear-gradient(90deg, hsl(var(--p2-h) 80% 70% / .18), transparent); box-shadow: inset 3px 0 0 var(--p2-lit); }
 body[data-shell="ps2"] #launch { background: hsl(var(--p2-h) 45% 5% / .82); }
 body[data-shell="ps2"] #launch .l-spin { border-color: hsl(var(--p2-h) 60% 70% / .18); border-top-color: var(--p2-lit); }
 body[data-shell="ps2"] #osk { border-radius: 3px; border: 1px solid var(--p2-line); }

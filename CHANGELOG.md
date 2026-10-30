@@ -2,18 +2,20 @@
 
 ## Unreleased
 
-- **A third interface: the Browser (PS2 style)** (Settings › Theme › Interface). Blocks stand in a
-  row on a thin shelf, over the PS2's own backdrop — a burst of glowing rods turning slowly in
-  space, with dark cubes tumbling past it, drawn with CSS 3D transforms so the compositor animates
-  it and nothing repaints. The clock runs across a black band at the top and the buttons along one
-  at the bottom, each glyph a coloured pip; where you are is spelled out in gold and what the cursor
-  is on in pale blue, as System Configuration had it. **◀ ▶** walks the row and **▲ ▼** changes
-  category down the left edge. A folder of artwork opens as a grid of blocks, like a memory card's
-  saves, and anything else as System Configuration's rows — name on the left, value on the right,
-  a help line underneath. **Background** follows the date the way the PS2's did (deep blue in the
-  winter through to rust in the autumn), or pick a colour and keep it; **Background Motion** can be
-  set to Still. It's a look like any other (`shell/web/looks/ps2/`), so nothing in the backend
-  changed and the menu underneath is the same one
+- **A third interface: the Browser (PS2 style)** (Settings › Theme › Interface), drawn the way the
+  PS2 drew its own — nothing in a box, nothing down the side. Icons sit in a row across the middle
+  on a thin rail, the one you're on centred and larger and the only one named: its name in the
+  PS2's pale blue, its description under it in white, the page you're in above it in gold.
+  **◀ ▶** walks the row, **▲ ▼** changes category, and the arrows sit beside the heading to say so.
+  A folder of artwork opens as a grid of icons, like a memory card's saves; anything else is
+  **System Configuration** — one entry at a time, its value under it and ▲ ▼ beside it, the next
+  sliding in as you move. Behind it all is the PS2's backdrop: a burst of glowing rods turning
+  slowly in space with dark cubes tumbling past, drawn with CSS 3D transforms so the compositor
+  animates it and nothing repaints. The clock runs across a black band at the top and the buttons
+  along one at the bottom, each glyph a coloured pip. **Background** follows the date the way the
+  PS2's did (deep blue in the winter through to rust in the autumn), or pick a colour and keep it;
+  **Background Motion** can be set to Still. It's a look like any other (`shell/web/looks/ps2/`),
+  so nothing in the backend changed and the menu underneath is the same one
 
 ## 1.2.9 Alpha
 - **TV remotes** (Settings › Controller, Remote & Keyboard › TV Remote): an Android TV remote — or a

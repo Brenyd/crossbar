@@ -1,23 +1,26 @@
 'use strict';
-// The Browser look — modelled on the PlayStation 2's own menu: upright blocks standing in a row
-// on a thin shelf, over the PS2's backdrop of a burst of glowing rods turning slowly in space
-// with dark cubes tumbling past, in a colour the PS2 took from its own clock ("Automatic" here
-// does the same, a hue a month). The clock and the buttons sit on black bands top and bottom;
-// where you are is spelled out in gold and what the cursor is on in pale blue, the way System
-// Configuration had it. A folder of artwork opens as a grid of blocks, the way a memory card
-// showed its saves, and a folder of settings as System Configuration's list of rows.
+// The Browser look — the PlayStation 2's own menu, kept as close as a menu with a games library
+// in it can be. Nothing is drawn in a box and nothing runs down the side: there is the backdrop
+// (a burst of glowing rods turning slowly in space, dark cubes tumbling past, in a colour the PS2
+// took from its own clock — "Automatic" does the same, a hue a month), the black bands top and
+// bottom with the clock and the buttons on them, and the words. Where you are is spelled out in
+// gold, what the cursor is on in pale blue, and its value in white, the way System Configuration
+// had it.
 //
-// It's a whole front end, not a re-skin: it builds its own page (#p2-root), its own blocks and
-// layouts, and it swaps the cross-media bar's axes — left / right walks the row, up / down
-// changes category (the index down the left edge). Every block is still the same item from the
-// same menu model (xmb.js), so A / B / Y and every command behave exactly as they do in the
-// other looks. It keeps xmb.js's item node contract (.item > .txt > .sub, .bar > i; columnEls
-// index-parallel to list()) so a running download's text and progress land here too.
+// It's a whole front end, not a re-skin: it builds its own page (#p2-root) and its own layouts,
+// and it swaps the cross-media bar's axes — left / right walks the row, up / down changes
+// category. Every icon is still the same item from the same menu model (xmb.js), so A / B / Y and
+// every command behave exactly as they do in the other looks, and it keeps xmb.js's item node
+// contract (.item > .txt > .sub, .bar > i; columnEls index-parallel to list()) so a running
+// download's text and progress land here too.
 //
-// Three layouts, picked per page:
-//   browser — the top level: the row of blocks, the category index, the name above the shelf
-//   grid    — a folder of mostly artwork (games, films, photos): blocks six across
-//   list    — any other folder (settings…): rows, the value on the right, help underneath
+// Three screens, picked per page — the two the PS2 itself had, and a grid for the libraries it
+// never had to show:
+//   browser — the top level: icons in a row across the middle, only the one under the cursor
+//             named, the way the PS2's own Browser named the memory card you were on
+//   grid    — a folder of mostly artwork (games, films, photos): the same icons six across
+//   list    — any other folder (settings…): System Configuration — one entry at a time, its
+//             value under it, ▲▼ beside it, and the rest waiting above and below
 
 // The PS2 read its backdrop's colour off the clock, so the browser looked different through the
 // year: deep blue in the winter, green by the summer, rust in the autumn. A hue a month.
@@ -33,18 +36,19 @@ const P2_CUBES = [[2, 20, 88, 104, 0, '130px', '-70px'], [74, 56, 108, 128, -46,
 
 const PS2 = {
   id: 'ps2',
-  // ---- geometry: a 1920×1080 stage with TV-safe margins
-  MID: 1110, PITCH: 200, ITEM_W: 210, ROW_Y: 420,          // the row: centre, block pitch, slot, top
-  WIN_L: 480, WIN_R: 1740,                                 // and the window it runs in (look.css fades both ends)
-  COLS: 6, CELL_W: 270, CELL_H: 210, GRID_W: 230, GRID_TOP: 336, GRID_BOT: 966,
-  L: 150, LIST_TOP: 268, ROW: 76, LIST_W: 1320, LIST_BOT: 876,
-  optionsGeom: { TOP: 300, MIN: 220, MAX: 980 },
+  // ---- geometry: a 1920×1080 stage, between the bands (66px down to 1010px)
+  MID: 960, PITCH: 230, ITEM_W: 200, ROW_Y: 430,       // the row: centred on the cursor, as the PS2's was
+  COLS: 6, CELL_W: 270, CELL_H: 196, GRID_W: 230, GRID_TOP: 252, GRID_BOT: 812,
+  // a page of settings: the entries stand in a column that steps past the middle one, and the
+  // words sit right of the burst, where System Configuration's did
+  TEXT_X: 520, TEXT_W: 1200, STEP: 96, WHEEL_Y: 486,
+  optionsGeom: { TOP: 346, MIN: 336, MAX: 690 },
 
   mode: 'browser', slots: [], scroll: 0,
 
   // ---------------------------------------------------------------- lifecycle
   setup() {
-    if (!$('#p2-bg')) {                       // the field covers the whole screen, letterbox included
+    if (!$('#p2-bg')) {                       // the backdrop covers the whole screen, bands included
       const bg = document.createElement('div');
       bg.id = 'p2-bg';
       const rods = Array.from({ length: P2_RODS }, (_, i) => {
@@ -61,12 +65,13 @@ const PS2 = {
     if (!$('#p2-root')) {
       const r = document.createElement('div');
       r.id = 'p2-root';
+      // the head names the page; the block under it is what the cursor is on (a settings page
+      // draws that itself, in its own column, so it hides this one)
       r.innerHTML = `
         <div class="p2-band top"></div><div class="p2-band bot"></div>
-        <div class="p2-cats"></div>
-        <div class="p2-head"><div class="p2-path"></div>
-          <div class="p2-title"></div><div class="p2-badge" hidden></div>
-          <div class="p2-sub"></div><div class="p2-bar" hidden><i></i></div></div>
+        <div class="p2-head"><span><i class="p2-txt"></i></span></div>
+        <div class="p2-sel"><div class="p2-name"></div><div class="p2-badge" hidden></div>
+          <div class="p2-value"></div><div class="p2-bar" hidden><i></i></div></div>
         <div class="p2-shelf"></div>
         <div class="p2-empty" hidden>Nothing here yet</div>`;
       $('#stage').insertBefore(r, $('#column'));
@@ -76,10 +81,10 @@ const PS2 = {
   teardown() {
     $('#p2-root')?.remove(); $('#p2-bg')?.remove();
     $('#column').innerHTML = '';
-    for (const a of ['p2mode', 'p2bg', 'p2motion']) document.body.removeAttribute(`data-${a}`);
+    for (const a of ['p2mode', 'p2bg', 'p2motion', 'p2more']) document.body.removeAttribute(`data-${a}`);
     document.body.style.removeProperty('--p2-h'); document.body.style.removeProperty('--p2-s');
   },
-  resetCats() { const c = $('.p2-cats'); if (c) c.innerHTML = ''; },
+  resetCats() {},                             // the categories aren't drawn: the head names the one you're in
 
   // look.json's settings: Background and Background Motion
   configure() {
@@ -93,8 +98,8 @@ const PS2 = {
   },
 
   // ---------------------------------------------------------------- item nodes
-  // a block: artwork or an icon on its front face, the name underneath (the row and the grid);
-  // in a list it flattens into a row — one node shape, three sets of styles
+  // an icon and its words. The row and the grid show the icon alone — only the one under the
+  // cursor is named, over in .p2-sel; a settings page shows the words and no icon at all.
   itemEl(it) {
     const el = document.createElement('div');
     el.className = 'item';
@@ -104,10 +109,10 @@ const PS2 = {
       const shape = it.artShape === 'poster' ? ' poster' : it.artShape === 'square' ? ' square' : '';
       face = `<div class="art${shape}" style="background-image:linear-gradient(150deg,hsl(${hue} 48% 44%),hsl(${(hue + 40) % 360} 54% 20%))"><span>${esc(it.artTitle || it.label)}</span></div>`;
     } else face = `<div class="ico">${icon(it.icon)}</div>`;
-    el.innerHTML = `<div class="p2-box">${face}<i class="p2-gl"></i></div>
-      <div class="txt"><div class="label">${esc(gl(it.label))}</div><div class="sub">${esc(gl(it.sub || ''))}</div>${
-      it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>${
-      it.badge ? `<div class="p2-tag">${esc(it.badge)}</div>` : ''}`;
+    el.innerHTML = `<div class="p2-obj">${face}</div>
+      <div class="txt"><div class="label"><i class="p2-txt">${esc(gl(it.label))}</i>${it.badge ? `<b class="p2-tag">${esc(it.badge)}</b>` : ''}</div>
+      <div class="sub">${esc(gl(it.sub || ''))}</div>${
+      it.progress != null ? `<div class="bar"><i style="width:${(it.progress * 100).toFixed(1)}%"></i></div>` : ''}</div>`;
     if (it.art && artLoaded.has(it.art)) showArt(el, it.art);
     return el;
   },
@@ -127,18 +132,11 @@ const PS2 = {
     this.renderColumn(true);
   },
 
-  // the category index down the left edge (the top level), and where you are above the title
+  // the head: the page you're on — the folder's name, or the category's at the top level, where
+  // ▲ ▼ walks them (look.css puts the arrows beside it)
   renderCats() {
-    const idx = $('.p2-cats');
-    if (!idx) return;
-    if (!idx.children.length) {
-      idx.innerHTML = CATS.map((c) => `<div class="p2-cat"><div class="p2-ci">${icon(c.icon)}</div><div class="p2-cl">${esc(c.label)}</div></div>`).join('');
-    }
-    [...idx.children].forEach((el, i) => el.classList.toggle('on', i === S.ci));
-    idx.hidden = S.stack.length > 0;
-    const trail = [CATS[S.ci].label, ...S.stack.map((f) => f.title)];
-    if (this.pickMode() === 'list') trail.pop();          // a list is headed by the folder's own name
-    $('.p2-path').textContent = trail.join('  ›  ');
+    const head = $('#p2-root .p2-head .p2-txt');
+    if (head) head.textContent = S.stack.length ? (S.stack.at(-1).title || '') : CATS[S.ci].label;
   },
 
   renderColumn(rebuild = true) {
@@ -148,6 +146,7 @@ const PS2 = {
     if (rebuild || mode !== this.mode) this.scroll = 0;
     this.mode = mode;
     document.body.dataset.p2mode = mode;
+    document.body.dataset.p2more = items.length > 1 ? '1' : '';      // ▲ ▼ beside the entry
     if (rebuild) col.classList.add('swap');
     col.innerHTML = '';
     columnEls = items.map((it) => { const el = this.itemEl(it); col.appendChild(el); return el; });
@@ -158,63 +157,60 @@ const PS2 = {
     this.hint();
   },
 
-  // where every block / row goes, in stage pixels (the row is laid out from zero and slid into
-  // place by rowShift; the grid and the list scroll instead)
+  // where every icon / entry goes, in stage pixels. The row and the settings column are laid out
+  // from zero and slid under the cursor by position(); the grid scrolls.
   layout(items) {
     if (this.mode === 'browser') {
       this.slots = items.map((_, i) => ({ x: i * this.PITCH, y: this.ROW_Y, w: this.ITEM_W }));
     } else if (this.mode === 'grid') {
-      this.slots = items.map((_, i) => ({ x: this.L + (i % this.COLS) * this.CELL_W,
+      // centred on the screen, however many columns it actually fills
+      const cols = Math.min(this.COLS, items.length);
+      const left = Math.round((1920 - (cols * this.CELL_W - (this.CELL_W - this.GRID_W))) / 2);
+      this.slots = items.map((_, i) => ({ x: left + (i % this.COLS) * this.CELL_W,
         y: this.GRID_TOP + Math.floor(i / this.COLS) * this.CELL_H, w: this.GRID_W }));
     } else {
-      this.slots = items.map((_, i) => ({ x: this.L, y: this.LIST_TOP + i * this.ROW, w: this.LIST_W }));
+      this.slots = items.map((_, i) => ({ x: this.TEXT_X, y: i * this.STEP, w: this.TEXT_W }));
     }
   },
 
   position() {
     const items = list(), s = sel(), cur = this.slots[s];
-    const row = this.mode === 'browser';
-    if (cur && !row) {                                    // keep the selection inside the window
-      const top = this.mode === 'grid' ? this.GRID_TOP : this.LIST_TOP;
-      const bot = this.mode === 'grid' ? this.GRID_BOT : this.LIST_BOT;
-      const h = this.mode === 'grid' ? this.CELL_H : this.ROW;
-      if (cur.y - this.scroll < top) this.scroll = cur.y - top;
-      if (cur.y + h - this.scroll > bot) this.scroll = cur.y + h - bot;
+    if (this.mode === 'grid' && cur) {                    // keep the selection inside the window
+      if (cur.y - this.scroll < this.GRID_TOP) this.scroll = cur.y - this.GRID_TOP;
+      if (cur.y + this.CELL_H - this.scroll > this.GRID_BOT) this.scroll = cur.y + this.CELL_H - this.GRID_BOT;
       this.scroll = Math.max(0, this.scroll);
     }
-    const shift = row ? this.rowShift(items.length, s) : 0;
+    // the cursor holds the middle and the page moves under it, as the PS2's did
+    const dx = this.mode === 'browser' ? this.MID - this.ITEM_W / 2 - s * this.PITCH : 0;
+    const dy = this.mode === 'list' ? this.WHEEL_Y - s * this.STEP : -this.scroll;
     columnEls.forEach((el, i) => {
       const p = this.slots[i]; if (!p) return;
-      const x = p.x + shift, y = row ? p.y : p.y - this.scroll;
+      const x = p.x + dx, y = p.y + dy;
       el.style.transform = `translate(${x}px, ${y}px)`;
       el.style.width = `${p.w}px`;
       el.classList.toggle('on', i === s);
-      const off = row ? x + p.w < 300 || x > 1920 : y < -this.CELL_H || y > 1010;
+      // a settings page shows one entry: its neighbours are kept near enough to slide in from
+      const off = this.mode === 'list' ? i !== s : (this.mode === 'browser' ? x + p.w < 60 || x > 1900 : y < -this.CELL_H || y > 1010);
       el.style.opacity = off ? 0 : '';
-      el.style.visibility = off ? 'hidden' : '';
+      el.style.visibility = off && (this.mode !== 'list' || Math.abs(i - s) > 2) ? 'hidden' : '';
       if (!off || Math.abs(i - s) <= Shell.artWindow) ensureArt(el, items[i]);
     });
     this.detail();
   },
 
-  // A short row stands centred in its window; a long one runs under the cursor, but never far
-  // enough to leave a gap at either end — so the shelf is never half empty.
-  rowShift(n, s) {
-    const span = (n - 1) * this.PITCH + this.ITEM_W, win = this.WIN_R - this.WIN_L;
-    if (span <= win) return this.WIN_L + (win - span) / 2;
-    return Math.min(this.WIN_L, Math.max(this.WIN_R - span, this.MID - this.ITEM_W / 2 - s * this.PITCH));
-  },
-
-  // what the cursor is on: above the shelf in the row and the grid, a help line under a list
+  // what the cursor is on, under the row: its name in pale blue, then its value. A settings page
+  // draws its own entries, so it leaves this hidden.
   detail() {
-    const it = list()[sel()], title = $('.p2-title');
-    if (!title) return;
+    const it = list()[sel()], sel_ = $('#p2-root .p2-sel');
+    if (!sel_) return;
     const loading = !it || it.key === 'loading';
-    title.textContent = this.mode === 'list' ? (S.stack.at(-1)?.title || '') : gl(it?.label || '');
-    $('.p2-sub').textContent = loading ? '' : gl(it.sub || '');
-    const badge = $('.p2-badge');
+    sel_.hidden = this.mode === 'list';
+    if (sel_.hidden) return;
+    $('.p2-name').textContent = gl(it?.label || '');
+    $('.p2-value').textContent = loading ? '' : gl(it.sub || '');
+    const badge = $('#p2-root .p2-badge');
     badge.textContent = it?.badge || ''; badge.hidden = !it?.badge;
-    const bar = $('.p2-bar');
+    const bar = $('#p2-root .p2-bar');
     bar.hidden = !it || it.progress == null;
     if (it?.progress != null) bar.firstElementChild.style.width = `${(it.progress * 100).toFixed(1)}%`;
   },
@@ -231,7 +227,7 @@ const PS2 = {
 
   // ---------------------------------------------------------------- moving
   // the row and the grid run left to right; up / down changes category at the top level, and
-  // walks rows inside a folder. Left off the front of a folder goes back, as it does in the XMB.
+  // walks the entries inside a folder. Left off the front of a folder goes back, as in the XMB.
   moveV(d) {
     if (this.mode === 'browser') return void this.cat(d);
     this.step(sel() + (this.mode === 'grid' ? d * this.COLS : d));
