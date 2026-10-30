@@ -1,9 +1,11 @@
 'use strict';
 // The Browser look — modelled on the PlayStation 2's own menu: upright blocks standing in a row
-// on a thin shelf, over a field of blocks drifting slowly upwards, in a colour the PS2 took from
-// its own clock ("Automatic" here does the same, a hue a month). Whatever the cursor is on is
-// spelled out above the row; a folder of artwork opens as a grid of blocks, the way a memory
-// card showed its saves, and a folder of settings as System Configuration's list of rows.
+// on a thin shelf, over the PS2's backdrop of a burst of glowing rods turning slowly in space
+// with dark cubes tumbling past, in a colour the PS2 took from its own clock ("Automatic" here
+// does the same, a hue a month). The clock and the buttons sit on black bands top and bottom;
+// where you are is spelled out in gold and what the cursor is on in pale blue, the way System
+// Configuration had it. A folder of artwork opens as a grid of blocks, the way a memory card
+// showed its saves, and a folder of settings as System Configuration's list of rows.
 //
 // It's a whole front end, not a re-skin: it builds its own page (#p2-root), its own blocks and
 // layouts, and it swaps the cross-media bar's axes — left / right walks the row, up / down
@@ -21,10 +23,13 @@
 // year: deep blue in the winter, green by the summer, rust in the autumn. A hue a month.
 const P2_MONTH_HUE = [222, 206, 188, 162, 128, 96, 58, 40, 24, 8, 334, 268];
 const P2_NAMED = { blue: [222, 46], teal: [188, 44], violet: [268, 42], amber: [40, 52], crimson: [356, 46], graphite: [215, 9] };
-// the drifting field: nine translucent blocks [left %, size, seconds, delay]. They animate on
-// transform alone — nothing blurred, nothing repainting — so a 4K screen costs nothing.
-const P2_BLOCKS = [[3, 150, 74, 0], [15, 90, 55, -12], [26, 230, 92, -44], [37, 120, 64, -7], [49, 180, 79, -31],
-  [60, 100, 58, -50], [71, 250, 98, -19], [82, 130, 67, -66], [92, 190, 84, -38]];
+// The backdrop is the PS2's own: a burst of glowing rods turning slowly in space, with dark
+// cubes tumbling past it. All of it is CSS 3D — the compositor animates transforms and nothing
+// repaints — and Background Motion › Still stops the lot where a machine would rather it didn't.
+const P2_RODS = 13;                       // spokes of the burst, sprayed by the golden angle
+// the cubes: [left %, top %, size, seconds, delay, drift x, drift y]
+const P2_CUBES = [[2, 20, 88, 104, 0, '130px', '-70px'], [74, 56, 108, 128, -46, '-140px', '70px'],
+  [29, 74, 64, 92, -70, '90px', '90px']];
 
 const PS2 = {
   id: 'ps2',
@@ -42,14 +47,22 @@ const PS2 = {
     if (!$('#p2-bg')) {                       // the field covers the whole screen, letterbox included
       const bg = document.createElement('div');
       bg.id = 'p2-bg';
-      bg.innerHTML = '<div class="p2-sky"></div>' + P2_BLOCKS.map(([x, w, t, d]) =>
-        `<i class="p2-cube" style="left:${x}%;width:${w}px;height:${w * 1.5}px;--t:${t}s;--d:${d}s"></i>`).join('');
+      const rods = Array.from({ length: P2_RODS }, (_, i) => {
+        const yaw = Math.round(i * 137.5) % 360, pitch = (i % 5) * 34 - 68;
+        return `<i class="p2-rod" style="--yaw:${yaw}deg;--pitch:${pitch}deg;--len:${170 + (i % 4) * 85}px;--o:${(0.4 + (i % 3) * 0.2).toFixed(2)}"></i>`;
+      }).join('');
+      const cubes = P2_CUBES.map(([x, y, s, t, d, fx, fy]) =>
+        `<div class="p2-cube" style="left:${x}%;top:${y}%;--s:${s}px;--t:${t}s;--d:${d}s;--fx:${fx};--fy:${fy}">
+           <div class="p2-spin">${'<i></i>'.repeat(6)}</div></div>`).join('');
+      bg.innerHTML = `<div class="p2-sky"></div><div class="p2-space">
+        <div class="p2-burst"><div class="p2-core"></div>${rods}</div>${cubes}</div>`;
       document.body.insertBefore(bg, $('#stage'));
     }
     if (!$('#p2-root')) {
       const r = document.createElement('div');
       r.id = 'p2-root';
       r.innerHTML = `
+        <div class="p2-band top"></div><div class="p2-band bot"></div>
         <div class="p2-cats"></div>
         <div class="p2-head"><div class="p2-path"></div>
           <div class="p2-title"></div><div class="p2-badge" hidden></div>
@@ -68,7 +81,7 @@ const PS2 = {
   },
   resetCats() { const c = $('.p2-cats'); if (c) c.innerHTML = ''; },
 
-  // look.json's settings: Background and Drifting Blocks
+  // look.json's settings: Background and Background Motion
   configure() {
     const set = Looks.settings('ps2');
     const pic = set.bg === 'picture' && Theme.cur?.background?.image;
@@ -125,7 +138,7 @@ const PS2 = {
     idx.hidden = S.stack.length > 0;
     const trail = [CATS[S.ci].label, ...S.stack.map((f) => f.title)];
     if (this.pickMode() === 'list') trail.pop();          // a list is headed by the folder's own name
-    $('.p2-path').textContent = S.stack.length ? trail.join('  ›  ') : '';
+    $('.p2-path').textContent = trail.join('  ›  ');
   },
 
   renderColumn(rebuild = true) {

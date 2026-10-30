@@ -8,6 +8,7 @@ body[data-shell="ps2"] {
   --p2-h: 222; --p2-s: 44%;                    /* look.js sets these from Background */
   --p2-fg: #eef4ff; --p2-fg2: rgba(238,244,255,.64); --p2-fg3: rgba(238,244,255,.3);
   --p2-lit: hsl(var(--p2-h) 85% 74%);          /* the highlight: the PS2's pale blue */
+  --p2-gold: #f2d14b;                          /* and its headings */
   --p2-line: hsl(var(--p2-h) 70% 82% / .3);
   --p2-glass: hsl(var(--p2-h) 42% 11% / .76);
   --p2-glass2: hsl(var(--p2-h) 42% 7% / .88);
@@ -17,26 +18,64 @@ body[data-shell="ps2"] {
   font-weight: 300; letter-spacing: .4px; color: var(--p2-fg);
 }
 
-/* ---- the field: a dark gradient with blocks drifting slowly up through it ---- */
-#p2-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; background: #03060c; }
+/* ---- the backdrop: the PS2's own — a burst of glowing rods turning slowly in space, with dark
+   cubes tumbling past. The sky takes the Background colour; the rods stay the PS2's cyan-white
+   whatever the date says. Transforms only, animated by the compositor: nothing repaints, nothing
+   is blurred, and Background Motion › Still stops all of it. ---- */
+#p2-bg { position: fixed; inset: 0; overflow: hidden; pointer-events: none; background: #05060e; }
 #p2-bg .p2-sky { position: absolute; inset: 0;
-  background: radial-gradient(ellipse 120% 80% at 50% -10%, hsl(var(--p2-h) var(--p2-s) 30%), hsl(var(--p2-h) var(--p2-s) 12%) 48%, #04070d 100%); }
-#p2-bg .p2-cube { position: absolute; bottom: -40%; border: 1px solid hsl(var(--p2-h) 75% 86% / .05);
-  background: linear-gradient(155deg, hsl(var(--p2-h) 70% 78% / .035), hsl(var(--p2-h) 60% 40% / .01));
-  animation: p2-drift var(--t) linear var(--d) infinite; }
-@keyframes p2-drift { from { transform: translateY(0) rotate(0deg); } to { transform: translateY(-180vh) rotate(3deg); } }
-body[data-p2motion="off"] #p2-bg .p2-cube { animation: none; }
-body[data-p2bg="picture"] #p2-bg .p2-sky { background: linear-gradient(hsl(var(--p2-h) 40% 6% / .5), hsl(var(--p2-h) 40% 4% / .82)); }
+  background: radial-gradient(ellipse 52% 48% at 30% 58%, hsl(var(--p2-h) 72% 34% / .5), transparent 72%),
+              linear-gradient(142deg, hsl(var(--p2-h) var(--p2-s) 30%), hsl(var(--p2-h) var(--p2-s) 13%) 52%, #06070f 100%); }
+#p2-bg .p2-space { position: absolute; inset: 0; perspective: 900px; transform-style: preserve-3d; }
+
+#p2-bg .p2-burst { position: absolute; left: 30%; top: 58%; width: 0; height: 0;
+  transform-style: preserve-3d; animation: p2-turn 150s linear infinite; }
+@keyframes p2-turn { to { transform: rotate3d(.35, 1, .2, 360deg); } }
+#p2-bg .p2-core { position: absolute; left: -140px; top: -140px; width: 280px; height: 280px;
+  background: radial-gradient(circle, hsl(192 100% 88% / .26), hsl(195 95% 62% / .07) 40%, transparent 70%); }
+#p2-bg .p2-rod { position: absolute; left: 0; top: -11px; width: var(--len); height: 22px;
+  border-radius: 11px; opacity: var(--o); transform-origin: 0 50%;
+  /* yaw turns the spoke round, then Z lifts it: rotating about X would only roll the rod on
+     its own axis and leave the whole burst flat */
+  transform: rotateY(var(--yaw)) rotateZ(var(--pitch)) translateX(54px);
+  background: linear-gradient(hsl(190 90% 72% / .04), hsl(190 100% 92% / .5) 44%, hsl(196 95% 74% / .26) 58%, hsl(202 85% 58% / .03));
+  box-shadow: 0 0 26px hsl(191 95% 66% / .22); }
+
+#p2-bg .p2-cube { position: absolute; width: var(--s); height: var(--s); transform-style: preserve-3d;
+  animation: p2-float var(--t) ease-in-out var(--d) infinite alternate; }
+#p2-bg .p2-spin { position: absolute; inset: 0; transform-style: preserve-3d;
+  animation: p2-tumble calc(var(--t) * .8) linear var(--d) infinite; }
+#p2-bg .p2-cube i { position: absolute; inset: 0; background: hsl(var(--p2-h) 46% 20% / .26);
+  border: 1px solid hsl(var(--p2-h) 72% 80% / .4); }
+#p2-bg .p2-cube i:nth-child(1) { transform: translateZ(calc(var(--s) / 2)); }
+#p2-bg .p2-cube i:nth-child(2) { transform: rotateY(180deg) translateZ(calc(var(--s) / 2)); }
+#p2-bg .p2-cube i:nth-child(3) { transform: rotateY(90deg) translateZ(calc(var(--s) / 2)); }
+#p2-bg .p2-cube i:nth-child(4) { transform: rotateY(-90deg) translateZ(calc(var(--s) / 2)); }
+#p2-bg .p2-cube i:nth-child(5) { transform: rotateX(90deg) translateZ(calc(var(--s) / 2)); }
+#p2-bg .p2-cube i:nth-child(6) { transform: rotateX(-90deg) translateZ(calc(var(--s) / 2)); }
+@keyframes p2-float { to { transform: translate3d(var(--fx), var(--fy), 0); } }
+@keyframes p2-tumble { to { transform: rotate3d(1, .7, .35, 360deg); } }
+body[data-p2motion="off"] #p2-bg :is(.p2-burst, .p2-cube, .p2-spin) { animation: none; }
 body[data-p2bg="picture"] #p2-bg { background: none; }
-body[data-p2bg="picture"] #p2-bg .p2-cube { display: none; }   /* your picture, not our blocks */
+body[data-p2bg="picture"] #p2-bg .p2-sky { background: linear-gradient(hsl(var(--p2-h) 40% 6% / .5), hsl(var(--p2-h) 40% 4% / .82)); }
+body[data-p2bg="picture"] #p2-bg .p2-space { display: none; }   /* your picture, not our rods */
 body[data-shell="ps2"][data-p2bg="field"] #theme-bg, body[data-shell="ps2"] #waves { visibility: hidden; }
 
 /* ---- what the cross-media bar has that the Browser doesn't ---- */
 body[data-shell="ps2"] #cats, body[data-shell="ps2"] #crumb { display: none; }
 
 #p2-root { position: absolute; inset: 0; pointer-events: none; }
-body[data-shell="ps2"] #clock { right: 150px; top: 64px; font-size: 24px; color: var(--p2-fg2); letter-spacing: 2px; }
-body[data-shell="ps2"] #demo-badge { left: 150px; top: 60px; font-size: 14px; color: var(--p2-fg2); border-color: var(--p2-line); }
+
+/* the letterbox bands the PS2 drew its clock and its buttons on (#clock and #demo-badge come
+   before #p2-root in the page, so they're lifted over the band they sit in) */
+#p2-root .p2-band { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, .78); }
+#p2-root .p2-band.top { top: 0; height: 66px; border-bottom: 1px solid hsl(var(--p2-h) 60% 72% / .18); }
+#p2-root .p2-band.bot { bottom: 0; height: 70px; border-top: 1px solid hsl(var(--p2-h) 60% 72% / .18); }
+body[data-shell="ps2"] #clock { left: 150px; right: 150px; top: 15px; z-index: 2; font-size: 26px;
+  letter-spacing: 3px; color: var(--p2-fg); justify-content: space-between; }
+body[data-shell="ps2"] #clock-date { color: var(--p2-fg); }
+body[data-shell="ps2"] #demo-badge { left: 50%; top: 20px; transform: translateX(-50%); z-index: 2;
+  font-size: 13px; color: var(--p2-fg2); border-color: var(--p2-line); }
 
 /* ---- the category index down the left edge (the top level) ---- */
 #p2-root .p2-cats { position: absolute; left: 150px; top: 250px; width: 250px; }
@@ -50,9 +89,9 @@ body[data-shell="ps2"] #demo-badge { left: 150px; top: 60px; font-size: 14px; co
 
 /* ---- the name of whatever the cursor is on, above the shelf ---- */
 #p2-root .p2-head { position: absolute; left: 470px; top: 96px; width: 1300px; }
-#p2-root .p2-path { font-size: 21px; color: var(--p2-fg2); letter-spacing: 2px; height: 30px;
+#p2-root .p2-path { font-size: 23px; color: var(--p2-gold); letter-spacing: 2px; height: 32px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#p2-root .p2-title { font-size: 52px; font-weight: 200; line-height: 1.2; height: 68px;
+#p2-root .p2-title { font-size: 52px; font-weight: 200; line-height: 1.2; height: 68px; color: var(--p2-lit);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 2px 20px rgba(0,0,0,.6); }
 #p2-root .p2-badge { display: inline-block; margin-top: 6px; font-size: 14px; letter-spacing: 2px;
   padding: 3px 10px; border: 1px solid var(--p2-line); color: var(--p2-fg2); }
@@ -114,7 +153,7 @@ body[data-shell="ps2"][data-p2mode="grid"] #column .item .txt { width: 210px; pa
 
 /* ---- a list: System Configuration's rows — name on the left, value on the right ---- */
 body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-head { left: 150px; width: 1620px; }
-body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-title { font-size: 46px; }
+body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-title { font-size: 46px; color: var(--p2-gold); }
 body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-sub { position: absolute; left: 0; top: 806px; width: 1400px; font-size: 22px; }
 body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-bar { position: absolute; left: 0; top: 854px; }
 body[data-shell="ps2"][data-p2mode="list"] #p2-root .p2-badge { display: none; }
@@ -130,27 +169,36 @@ body[data-shell="ps2"][data-p2mode="list"] #column .item .art { inset: 0; }
 body[data-shell="ps2"][data-p2mode="list"] #column .item .txt { display: flex; align-items: baseline; gap: 24px;
   flex: 1; min-width: 0; width: auto; margin: 0; padding: 0; }
 body[data-shell="ps2"][data-p2mode="list"] #column .item .label { flex: 1; font-size: 27px; color: var(--p2-fg2);
-  min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 6px rgba(0, 0, 0, .75); }
 body[data-shell="ps2"][data-p2mode="list"] #column .item .sub { display: block; flex: none; max-width: 520px; height: auto;
-  opacity: 1; margin: 0; font-size: 21px; color: var(--p2-fg3); overflow: hidden; text-overflow: ellipsis; }
+  opacity: 1; margin: 0; font-size: 21px; color: var(--p2-fg3); overflow: hidden; text-overflow: ellipsis;
+  text-shadow: 0 1px 6px rgba(0, 0, 0, .75); }
 body[data-shell="ps2"][data-p2mode="list"] #column .item .bar { position: absolute; left: 28px; right: 28px; bottom: 6px;
   width: auto; height: 3px; margin: 0; }
 body[data-shell="ps2"][data-p2mode="list"] #column .item .p2-tag { position: static; transform: none; flex: none; }
 body[data-shell="ps2"][data-p2mode="list"] #column .item.on { background: linear-gradient(90deg,
-  hsl(var(--p2-h) 80% 70% / .3), hsl(var(--p2-h) 80% 70% / .08) 70%, transparent);
+  hsl(var(--p2-h) 80% 70% / .16), hsl(var(--p2-h) 80% 70% / .04) 70%, transparent);
   box-shadow: inset 3px 0 0 var(--p2-lit); }
-body[data-shell="ps2"][data-p2mode="list"] #column .item.on .label { color: var(--p2-fg); }
+body[data-shell="ps2"][data-p2mode="list"] #column .item.on .label { color: var(--p2-lit); }
+body[data-shell="ps2"][data-p2mode="list"] #column .item.on::after { content: "▲\A▼"; white-space: pre;
+  flex: none; font-size: 13px; line-height: 1.15; color: var(--p2-lit); opacity: .75; }
 body[data-shell="ps2"][data-p2mode="list"] #column .item.on .sub { color: var(--p2-fg2); }
 body[data-shell="ps2"][data-p2mode="list"] #column .item.on .ico .i { filter: drop-shadow(0 0 8px hsl(var(--p2-h) 90% 70% / .6)); }
 
 /* ---- the button hints ---- */
-body[data-shell="ps2"] #hint { left: 470px; right: 150px; bottom: 56px; height: auto; padding: 0;
-  background: none; text-align: right; font-size: 20px; color: var(--p2-fg2); }
-body[data-shell="ps2"][data-p2mode="grid"] #hint, body[data-shell="ps2"][data-p2mode="list"] #hint { left: 150px; }
-body[data-shell="ps2"] #hint span { margin: 0 30px 0 10px; }
+body[data-shell="ps2"] #hint { left: 150px; right: 150px; bottom: 18px; height: auto; padding: 0;
+  background: none; text-align: left; font-size: 21px; color: var(--p2-fg); }
+body[data-shell="ps2"] #hint span { margin: 0 40px 0 12px; }
 body[data-shell="ps2"] #hint span:last-child { margin-right: 0; }
-body[data-shell="ps2"] #hint b.glyph { min-width: 32px; border-color: var(--p2-line); border-radius: 4px; color: var(--p2-fg); }
-body[data-shell="ps2"] #hint b.p2-dpad { font-size: 15px; letter-spacing: 2px; }
+body[data-shell="ps2"] #hint b.glyph { display: inline-grid; place-items: center; width: 34px; height: 34px;
+  min-width: 0; padding: 0; border: 0; border-radius: 50%; vertical-align: -9px;
+  font-size: 17px; color: #fff; background: #4a4f68; }
+body[data-shell="ps2"] #hint b.glyph svg { width: 20px; height: 20px; }
+body[data-shell="ps2"] #hint b.glyph[data-a="ok"] { background: #3d6ef0; }        /* ✕ */
+body[data-shell="ps2"] #hint b.glyph[data-a="back"] { background: #d83b42; }      /* ○ */
+body[data-shell="ps2"] #hint b.glyph[data-a="menu"] { background: #2fa85e; }      /* △ */
+body[data-shell="ps2"] #hint b.p2-dpad { width: auto; padding: 0 12px; border-radius: 17px;
+  font-size: 14px; letter-spacing: 2px; background: #4a4f68; }
 
 /* ---- Options: a glass panel in from the right ---- */
 body[data-shell="ps2"] #options { width: 640px; padding: 300px 0 0 0;

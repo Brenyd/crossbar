@@ -57,7 +57,7 @@ It installs next to the system you already have (CachyOS works great, including 
 | **TV remotes** (1.2.9) | An Android TV remote, a SofaBaton set up as one, a Fire TV remote, an IR receiver or HDMI-CEC drives the whole console. That covers OK, Back, Home, Menu, media keys for whatever is playing, volume, channel ± and channel numbers for live TV, and a Power key that opens the Quick Menu instead of shutting down. Every button is remappable. |
 | **Lutris installers** (1.2.7) | The community install scripts for thousands of games, run by Lutris's own engine. Point it at your own setup files or disc images, and every question it asks comes up on the TV. |
 | **Jackett** (1.2.7) | Hundreds of public and private trackers, each set up from the controller with its own form (including captchas), searched alongside your plugins. |
-| **A PS2-style Browser** (new) | A third interface: blocks standing in a row on a drifting field, whose colour follows the date the way the PS2's did. Artwork opens as a memory-card grid, settings as System Configuration's lists. |
+| **A PS2-style Browser** (new) | A third interface: blocks standing in a row over the PS2's own backdrop — a burst of glowing rods turning in space, cubes tumbling past — in a colour that follows the date the way the PS2's did. Artwork opens as a memory-card grid, settings as System Configuration's lists. |
 | **Swappable interfaces** (1.2) | The PS3-style cross-media bar, or a ground-up Xbox 360-style Dashboard with a Guide over games. Your choice is the one that boots. |
 | **Memory Guard** (1.2.2) | A game that runs the console out of memory is closed, instead of the whole machine freezing. |
 | **VPN networking** (1.2.3 – 1.2.6) | Split tunnelling, DNS, port forwarding, torrents bound to the VPN, leak tests and plugin search rebuilt. |
@@ -135,13 +135,15 @@ folders, Options, dialogs, keyboard and button mapping.
   film you were watching (with its poster), or the live channel (with its logo). What's playing sits
   centred at the top with its progress bar. Lists have a details pane, and Options slides in from
   the right. Choose **Background** (Light, Dark, Green or your theme pack's picture) and **Accent Colour**.
-- **Browser (PS2 style).** Blocks stand in a row on a thin shelf, over a field of blocks drifting
-  slowly upwards. **◀ ▶** walks the row, **▲ ▼** changes category down the left edge, and whatever
-  the cursor is on is spelled out above the shelf. A folder of artwork opens as a grid of blocks,
-  like a memory card's saves; anything else as System Configuration's rows, the value on the right
-  and a help line underneath. **Background** is the PS2's own trick — the colour follows the date,
-  deep blue in the winter through to rust in the autumn — or pick one and keep it, and the drifting
-  can be turned off.
+- **Browser (PS2 style).** Blocks stand in a row on a thin shelf, over the PS2's own backdrop: a
+  burst of glowing rods turning slowly in space, with dark cubes tumbling past. The clock runs
+  across a black band at the top and the buttons along one at the bottom, each glyph a coloured
+  pip. **◀ ▶** walks the row, **▲ ▼** changes category down the left edge; where you are is
+  spelled out in gold and what the cursor is on in pale blue. A folder of artwork opens as a grid
+  of blocks, like a memory card's saves; anything else as System Configuration's rows, the value
+  on the right and a help line underneath. **Background** is the PS2's own trick — the colour
+  follows the date, deep blue in the winter through to rust in the autumn — or pick one and keep
+  it, and **Background Motion** can be set to Still.
 
 | Dashboard settings | Now playing |
 |---|---|
